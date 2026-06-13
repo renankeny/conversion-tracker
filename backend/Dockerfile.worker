@@ -1,0 +1,24 @@
+# =============================================================================
+# TrackFind Worker - Build dedicado (single-binary)
+# =============================================================================
+
+# ===== Builder ===============================================================
+FROM golang:1.22-alpine AS builder
+WORKDIR /src
+RUN apk add --no-cache git
+COPY go.mod go.sum* ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/worker ./cmd/worker
+
+# ===== Runtime ===============================================================
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
+ENV TZ=America/Sao_Paulo
+RUN cp /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime && \
+    echo "America/Sao_Paulo" > /etc/timezone
+
+WORKDIR /app
+COPY --from=builder /out/worker /app/worker
+
+ENTRYPOINT ["/app/worker"]

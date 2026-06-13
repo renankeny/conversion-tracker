@@ -7,6 +7,12 @@ export default defineNuxtConfig({
     compatibilityVersion: 4,
   },
 
+  // Recarrega a página automaticamente quando um chunk JS/CSS antigo falha
+  // ao carregar (acontece após rebuilds em dev e deploys em prod).
+  experimental: {
+    emitRouteChunkError: 'reload',
+  },
+
   modules: ['@nuxtjs/tailwindcss'],
 
   app: {
