@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -170,7 +172,12 @@ func (s *Server) Start(ctx context.Context) error {
 // buildCORS monta o middleware CORS. Em modo strict, usa AllowOriginFunc pra
 // validar dinamicamente contra os domínios cadastrados em pixels.domains.
 // Em modo permissivo, aceita qualquer origem (útil em dev).
+//
+// Independente do modo, o APP_URL (painel admin) é SEMPRE permitido.
 func buildCORS(cfg *config.Config, set *util.DomainSet) func(http.Handler) http.Handler {
+	// Origin do painel admin (ex: "https://app.trackfind.com.br") -> SEMPRE permitido.
+	adminOrigin := normalizeOrigin(cfg.AppURL)
+
 	if !cfg.StrictCORS {
 		return cors.Handler(cors.Options{
 			AllowedOrigins:   []string{"*"},
@@ -182,6 +189,10 @@ func buildCORS(cfg *config.Config, set *util.DomainSet) func(http.Handler) http.
 	}
 	return cors.Handler(cors.Options{
 		AllowOriginFunc: func(_ *http.Request, origin string) bool {
+			// Painel admin sempre passa, mesmo sem estar cadastrado em pixels.domains.
+			if adminOrigin != "" && strings.EqualFold(origin, adminOrigin) {
+				return true
+			}
 			if set == nil {
 				return false
 			}
@@ -192,6 +203,20 @@ func buildCORS(cfg *config.Config, set *util.DomainSet) func(http.Handler) http.
 		AllowCredentials: true,
 		MaxAge:           300,
 	})
+}
+
+// normalizeOrigin extrai apenas scheme + host (+ port) de uma URL completa.
+// Ex: "https://app.trackfind.com.br/login" -> "https://app.trackfind.com.br"
+// Retorna "" se a URL for inválida ou vazia.
+func normalizeOrigin(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
