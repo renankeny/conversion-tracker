@@ -22,6 +22,7 @@ export interface TrackerConfig {
   auto_page_view: boolean
   auto_checkout_buttons: boolean
   auto_form_scraping: boolean
+  auto_form_lead: boolean
   whatsapp_protocol: boolean
   send_scrolls: boolean
   send_timer_1min: boolean
@@ -86,4 +87,28 @@ export interface DNSVerifyResponse {
   a?: string[]
   target?: string
   hint: string
+}
+
+
+export interface TestEventInput {
+  event_name?: string
+  email?: string
+  phone?: string
+  first_name?: string
+  last_name?: string
+  value?: number
+  currency?: string
+}
+
+export interface TestEventPixelResult {
+  pixel_id: string
+  status_code: number
+  response?: string
+  error?: string
+}
+
+export interface TestEventResponse {
+  event_id: string
+  event_name: string
+  results: TestEventPixelResult[]
 }

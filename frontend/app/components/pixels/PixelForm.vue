@@ -129,9 +129,12 @@ import type { Pixel, PixelInput, TrackerConfig } from '#shared/types'
 
 interface Props {
   pixel?: Pixel | null
+  initialTab?: 'basic' | 'tracker'
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  initialTab: 'basic',
+})
 
 const emit = defineEmits<{
   submit: [input: PixelInput]
@@ -139,7 +142,14 @@ const emit = defineEmits<{
 
 const isEditing = computed(() => !!props.pixel)
 
-const activeTab = ref<'basic' | 'tracker'>('basic')
+const activeTab = ref<'basic' | 'tracker'>(props.initialTab)
+
+watch(
+  () => props.initialTab,
+  (tab) => {
+    activeTab.value = tab
+  }
+)
 
 const defaultTrackerConfig = (): TrackerConfig => ({
   product_value: [],
@@ -148,6 +158,7 @@ const defaultTrackerConfig = (): TrackerConfig => ({
   auto_page_view: true,
   auto_checkout_buttons: true,
   auto_form_scraping: true,
+  auto_form_lead: true,
   whatsapp_protocol: true,
   send_scrolls: false,
   send_timer_1min: false,

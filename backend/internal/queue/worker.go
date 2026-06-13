@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,9 +22,10 @@ type Server struct {
 }
 
 type Deps struct {
-	Pool   *pgxpool.Pool
-	Pixels *repo.PixelRepo
-	Meta   *meta.Client
+	Pool     *pgxpool.Pool
+	Pixels   *repo.PixelRepo
+	Meta     *meta.Client
+	Counters *repo.EventCounterRepo
 }
 
 // NewServer aceita opções completas de Redis (auth/TLS/DB).
@@ -41,9 +43,9 @@ func NewServer(opt asynq.RedisClientOpt, deps Deps) *Server {
 	return &Server{srv: srv, mux: mux}
 }
 
-func (s *Server) Run() error  { return s.srv.Run(s.mux) }
-func (s *Server) Stop()        { s.srv.Stop() }
-func (s *Server) Shutdown()    { s.srv.Shutdown() }
+func (s *Server) Run() error { return s.srv.Run(s.mux) }
+func (s *Server) Stop()      { s.srv.Stop() }
+func (s *Server) Shutdown()  { s.srv.Shutdown() }
 
 func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 	return func(ctx context.Context, t *asynq.Task) error {
@@ -61,11 +63,23 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 			return nil
 		}
 
+		// Estratégia dual:
+		//   - Sempre incrementa o counter agregado (1 row/hora por par pixel+evento)
+		//   - Se for evento "importante" (Lead, InitiateCheckout, Purchase, ...),
+		//     ADICIONALMENTE persiste o resultado completo em sent_events.
 		results := deps.Meta.Send(ctx, pixel, in)
 		hasErr := false
+
+		eventTime := time.Unix(in.EventTime, 0)
+		if in.EventTime == 0 {
+			eventTime = time.Now()
+		}
+		storeFullPayload := domain.ShouldStoreFullPayload(in.EventName)
+
 		for _, r := range results {
-			persistResult(ctx, deps.Pool, in, r)
+			delta := domain.CounterDelta{Total: 1}
 			if r.Err != nil {
+				delta.Failed = 1
 				hasErr = true
 				slog.Error("meta send failed",
 					"pixel_id", r.PixelID,
@@ -74,12 +88,30 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 					"err", r.Err,
 				)
 			} else {
+				delta.Sent = 1
 				slog.Info("meta send ok",
 					"pixel_id", r.PixelID,
 					"event", in.EventName,
 					"event_id", in.EventID,
 					"status", r.StatusCode,
 				)
+			}
+
+			// Counter agregado (sempre).
+			if deps.Counters != nil {
+				if cerr := deps.Counters.Increment(ctx, pixel.Name, in.EventName, eventTime, delta); cerr != nil {
+					slog.Warn("counter increment failed",
+						"pixel", pixel.Name,
+						"event", in.EventName,
+						"err", cerr,
+					)
+				}
+			}
+
+			// Payload completo apenas para eventos importantes ou falhas.
+			// Falhas SEMPRE são persistidas (independente do tipo) para auditoria.
+			if storeFullPayload || r.Err != nil {
+				persistResult(ctx, deps.Pool, in, r)
 			}
 		}
 		if hasErr {

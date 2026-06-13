@@ -319,6 +319,74 @@
     obs.observe(document.body, { childList: true, subtree: true });
   }
 
+  // === Form lead tracking ==============================================
+  // Dispara Lead quando um <form> que contém email OU phone é submetido.
+  // Heurística: usa o mapeamento configurado em form_mappings pra detectar
+  // se o form é um form de lead (vs busca/login).
+
+  function setupFormLeadTracking() {
+    var maps = TF_CONFIG.form_mappings || {};
+    var emailKeys = maps.email || [];
+    var phoneKeys = maps.phone || [];
+
+    function any(arr, attr) {
+      for (var i = 0; i < arr.length; i++) if (attr.indexOf(arr[i]) > -1) return true;
+      return false;
+    }
+
+    function hasLeadField(form) {
+      var inputs = form.querySelectorAll("input, textarea, select");
+      for (var i = 0; i < inputs.length; i++) {
+        var nameAttr = (inputs[i].name || "").toLowerCase();
+        var typeAttr = (inputs[i].type || "").toLowerCase();
+        if (!nameAttr) continue;
+        if (typeAttr === "search") continue;
+        if (any(emailKeys, nameAttr) || any(phoneKeys, nameAttr) || typeAttr === "email" || typeAttr === "tel") {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function attach(form) {
+      if (form.dataset.tfLeadAttached) return;
+      if (!hasLeadField(form)) return;
+
+      // Injeta utm_source com o userId em campos hidden / cria se não existir.
+      try {
+        var origin = TF_CONFIG.utm_origin_param || "utm_source";
+        var marker = "|userId" + userId + "|";
+        var existing = form.querySelectorAll('[name="' + origin + '"]');
+        if (existing.length > 0) {
+          for (var i = 0; i < existing.length; i++) existing[i].value = marker;
+        } else {
+          var hidden = document.createElement("input");
+          hidden.type = "hidden";
+          hidden.name = origin;
+          hidden.value = marker;
+          form.appendChild(hidden);
+        }
+      } catch (e) {}
+
+      form.addEventListener("submit", function () {
+        // O scrapeFormsToCookie + sendEvent('Lead') já roda dentro do sendEvent
+        // pra eventos especiais (specialEvents inclui 'Lead').
+        sendEvent("Lead");
+      });
+
+      form.dataset.tfLeadAttached = "1";
+    }
+
+    function scan() {
+      var forms = document.querySelectorAll("form");
+      for (var i = 0; i < forms.length; i++) attach(forms[i]);
+    }
+
+    scan();
+    var obs = new MutationObserver(scan);
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+
   // === WhatsApp protocol ===============================================
 
   function setupWhatsAppProtocol() {
@@ -507,6 +575,7 @@
       setButtonsURLs();
     }
     if (TF_CONFIG.whatsapp_protocol) setupWhatsAppProtocol();
+    if (TF_CONFIG.auto_form_lead) setupFormLeadTracking();
     if (TF_CONFIG.send_scrolls) setupScrollTracking();
     if (TF_CONFIG.send_timer_1min) setupTimerTracking();
     if (TF_CONFIG.send_view_video) setupVideoTracking();
@@ -517,6 +586,7 @@
     if (TF_CONFIG.auto_page_view) waitForCookiesAndPageView();
     if (TF_CONFIG.auto_checkout_buttons) { setUTMs(); setButtonsURLs(); }
     if (TF_CONFIG.whatsapp_protocol) setupWhatsAppProtocol();
+    if (TF_CONFIG.auto_form_lead) setupFormLeadTracking();
     if (TF_CONFIG.send_scrolls) setupScrollTracking();
     if (TF_CONFIG.send_timer_1min) setupTimerTracking();
     if (TF_CONFIG.send_view_video) setupVideoTracking();

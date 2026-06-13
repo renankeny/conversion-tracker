@@ -60,7 +60,12 @@
         : 'Configure um novo pixel para começar a enviar eventos.'"
       size="lg"
     >
-      <PixelForm ref="formRef" :pixel="editing" @submit="onFormSubmit" />
+      <PixelForm
+        ref="formRef"
+        :pixel="editing"
+        :initial-tab="formInitialTab"
+        @submit="onFormSubmit"
+      />
 
       <template #footer>
         <BaseButton variant="ghost" @click="formModalOpen = false">Cancelar</BaseButton>
@@ -71,7 +76,11 @@
     </BaseModal>
 
     <!-- Modal Install -->
-    <PixelInstallModal v-model="installModalOpen" :pixel="installingPixel" />
+    <PixelInstallModal
+      v-model="installModalOpen"
+      :pixel="installingPixel"
+      @edit-config="onEditFromInstall"
+    />
 
     <!-- Modal Delete -->
     <ConfirmModal
@@ -115,6 +124,7 @@ const formModalOpen = ref(false)
 const editing = ref<Pixel | null>(null)
 const saving = ref(false)
 const formRef = ref<{ submit: () => void } | null>(null)
+const formInitialTab = ref<'basic' | 'tracker'>('basic')
 
 const deleteModalOpen = ref(false)
 const deletingPixel = ref<Pixel | null>(null)
@@ -136,11 +146,13 @@ const fetchPixels = async () => {
 
 const openCreateModal = () => {
   editing.value = null
+  formInitialTab.value = 'basic'
   formModalOpen.value = true
 }
 
 const openEditModal = (pixel: Pixel) => {
   editing.value = pixel
+  formInitialTab.value = 'basic'
   formModalOpen.value = true
 }
 
@@ -152,6 +164,16 @@ const openDeleteModal = (pixel: Pixel) => {
 const openInstallModal = (pixel: Pixel) => {
   installingPixel.value = pixel
   installModalOpen.value = true
+}
+
+const onEditFromInstall = (pixel: Pixel) => {
+  // Fecha modal de install e abre o de edição já com o pixel selecionado.
+  // O PixelForm aceita prop `initialTab` (vamos suportar via prop opcional).
+  installModalOpen.value = false
+  installingPixel.value = null
+  editing.value = pixel
+  formInitialTab.value = 'tracker'
+  formModalOpen.value = true
 }
 
 const onFormSubmit = async (input: PixelInput) => {

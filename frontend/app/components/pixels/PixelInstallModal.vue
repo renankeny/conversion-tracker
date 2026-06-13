@@ -138,10 +138,20 @@
 
       <!-- ETAPA 4: Eventos automáticos -->
       <section class="check-section">
-        <h4 class="section-title">4. Eventos automáticos do tracker</h4>
+        <div class="section-header">
+          <h4 class="section-title">4. Eventos automáticos do tracker</h4>
+          <BaseButton variant="outline" size="sm" @click="$emit('edit-config', pixel)">
+            <template #iconLeft>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+              </svg>
+            </template>
+            Editar configuração
+          </BaseButton>
+        </div>
         <p class="section-hint">
-          Comportamento que o tracker dispara automaticamente sem código adicional.
-          Edite o pixel na aba <strong>Tracker Config</strong> para ajustar.
+          Comportamento que o tracker dispara automaticamente. Edição visual na aba
+          <strong>Tracker Config</strong>.
         </p>
         <div class="events-grid">
           <div
@@ -178,9 +188,79 @@
         </div>
       </section>
 
-      <!-- Eventos manuais -->
+      <!-- ETAPA 5: Enviar evento de teste -->
       <section class="check-section">
-        <h4 class="section-title">5. Disparar eventos manualmente</h4>
+        <h4 class="section-title">5. Enviar evento de teste</h4>
+        <p class="section-hint">
+          Dispara um evento sincronamente para a Meta CAPI usando o
+          <code>test_event_code</code> do pixel. Útil para validar a integração antes do
+          tráfego real.
+        </p>
+
+        <div class="test-form">
+          <BaseDropdown
+            v-model="testForm.event_name"
+            label="Evento"
+            :options="testEventOptions"
+          />
+          <BaseInput
+            v-model="testForm.email"
+            label="E-mail (opcional)"
+            placeholder="teste@exemplo.com"
+          />
+          <BaseInput
+            v-model="testForm.phone"
+            label="Telefone (opcional)"
+            placeholder="+5511999999999"
+          />
+          <BaseInput
+            v-model="testForm.value"
+            label="Valor (opcional)"
+            type="number"
+            placeholder="99.90"
+          />
+        </div>
+
+        <div class="test-actions">
+          <BaseButton variant="primary" :loading="testing" @click="onSendTestEvent">
+            <template #iconLeft>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" clip-rule="evenodd" />
+              </svg>
+            </template>
+            Enviar evento de teste
+          </BaseButton>
+        </div>
+
+        <div v-if="testResults.length" class="test-results">
+          <div
+            v-for="result in testResults"
+            :key="result.pixel_id"
+            class="test-result"
+            :class="{ success: result.status_code === 200, error: result.status_code !== 200 || result.error }"
+          >
+            <div class="result-header">
+              <code class="result-pixel">Pixel {{ result.pixel_id }}</code>
+              <BaseBadge :variant="result.status_code === 200 ? 'success' : 'danger'">
+                HTTP {{ result.status_code || 'erro' }}
+              </BaseBadge>
+            </div>
+            <p v-if="result.error" class="result-error">{{ result.error }}</p>
+            <details v-if="result.response" class="result-body">
+              <summary>Resposta da Meta</summary>
+              <pre><code>{{ formatResponse(result.response) }}</code></pre>
+            </details>
+          </div>
+          <p v-if="lastEventID" class="result-meta">
+            Event ID disparado: <code>{{ lastEventID }}</code> — verifique no
+            <strong>Events Manager → Test Events</strong>.
+          </p>
+        </div>
+      </section>
+
+      <!-- ETAPA 6: Disparar eventos manualmente -->
+      <section class="check-section">
+        <h4 class="section-title">6. Disparar eventos do código do site</h4>
         <p class="section-hint">
           Use a função global <code>tf()</code> para disparar eventos customizados:
         </p>
@@ -200,8 +280,9 @@
 </template>
 
 <script setup lang="ts">
+import BaseDropdown from '~/components/BaseDropdown.vue'
 import { buildPixelSnippet } from '~/utils/apiOrigin'
-import type { DNSVerifyResponse, Pixel } from '#shared/types'
+import type { DNSVerifyResponse, Pixel, TestEventInput, TestEventPixelResult } from '#shared/types'
 
 interface Props {
   modelValue: boolean
@@ -212,6 +293,7 @@ const props = defineProps<Props>()
 
 defineEmits<{
   'update:modelValue': [value: boolean]
+  'edit-config': [pixel: Pixel]
 }>()
 
 const config = useRuntimeConfig()
@@ -274,6 +356,12 @@ const autoEvents = computed(() => {
       enabled: !!cfg.auto_form_scraping,
     },
     {
+      key: 'auto_form_lead',
+      label: 'Lead em formulário',
+      tag: 'Lead',
+      enabled: !!cfg.auto_form_lead,
+    },
+    {
       key: 'whatsapp_protocol',
       label: 'Protocolo WhatsApp',
       tag: 'Lead',
@@ -326,6 +414,75 @@ const onVerifyDNS = async () => {
     toast.error('Erro', error.message || 'Não foi possível verificar o DNS')
   } finally {
     verifying.value = false
+  }
+}
+
+// === Test event ===
+const testEventOptions = [
+  { value: 'Lead', label: 'Lead' },
+  { value: 'PageView', label: 'PageView' },
+  { value: 'ViewContent', label: 'ViewContent' },
+  { value: 'AddToCart', label: 'AddToCart' },
+  { value: 'InitiateCheckout', label: 'InitiateCheckout' },
+  { value: 'Purchase', label: 'Purchase' },
+  { value: 'CompleteRegistration', label: 'CompleteRegistration' },
+  { value: 'Contact', label: 'Contact' },
+]
+
+const testForm = reactive<{
+  event_name: string
+  email: string
+  phone: string
+  value: string
+}>({
+  event_name: 'Lead',
+  email: '',
+  phone: '',
+  value: '',
+})
+
+const testing = ref(false)
+const testResults = ref<TestEventPixelResult[]>([])
+const lastEventID = ref<string>('')
+
+const onSendTestEvent = async () => {
+  if (!props.pixel) return
+  testing.value = true
+  testResults.value = []
+  lastEventID.value = ''
+  try {
+    const input: TestEventInput = {
+      event_name: testForm.event_name || 'Lead',
+    }
+    if (testForm.email.trim()) input.email = testForm.email.trim()
+    if (testForm.phone.trim()) input.phone = testForm.phone.trim()
+    if (testForm.value.trim()) {
+      const v = parseFloat(testForm.value.replace(',', '.'))
+      if (!Number.isNaN(v)) input.value = v
+    }
+
+    const response = await pixelsApi.sendTestEvent(props.pixel.id, input)
+    testResults.value = response.results
+    lastEventID.value = response.event_id
+
+    const allOk = response.results.every((r) => r.status_code === 200 && !r.error)
+    if (allOk) {
+      toast.success('Evento enviado!', 'Verifique no Events Manager → Test Events')
+    } else {
+      toast.warning('Evento enviado com falhas', 'Veja os detalhes abaixo')
+    }
+  } catch (error: any) {
+    toast.error('Erro ao enviar', error.message || 'Falha desconhecida')
+  } finally {
+    testing.value = false
+  }
+}
+
+const formatResponse = (raw: string): string => {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
   }
 }
 
@@ -708,5 +865,104 @@ watch(
   color: var(--text-3);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   margin-top: 0.125rem;
+}
+
+/* Test event section */
+.test-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.test-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.test-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.test-result {
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.test-result.success {
+  border-left: 4px solid var(--success);
+}
+
+.test-result.error {
+  border-left: 4px solid var(--danger);
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+}
+
+.result-pixel {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  color: var(--text-1);
+}
+
+.result-error {
+  font-size: 0.8125rem;
+  color: var(--danger);
+  margin-top: 0.25rem;
+}
+
+.result-body {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.result-body summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-3);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.result-body pre {
+  background: var(--surface-deep);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 0.625rem;
+  margin-top: 0.375rem;
+  overflow-x: auto;
+  max-height: 200px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  color: var(--text-1);
+  line-height: 1.5;
+}
+
+.result-meta {
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  margin-top: 0.5rem;
+}
+
+.result-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--surface-soft);
+  padding: 0.0625rem 0.375rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
 }
 </style>

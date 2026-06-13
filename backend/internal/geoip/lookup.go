@@ -3,11 +3,13 @@ package geoip
 import (
 	"errors"
 	"net"
+	"sync"
 
 	"github.com/oschwald/geoip2-golang"
 )
 
 type Lookup struct {
+	mu     sync.RWMutex
 	reader *geoip2.Reader
 }
 
@@ -25,10 +27,50 @@ func New(path string) (*Lookup, error) {
 }
 
 func (l *Lookup) Close() error {
-	if l == nil || l.reader == nil {
+	if l == nil {
 		return nil
 	}
-	return l.reader.Close()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.reader == nil {
+		return nil
+	}
+	err := l.reader.Close()
+	l.reader = nil
+	return err
+}
+
+// Available retorna true se a base GeoIP está carregada e pronta pra resolver.
+func (l *Lookup) Available() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.reader != nil
+}
+
+// Reload abre a base no path informado e substitui o reader atual atomicamente.
+// Útil pra atualizar a base em runtime sem precisar reiniciar o processo.
+func (l *Lookup) Reload(path string) error {
+	if l == nil {
+		return errors.New("lookup nil")
+	}
+	if path == "" {
+		return errors.New("path vazio")
+	}
+	r, err := geoip2.Open(path)
+	if err != nil {
+		return err
+	}
+	l.mu.Lock()
+	old := l.reader
+	l.reader = r
+	l.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	return nil
 }
 
 type Result struct {
@@ -39,14 +81,20 @@ type Result struct {
 }
 
 func (l *Lookup) Resolve(ip string) (Result, error) {
-	if l == nil || l.reader == nil {
+	if l == nil {
+		return Result{}, nil
+	}
+	l.mu.RLock()
+	reader := l.reader
+	l.mu.RUnlock()
+	if reader == nil {
 		return Result{}, nil
 	}
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
 		return Result{}, errors.New("invalid ip")
 	}
-	rec, err := l.reader.City(parsed)
+	rec, err := reader.City(parsed)
 	if err != nil {
 		return Result{}, err
 	}

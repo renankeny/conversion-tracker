@@ -4,6 +4,8 @@ import type {
   Pixel,
   PixelDefaults,
   PixelsListResponse,
+  TestEventInput,
+  TestEventResponse,
   UpdatePixelInput,
 } from '#shared/types'
 
@@ -41,6 +43,13 @@ export const usePixels = () => {
     return api.post<DNSVerifyResponse>(`/admin/pixels/${id}/verify-dns`)
   }
 
+  const sendTestEvent = async (
+    id: number,
+    input: TestEventInput = {}
+  ): Promise<TestEventResponse> => {
+    return api.post<TestEventResponse>(`/admin/pixels/${id}/test-event`, input)
+  }
+
   return {
     list,
     find,
@@ -49,5 +58,6 @@ export const usePixels = () => {
     remove,
     defaults,
     verifyDNS,
+    sendTestEvent,
   }
 }

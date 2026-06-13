@@ -35,9 +35,10 @@ func main() {
 	defer pool.Close()
 
 	srv := queue.NewServer(queue.BuildRedisClientOpt(cfg), queue.Deps{
-		Pool:   pool,
-		Pixels: repo.NewPixelRepo(pool),
-		Meta:   meta.New(cfg.MetaAPIVersion, cfg.MetaPartnerAgent),
+		Pool:     pool,
+		Pixels:   repo.NewPixelRepo(pool),
+		Meta:     meta.New(cfg.MetaAPIVersion, cfg.MetaPartnerAgent),
+		Counters: repo.NewEventCounterRepo(pool),
 	})
 
 	go func() {

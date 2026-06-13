@@ -29,6 +29,12 @@
           tag="PII"
         />
         <ToggleCard
+          v-model="config.auto_form_lead"
+          title="Lead em formulário"
+          description="Dispara Lead automaticamente quando um form com email ou telefone é submetido"
+          tag="Lead"
+        />
+        <ToggleCard
           v-model="config.whatsapp_protocol"
           title="Protocolo WhatsApp"
           description="Adiciona &quot;Protocolo: <id>&quot; em links wa.me e dispara Lead no clique"
@@ -84,11 +90,16 @@
         <p class="section-hint">
           Cada valor corresponde a um botão de checkout, em ordem de aparição na página.
         </p>
-        <div v-for="(price, idx) in productValueStrings" :key="idx" class="price-row">
+        <div
+          v-for="(_, idx) in (config.product_value || [])"
+          :key="idx"
+          class="price-row"
+        >
           <BaseInput
-            v-model="productValueStrings[idx]"
+            :model-value="formatPrice(config.product_value[idx])"
             type="number"
             :placeholder="'Valor do botão ' + (idx + 1)"
+            @update:model-value="(v) => updatePrice(idx, v)"
           />
           <button
             type="button"
@@ -160,25 +171,29 @@
       <div v-for="(rule, idx) in config.page_rules" :key="idx" class="rule-row">
         <div class="rule-grid">
           <BaseInput
-            v-model="rule.page"
+            :model-value="rule.page"
             label="Substring na URL"
             placeholder="ex: /obrigado"
+            @update:model-value="(v) => updateRuleField(idx, 'page', v)"
           />
           <BaseInput
-            v-model="rule.event"
+            :model-value="rule.event"
             label="Evento"
             placeholder="ex: Lead, Purchase"
+            @update:model-value="(v) => updateRuleField(idx, 'event', v)"
           />
           <BaseInput
-            v-model="pageRuleValueStrings[idx]"
+            :model-value="formatPrice(rule.value)"
             label="Valor (opcional)"
             type="number"
             placeholder="0"
+            @update:model-value="(v) => updateRuleValue(idx, v)"
           />
           <BaseInput
-            v-model="rule.currency"
+            :model-value="rule.currency || ''"
             label="Moeda (opcional)"
             placeholder="BRL"
+            @update:model-value="(v) => updateRuleField(idx, 'currency', v)"
           />
         </div>
         <button
@@ -248,16 +263,25 @@ const config = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
-// === product_value: array de números <-> strings ===
-const productValueStrings = computed({
-  get: () => (config.value.product_value || []).map((n) => String(n)),
-  set: (vals) => {
-    config.value = {
-      ...config.value,
-      product_value: vals.map((s) => parseFloat(s) || 0).filter((n) => !Number.isNaN(n)),
-    }
-  },
-})
+// === product_value ===
+const formatPrice = (n: number | undefined | null): string => {
+  if (n === undefined || n === null) return ''
+  if (typeof n !== 'number' || Number.isNaN(n)) return ''
+  return n === 0 ? '' : String(n)
+}
+
+const parsePrice = (raw: string): number => {
+  if (!raw) return 0
+  const cleaned = String(raw).replace(',', '.').trim()
+  const n = parseFloat(cleaned)
+  return Number.isNaN(n) ? 0 : n
+}
+
+const updatePrice = (idx: number, raw: string) => {
+  const arr = [...(config.value.product_value || [])]
+  arr[idx] = parsePrice(raw)
+  config.value = { ...config.value, product_value: arr }
+}
 
 const addPrice = () => {
   config.value = {
@@ -267,25 +291,26 @@ const addPrice = () => {
 }
 
 const removePrice = (idx: number) => {
-  const next = [...config.value.product_value]
+  const next = [...(config.value.product_value || [])]
   next.splice(idx, 1)
   config.value = { ...config.value, product_value: next }
 }
 
-// === page_rules.value: number <-> string ===
-const pageRuleValueStrings = computed({
-  get: () =>
-    (config.value.page_rules || []).map((r) =>
-      r.value !== undefined && r.value !== null ? String(r.value) : ''
-    ),
-  set: (vals) => {
-    const rules = (config.value.page_rules || []).map((r, idx) => ({
-      ...r,
-      value: vals[idx] ? parseFloat(vals[idx]) : undefined,
-    }))
-    config.value = { ...config.value, page_rules: rules }
-  },
-})
+// === page_rules ===
+const updateRuleField = (idx: number, field: 'page' | 'event' | 'currency', value: string) => {
+  const rules = [...(config.value.page_rules || [])]
+  if (!rules[idx]) return
+  rules[idx] = { ...rules[idx], [field]: value }
+  config.value = { ...config.value, page_rules: rules }
+}
+
+const updateRuleValue = (idx: number, raw: string) => {
+  const rules = [...(config.value.page_rules || [])]
+  if (!rules[idx]) return
+  const v = raw.trim() === '' ? undefined : parsePrice(raw)
+  rules[idx] = { ...rules[idx], value: v }
+  config.value = { ...config.value, page_rules: rules }
+}
 
 const addPageRule = () => {
   config.value = {

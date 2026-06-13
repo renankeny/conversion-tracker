@@ -57,6 +57,7 @@ func New(deps Deps) (*Server, error) {
 	urlMaps := repo.NewURLMappingRepo(deps.Pool)
 	sentEvents := repo.NewSentEventRepo(deps.Pool)
 	stats := repo.NewStatsRepo(deps.Pool)
+	counters := repo.NewEventCounterRepo(deps.Pool)
 
 	eventH := handlers.NewEvents(pixels, users, sentEvents, deps.GeoIP, deps.Enqueuer, deps.URLs)
 	webhookH := handlers.NewWebhooks(pixels, users, deps.Enqueuer, deps.URLs, deps.Secrets)
@@ -64,10 +65,13 @@ func New(deps Deps) (*Server, error) {
 	adminAuthH := handlers.NewAdminAuth(deps.Pool, deps.JWT)
 	adminPixelH := handlers.NewAdminPixels(pixels)
 	adminPixelH.SetDNSTarget(deps.Cfg.TrackingTargetHost)
+	adminPixelTestH := handlers.NewAdminPixelTestEvent(pixels, deps.Cfg.MetaAPIVersion, deps.Cfg.MetaPartnerAgent)
+	adminGeoIPH := handlers.NewAdminGeoIP(deps.Cfg.MaxMindLicenseKey, deps.Cfg.GeoIPDBPath, deps.GeoIP)
 	adminURLH := handlers.NewAdminURLMappings(urlMaps, deps.URLs)
 	adminSentH := handlers.NewAdminSentEvents(sentEvents)
 	adminTUH := handlers.NewAdminTrackedUsers(users)
 	adminStatsH := handlers.NewAdminStats(stats)
+	adminCountersH := handlers.NewAdminCounters(counters)
 
 	trackerH, err := handlers.NewTracker(pixels, deps.Cfg.PublicAPIURL)
 	if err != nil {
@@ -133,6 +137,11 @@ func New(deps Deps) (*Server, error) {
 			r.Put("/admin/pixels/{id}", adminPixelH.Update)
 			r.Delete("/admin/pixels/{id}", adminPixelH.Delete)
 			r.Post("/admin/pixels/{id}/verify-dns", adminPixelH.VerifyDNS)
+			r.Post("/admin/pixels/{id}/test-event", adminPixelTestH.SendTestEvent)
+
+			// GeoIP
+			r.Get("/admin/geoip/status", adminGeoIPH.Status)
+			r.Post("/admin/geoip/refresh", adminGeoIPH.Refresh)
 
 			// URL mappings (black -> white)
 			r.Get("/admin/url-mappings", adminURLH.List)
@@ -148,6 +157,10 @@ func New(deps Deps) (*Server, error) {
 
 			// Stats agregadas pra dashboard.
 			r.Get("/admin/stats", adminStatsH.Overview)
+
+			// Counters agregados (PageView, ViewContent, scroll, etc).
+			r.Get("/admin/counters/summary", adminCountersH.Summary)
+			r.Get("/admin/counters/series", adminCountersH.TimeSeries)
 		})
 	})
 

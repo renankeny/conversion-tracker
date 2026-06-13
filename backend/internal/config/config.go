@@ -31,6 +31,10 @@ type Config struct {
 	GeoIPDBPath    string
 	MetaAPIVersion string
 
+	// MaxMindLicenseKey é usada pra baixar a base GeoLite2-City via endpoint
+	// admin /admin/geoip/refresh. Pega em https://www.maxmind.com/en/geolite2/signup.
+	MaxMindLicenseKey string
+
 	// MetaPartnerAgent é recomendado pra agências/plataformas que enviam
 	// eventos em nome de anunciantes. Formato: nome-versao (ex: "trackfind-1.0.0").
 	// Vazio = não envia o campo (ok pra anunciantes diretos).
@@ -77,6 +81,7 @@ func Load() (*Config, error) {
 		RedisTLSInsecureSkipVerify: getenv("REDIS_TLS_INSECURE_SKIP_VERIFY", "false") == "true",
 		GeoIPDBPath:        getenv("GEOIP_DB_PATH", ""),
 		MetaAPIVersion:     getenv("META_API_VERSION", "v25.0"),
+		MaxMindLicenseKey:  getenv("MAXMIND_LICENSE_KEY", ""),
 		MetaPartnerAgent:   getenv("META_PARTNER_AGENT", ""),
 		PublicAPIURL:       getenv("PUBLIC_API_URL", "http://localhost:8080/api/v1"),
 		AppURL:             getenv("APP_URL", "http://localhost:3000"),

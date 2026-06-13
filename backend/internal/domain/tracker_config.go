@@ -25,6 +25,9 @@ type TrackerConfig struct {
 	AutoCheckoutButtons bool `json:"auto_checkout_buttons"`
 	// AutoFormScraping captura email/phone/nome dos forms da página.
 	AutoFormScraping bool `json:"auto_form_scraping"`
+	// AutoFormLead dispara Lead automaticamente quando um form com email ou
+	// telefone é submetido. Captura PII antes de enviar.
+	AutoFormLead bool `json:"auto_form_lead"`
 	// WhatsAppProtocol adiciona "Protocolo: <userId>" em links de wa.me e
 	// dispara um Lead no clique.
 	WhatsAppProtocol bool `json:"whatsapp_protocol"`
@@ -78,6 +81,7 @@ func DefaultTrackerConfig() TrackerConfig {
 		AutoPageView:        true,
 		AutoCheckoutButtons: true,
 		AutoFormScraping:    true,
+		AutoFormLead:        true,
 		WhatsAppProtocol:    true,
 		FormMappings: FormMappings{
 			Email:     []string{"email", "form_fields[email]"},
