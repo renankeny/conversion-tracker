@@ -405,11 +405,13 @@
     });
   }
 
-  // === fbq init helper =================================================
+  // === fbq bootstrap (carrega fbevents.js IMEDIATAMENTE) ================
+  // O Pixel Helper precisa ver o fbq('init', PIXEL_ID) ASAP, antes de
+  // qualquer fetch async. Por isso bootstrap-amos o fbq stub aqui, fora do
+  // .then() do Init request.
 
-  function initFbq(initData) {
+  function buildAdvancedMatching(initData) {
     initData = initData || {};
-    if (!TF_META_INIT_PIXEL_ID) return; // sem init pixel id, cliente faz init fora
     var ud = {};
     if (initData.city) ud.ct = initData.city;
     if (initData.state) ud.st = initData.state;
@@ -427,14 +429,35 @@
     if (fresh.last_name) ud.ln = fresh.last_name;
     if (fresh.email) ud.em = fresh.email;
     if (fresh.phone) ud.ph = fresh.phone;
-    clientUserData = ud;
+    return ud;
+  }
 
+  function bootstrapFbq() {
+    if (!TF_META_INIT_PIXEL_ID) return;
     !function (f, b, e, v, n, t, s) {
-      if (f.fbq) return; n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
-      if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = "2.0";
-      n.queue = []; t = b.createElement(e); t.async = !0;
-      t.src = v; s = b.getElementsByTagName(e)[0]; s.parentNode.insertBefore(t, s);
+      if (f.fbq) return;
+      n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
+      if (!f._fbq) f._fbq = n;
+      n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = [];
+      t = b.createElement(e); t.async = !0;
+      t.src = v;
+      s = b.getElementsByTagName(e)[0];
+      if (s && s.parentNode) s.parentNode.insertBefore(t, s);
+      else (b.head || b.documentElement).appendChild(t);
     }(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+
+    // Init imediato com dados básicos (cookies + userId).
+    // Isso é o que o Pixel Helper detecta.
+    clientUserData = buildAdvancedMatching({});
+    window.fbq("init", TF_META_INIT_PIXEL_ID, clientUserData);
+  }
+
+  function refreshFbqAdvancedMatching(initData) {
+    if (!TF_META_INIT_PIXEL_ID || !window.fbq) return;
+    // Reinicializa com dados completos (geo do servidor, etc).
+    // A Meta aceita múltiplos init() para atualizar advanced matching.
+    var ud = buildAdvancedMatching(initData);
+    clientUserData = ud;
     window.fbq("init", TF_META_INIT_PIXEL_ID, ud);
   }
 
@@ -457,14 +480,28 @@
 
   // === Boot ============================================================
 
+  // 1) Inicializa o Meta Pixel ANTES do Init request — Pixel Helper detecta na hora.
+  bootstrapFbq();
+
+  // 2) Em paralelo, dispara Init pra hidratar geo e atualiza advanced matching.
   sendEvent("Init").then(function (initData) {
-    initFbq(initData);
+    refreshFbqAdvancedMatching(initData);
 
     if (TF_CONFIG.auto_page_view) waitForCookiesAndPageView();
     if (TF_CONFIG.auto_checkout_buttons) {
       setUTMs();
       setButtonsURLs();
     }
+    if (TF_CONFIG.whatsapp_protocol) setupWhatsAppProtocol();
+    if (TF_CONFIG.send_scrolls) setupScrollTracking();
+    if (TF_CONFIG.send_timer_1min) setupTimerTracking();
+    if (TF_CONFIG.send_view_video) setupVideoTracking();
+  }).catch(function (err) {
+    // Mesmo se o Init falhar (ex: rede), continua disparando os auto-triggers
+    // pra não perder eventos. O fbq já foi inicializado no bootstrapFbq().
+    if (window.console) console.warn("[TF] Init falhou, seguindo com auto-triggers:", err);
+    if (TF_CONFIG.auto_page_view) waitForCookiesAndPageView();
+    if (TF_CONFIG.auto_checkout_buttons) { setUTMs(); setButtonsURLs(); }
     if (TF_CONFIG.whatsapp_protocol) setupWhatsAppProtocol();
     if (TF_CONFIG.send_scrolls) setupScrollTracking();
     if (TF_CONFIG.send_timer_1min) setupTimerTracking();
