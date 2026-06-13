@@ -13,6 +13,8 @@
 (function () {
   if (window.__tf_tracker_loaded) return;
   window.__tf_tracker_loaded = true;
+  window.__tf_version = "2";
+  if (window.console) console.log("[TF] tracker v2 carregando para pixel:", {{.PixelNameJSON}});
 
   // === Config injetada pelo backend ====================================
   var TF_CONFIG = {{.ConfigJSON}};
@@ -410,6 +412,13 @@
   // qualquer fetch async. Por isso bootstrap-amos o fbq stub aqui, fora do
   // .then() do Init request.
 
+  function tflog() {
+    if (!window.console || !window.__tf_debug) return;
+    var args = Array.prototype.slice.call(arguments);
+    args.unshift("[TF]");
+    console.log.apply(console, args);
+  }
+
   function buildAdvancedMatching(initData) {
     initData = initData || {};
     var ud = {};
@@ -433,7 +442,11 @@
   }
 
   function bootstrapFbq() {
-    if (!TF_META_INIT_PIXEL_ID) return;
+    if (!TF_META_INIT_PIXEL_ID) {
+      if (window.console) console.warn("[TF] meta_init_pixel_id vazio — fbq não inicializado. Verifique tracker_config.meta_init_pixel_id ou pixel_ids[0].");
+      return;
+    }
+    if (window.console) console.log("[TF] inicializando Meta Pixel:", TF_META_INIT_PIXEL_ID);
     !function (f, b, e, v, n, t, s) {
       if (f.fbq) return;
       n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
@@ -450,6 +463,7 @@
     // Isso é o que o Pixel Helper detecta.
     clientUserData = buildAdvancedMatching({});
     window.fbq("init", TF_META_INIT_PIXEL_ID, clientUserData);
+    if (window.console) console.log("[TF] fbq('init') chamado com:", clientUserData);
   }
 
   function refreshFbqAdvancedMatching(initData) {
