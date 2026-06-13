@@ -5,7 +5,7 @@
 # total com builders do EasyPanel/Coolify/Render que não suportam --target.
 
 # ===== Builder ===============================================================
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
 WORKDIR /src
 RUN apk add --no-cache git
 COPY go.mod go.sum* ./
