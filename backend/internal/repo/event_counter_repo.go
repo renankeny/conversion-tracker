@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -78,22 +79,22 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 	args := []any{}
 	idx := 1
 	if f.From != nil {
-		q += " AND bucket_at >= $" + itoa(idx)
+		q += " AND bucket_at >= $" + strconv.Itoa(idx)
 		args = append(args, f.From.UTC())
 		idx++
 	}
 	if f.To != nil {
-		q += " AND bucket_at < $" + itoa(idx)
+		q += " AND bucket_at < $" + strconv.Itoa(idx)
 		args = append(args, f.To.UTC())
 		idx++
 	}
 	if f.PixelName != "" {
-		q += " AND pixel_name = $" + itoa(idx)
+		q += " AND pixel_name = $" + strconv.Itoa(idx)
 		args = append(args, f.PixelName)
 		idx++
 	}
 	if f.EventName != "" {
-		q += " AND event_name = $" + itoa(idx)
+		q += " AND event_name = $" + strconv.Itoa(idx)
 		args = append(args, f.EventName)
 		idx++
 	}
@@ -144,22 +145,22 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 	args := []any{}
 	idx := 1
 	if f.From != nil {
-		q += " AND bucket_at >= $" + itoa(idx)
+		q += " AND bucket_at >= $" + strconv.Itoa(idx)
 		args = append(args, f.From.UTC())
 		idx++
 	}
 	if f.To != nil {
-		q += " AND bucket_at < $" + itoa(idx)
+		q += " AND bucket_at < $" + strconv.Itoa(idx)
 		args = append(args, f.To.UTC())
 		idx++
 	}
 	if f.PixelName != "" {
-		q += " AND pixel_name = $" + itoa(idx)
+		q += " AND pixel_name = $" + strconv.Itoa(idx)
 		args = append(args, f.PixelName)
 		idx++
 	}
 	if f.EventName != "" {
-		q += " AND event_name = $" + itoa(idx)
+		q += " AND event_name = $" + strconv.Itoa(idx)
 		args = append(args, f.EventName)
 		idx++
 	}
@@ -180,13 +181,4 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 		out = append(out, p)
 	}
 	return out, rows.Err()
-}
-
-// itoa pequeno helper para construir queries numeradas sem importar strconv.
-func itoa(i int) string {
-	if i < 10 {
-		return string(rune('0' + i))
-	}
-	// Suficiente até $99 (mais que precisamos).
-	return string(rune('0'+i/10)) + string(rune('0'+i%10))
 }
