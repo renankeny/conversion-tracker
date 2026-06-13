@@ -1,0 +1,13 @@
+.git
+.env
+.env.local
+.env.*.local
+*.log
+data/
+api
+worker
+cmd/api/api
+cmd/worker/worker
+coverage.out
+*.test
+*.prof

@@ -1,0 +1,48 @@
+/* Conversion Tracker — loader (auto-injects o tracker principal).
+ * Pixel: {{.PixelName}} | Generated at: {{.GeneratedAt}}
+ *
+ * Uso no site:
+ *   <script async src="https://api.SEU-DOMINIO.com/api/v1/loader.js?pixel=SLUG"></script>
+ * Ou:
+ *   <script async src="https://api.SEU-DOMINIO.com/api/v1/loader.js" data-pixel="SLUG"></script>
+ *
+ * Ele cria a fila global window.tf (estilo dataLayer.push do GTM) e injeta o
+ * tracker principal carregando-o do MESMO host onde o loader foi servido.
+ * Isso garante first-party (cookies/anti-adblock) quando o cliente aponta
+ * o subdomínio dele pro nosso servidor.
+ */
+(function (w, d) {
+  if (w.__tf_loaded) return;
+  w.__tf_loaded = true;
+
+  var pixel = "{{.PixelName}}";
+  var me = d.currentScript;
+  if (!me) {
+    var ss = d.getElementsByTagName("script");
+    me = ss[ss.length - 1];
+  }
+  if (me) {
+    try {
+      var u = new URL(me.src);
+      var qp = u.searchParams.get("pixel");
+      if (qp) pixel = qp;
+    } catch (e) {}
+    if (me.dataset && me.dataset.pixel) pixel = me.dataset.pixel;
+  }
+
+  if (!pixel) {
+    if (w.console) console.error("[TF] pixel param required");
+    return;
+  }
+
+  // Fila global. Calls feitas antes do tracker carregar ficam enfileiradas.
+  w.tf = w.tf || function () {
+    (w.tf.q = w.tf.q || []).push(arguments);
+  };
+
+  var origin = me ? new URL(me.src).origin : "";
+  var s = d.createElement("script");
+  s.async = 1;
+  s.src = origin + "/api/v1/tracker.js?pixel=" + encodeURIComponent(pixel);
+  (d.head || d.getElementsByTagName("head")[0]).appendChild(s);
+})(window, document);

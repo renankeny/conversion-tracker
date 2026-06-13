@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Timezone do sistema dentro do container (afeta logs, NOW() do shell).
+      TZ: America/Sao_Paulo
+      # Timezone que o Postgres usa pra sessões e exibição de TIMESTAMPTZ.
+      PGTZ: America/Sao_Paulo
+    # Reforça a timezone na instância Postgres de forma persistente — qualquer
+    # cliente que se conectar herda America/Sao_Paulo (a regra do projeto).
+    command: ["postgres", "-c", "timezone=America/Sao_Paulo"]
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    environment:
+      TZ: America/Sao_Paulo
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: api
+    env_file: .env
+    environment:
+      TZ: America/Sao_Paulo
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend/data:/app/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: worker
+    env_file: .env
+    environment:
+      TZ: America/Sao_Paulo
+    volumes:
+      - ./backend/data:/app/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

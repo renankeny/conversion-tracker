@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Conversion Tracker — página de teste</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1f2937; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  small { color: #6b7280; }
+  .grid { display: grid; gap: 16px; margin-top: 24px; }
+  .card { padding: 16px 20px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
+  .card h2 { font-size: 16px; margin: 0 0 8px; }
+  button { padding: 8px 16px; border: 1px solid #2563eb; background: #2563eb; color: #fff; border-radius: 6px; cursor: pointer; font-size: 14px; margin-right: 8px; margin-top: 8px; }
+  button.secondary { background: #fff; color: #2563eb; }
+  button:hover { opacity: 0.9; }
+  input { padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px; margin-right: 8px; }
+  pre { background: #0f172a; color: #d1d5db; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; }
+  a.checkout { display: inline-block; padding: 10px 20px; background: #16a34a; color: white; text-decoration: none; border-radius: 6px; margin-top: 8px; }
+  a.checkout::before { content: "💳 "; }
+</style>
+</head>
+<body>
+
+<h1>🧪 Conversion Tracker — teste local</h1>
+<small>Carrega o loader.js servido pelo backend e expõe controles pra testar eventos.</small>
+
+<div class="grid">
+
+  <div class="card">
+    <h2>1. Status do tracker</h2>
+    <p>Quando carregar, deve aparecer <code>__tf_tracker_loaded = true</code> e o cookie <code>__userData</code> com seu <code>userId</code>.</p>
+    <button onclick="showStatus()">Ver status</button>
+    <pre id="status">aguardando…</pre>
+  </div>
+
+  <div class="card">
+    <h2>2. Disparar evento manual</h2>
+    <p>Vai pelo <code>window.tf('send', ...)</code> que vira POST <code>/api/v1/events/send</code>.</p>
+    <button onclick="tf('send', 'Lead')">Lead</button>
+    <button onclick="tf('send', 'Contact')">Contact</button>
+    <button onclick="tf('send', 'CompleteRegistration')">CompleteRegistration</button>
+    <button onclick="tf('send', 'Purchase', { value: 99.9, currency: 'BRL' })">Purchase R$99,90</button>
+  </div>
+
+  <div class="card">
+    <h2>3. Atualizar PII do usuário</h2>
+    <p>Persiste no cookie <code>__userData</code> e dispara <code>UpdateUserData</code>.</p>
+    <input id="email" placeholder="email@exemplo.com" />
+    <input id="phone" placeholder="11999999999" />
+    <button onclick="updateUser()">Salvar</button>
+  </div>
+
+  <div class="card">
+    <h2>4. Botão de checkout (auto-tracked)</h2>
+    <p>O href contém <code>pay</code> (default em <code>product_checkout</code>). O tracker reescreve com UTM/userId/fbc/fbp/gclid e dispara <code>InitiateCheckout</code> no clique.</p>
+    <a class="checkout" href="https://example.com/pay?produto=teste">Comprar agora</a>
+  </div>
+
+  <div class="card">
+    <h2>5. Link WhatsApp (auto-tracked)</h2>
+    <p>O tracker adiciona "Protocolo: <code>userId</code>" no <code>?text=</code> e dispara <code>Lead</code> no clique.</p>
+    <a href="https://wa.me/5511999999999?text=Olá">Falar no WhatsApp</a>
+  </div>
+
+</div>
+
+<!-- ============================================================== -->
+<!-- Loader: cole isso no site real do cliente.                     -->
+<!-- ATENÇÃO: troque o pixel pra um slug que você cadastrou no admin.-->
+<!-- ============================================================== -->
+<script async src="http://localhost:8080/api/v1/loader.js?pixel=teste"></script>
+
+<script>
+  function showStatus() {
+    var pre = document.getElementById('status');
+    var ud = {};
+    try { ud = JSON.parse(decodeURIComponent(document.cookie.split(';').find(c => c.trim().startsWith('__userData='))?.split('=')[1] || '{}')); } catch(e) {}
+    pre.textContent = JSON.stringify({
+      tracker_loaded: !!window.__tf_tracker_loaded,
+      tf_function:    typeof window.tf,
+      cookie_userData: ud,
+      cookie_fbp: document.cookie.split('; ').find(c => c.startsWith('_fbp='))?.split('=')[1] || null,
+      cookie_fbc: document.cookie.split('; ').find(c => c.startsWith('_fbc='))?.split('=')[1] || null
+    }, null, 2);
+  }
+  function updateUser() {
+    var email = document.getElementById('email').value.trim();
+    var phone = document.getElementById('phone').value.trim();
+    if (!email && !phone) { alert('Preencha email ou phone'); return; }
+    window.tf('updateUser', { email: email || undefined, phone: phone || undefined });
+    setTimeout(showStatus, 200);
+  }
+  // Auto-mostra status 1s depois de carregar.
+  setTimeout(showStatus, 1000);
+</script>
+
+</body>
+</html>

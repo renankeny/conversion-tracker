@@ -1,0 +1,18 @@
+# =====================================================================
+# Crontab — Conversion Tracker
+# Instalar com:  crontab scripts/crontab.example
+# Conferir com:  crontab -l
+#
+# IMPORTANTE: a linha CRON_TZ define a timezone usada pelo cron desta
+# crontab. Tem que casar com a regra do projeto (America/Sao_Paulo).
+# Sem isso, o cron usa a TZ do servidor — o que pode quebrar a janela
+# desejada se o host estiver em UTC.
+# =====================================================================
+
+CRON_TZ=America/Sao_Paulo
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Atualiza GeoLite2-City da MaxMind toda segunda e sexta às 03:00 (BRT).
+# Caminho ABSOLUTO do projeto precisa ser ajustado pra realidade do servidor.
+0 3 * * 1,5 cd /opt/conversion-tracker && ./scripts/update-geoip.sh >> /var/log/conversion-tracker/update-geoip.log 2>&1

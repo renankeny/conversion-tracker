@@ -1,0 +1,494 @@
+/* Conversion Tracker — tracker principal.
+ * Pixel: {{.PixelName}} | Generated at: {{.GeneratedAt}}
+ *
+ * Esse script é gerado pelo backend a partir da configuração do pixel.
+ * A apiURL é detectada do próprio <script src>, garantindo first-party
+ * quando o cliente aponta o subdomínio dele pra esta API.
+ *
+ * API global injetada no window:
+ *   tf('send', 'Purchase', { value: 99.9, currency: 'BRL' })
+ *   tf('event', 'Lead')
+ *   tf('updateUser', { email: 'x@y.com' })
+ */
+(function () {
+  if (window.__tf_tracker_loaded) return;
+  window.__tf_tracker_loaded = true;
+
+  // === Config injetada pelo backend ====================================
+  var TF_CONFIG = {{.ConfigJSON}};
+  var TF_PIXEL_NAME = {{.PixelNameJSON}};
+  var TF_META_INIT_PIXEL_ID = {{.MetaInitPixelIDJSON}};
+  var TF_FALLBACK_API_URL = {{.APIURLJSON}};
+
+  // Detecta a apiURL a partir do próprio <script src> (first-party).
+  var TF_API_URL = (function () {
+    try {
+      var me = document.currentScript;
+      if (!me) {
+        var all = document.getElementsByTagName("script");
+        for (var i = all.length - 1; i >= 0; i--) {
+          var src = all[i].src || "";
+          if (src.indexOf("/api/v1/tracker.js") > -1) { me = all[i]; break; }
+        }
+      }
+      if (me && me.src) return new URL(me.src).origin + "/api/v1";
+    } catch (e) {}
+    return TF_FALLBACK_API_URL;
+  })();
+
+  // === Helpers genéricos ==============================================
+
+  function getCookie(name) {
+    var cookies = document.cookie.split(";");
+    for (var i = 0; i < cookies.length; i++) {
+      var p = cookies[i].trim().split("=");
+      if (p[0] === name) return p[1];
+    }
+    return null;
+  }
+
+  function setCookie(name, value, days) {
+    var d = new Date();
+    if (days) d.setDate(d.getDate() + days);
+    else d.setFullYear(d.getFullYear() + 100);
+    document.cookie = name + "=" + value + "; expires=" + d.toUTCString() + "; path=/";
+  }
+
+  function generateCustomId() {
+    var c = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    var id = "";
+    for (var i = 0; i < 10; i++) id += c.charAt(Math.floor(Math.random() * c.length));
+    return id;
+  }
+
+  function getUserDataCookie() {
+    try { return JSON.parse(getCookie("__userData") || "{}"); }
+    catch (e) { return {}; }
+  }
+
+  function saveUserDataCookie(obj) {
+    setCookie("__userData", JSON.stringify(obj));
+  }
+
+  function getOrSaveGclid() {
+    var u = new URLSearchParams(window.location.search);
+    var g = u.get("gclid");
+    if (g) {
+      setCookie("_gclid", g, 90);
+      return g;
+    }
+    return getCookie("_gclid");
+  }
+
+  // === User identity ====================================================
+
+  var userData = getUserDataCookie();
+  var userId = userData.userId;
+  if (!userId) {
+    userId = generateCustomId();
+    userData.userId = userId;
+    saveUserDataCookie(userData);
+  }
+  if (!userData.id_wpp) {
+    userData.id_wpp = generateCustomId();
+    saveUserDataCookie(userData);
+  }
+  var idWpp = userData.id_wpp;
+
+  // Snapshot do que vai pra fbq init e pra payloads.
+  var clientUserData = {};
+
+  // Dedup de eventos que devem disparar UMA vez por sessão.
+  var dedupedEvents = {
+    Lead: true,
+    InitiateCheckout: true,
+    Scroll_25: true, Scroll_50: true, Scroll_75: true, Scroll_90: true,
+    Timer_1min: true,
+    ViewVideo_25: true, ViewVideo_50: true, ViewVideo_75: true, ViewVideo_90: true,
+    PlayVideo: true
+  };
+  var sentOnce = {};
+
+  // Eventos custom (vão como trackCustom no fbq).
+  var customEvents = {
+    Scroll_25: true, Scroll_50: true, Scroll_75: true, Scroll_90: true,
+    Timer_1min: true, PlayVideo: true,
+    ViewVideo_25: true, ViewVideo_50: true, ViewVideo_75: true, ViewVideo_90: true
+  };
+
+  // Eventos com value/currency relevante.
+  var valueEvents = { Lead: true, InitiateCheckout: true, Purchase: true };
+
+  // === sendEvent ========================================================
+
+  function sendEvent(eventType, data) {
+    data = data || {};
+    if (dedupedEvents[eventType]) {
+      if (sentOnce[eventType]) return Promise.resolve();
+      sentOnce[eventType] = true;
+    }
+
+    var eventId = generateCustomId();
+
+    // Form scraping antes de eventos especiais.
+    if (TF_CONFIG.auto_form_scraping && (eventType === "Lead" || eventType === "InitiateCheckout" || eventType === "Purchase")) {
+      scrapeFormsToCookie();
+    }
+
+    // fbq dispatch (client-side dedup com server-side via eventID).
+    var fbqCustomData = {
+      content_name: TF_PIXEL_NAME,
+      content_type: "product"
+    };
+    if (valueEvents[eventType] && typeof data.value === "number" && data.value > 0) {
+      fbqCustomData.value = data.value;
+      fbqCustomData.currency = data.currency || TF_CONFIG.product_currency || "BRL";
+    }
+    var fbqUserData = { eventID: eventId };
+    for (var k in clientUserData) if (clientUserData.hasOwnProperty(k)) fbqUserData[k] = clientUserData[k];
+
+    if (window.fbq && eventType !== "Init" && eventType !== "UpdateUserData") {
+      if (customEvents[eventType]) {
+        window.fbq("trackCustom", eventType, fbqCustomData, fbqUserData);
+      } else {
+        window.fbq("track", eventType, fbqCustomData, fbqUserData);
+      }
+    }
+
+    // Server payload.
+    var URLnow = window.location.href;
+    var utmParams = {};
+    if (eventType === "PageView") {
+      var qp = new URLSearchParams(window.location.search);
+      utmParams = {
+        utm_source: qp.get("utm_source") || null,
+        utm_medium: qp.get("utm_medium") || null,
+        utm_campaign: qp.get("utm_campaign") || null,
+        utm_content: qp.get("utm_content") || null,
+        utm_term: qp.get("utm_term") || null
+      };
+    }
+    var freshCookie = getUserDataCookie();
+    var gclid = getOrSaveGclid();
+
+    var payload = {
+      eventType: eventType,
+      userId: userId,
+      id_wpp: freshCookie.id_wpp || idWpp || null,
+      pixelName: TF_PIXEL_NAME,
+      contentId: "",
+      eventId: eventId,
+      URL: URLnow,
+      price: typeof data.value === "number" ? data.value : null,
+      currency: data.currency || TF_CONFIG.product_currency || "BRL",
+      fbc: data.fbc || clientUserData.fbc || getCookie("_fbc") || null,
+      fbp: data.fbp || clientUserData.fbp || getCookie("_fbp") || null,
+      gclid: gclid || null,
+      first_name: data.first_name || freshCookie.first_name || null,
+      last_name: data.last_name || freshCookie.last_name || null,
+      email: data.email || freshCookie.email || null,
+      phone: data.phone || freshCookie.phone || null
+    };
+    for (var k2 in utmParams) if (utmParams.hasOwnProperty(k2)) payload[k2] = utmParams[k2];
+
+    return fetch(TF_API_URL + "/events/send", {
+      method: "POST",
+      credentials: "omit",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      if (eventType === "Init") return r.json();
+      return null;
+    }).catch(function (e) {
+      if (window.console) console.error("[TF] erro ao rastrear " + eventType + ":", e);
+      return null;
+    });
+  }
+
+  // === Form scraping ===================================================
+
+  function scrapeFormsToCookie() {
+    var maps = TF_CONFIG.form_mappings || {};
+    var emailKeys = maps.email || [];
+    var phoneKeys = maps.phone || [];
+    var firstKeys = maps.first_name || [];
+    var lastKeys = maps.last_name || [];
+
+    function any(arr, attr) {
+      for (var i = 0; i < arr.length; i++) if (attr.indexOf(arr[i]) > -1) return true;
+      return false;
+    }
+
+    var inputs = document.querySelectorAll("input, textarea");
+    var first, last, email, phone;
+    for (var i = 0; i < inputs.length; i++) {
+      var inp = inputs[i];
+      var nameAttr = (inp.name || "").toLowerCase();
+      var value = (inp.value || "").trim();
+      if (!value || !nameAttr) continue;
+
+      if (!email && any(emailKeys, nameAttr)) email = value.toLowerCase();
+      else if (!phone && any(phoneKeys, nameAttr)) phone = value.replace(/\s|-/g, "");
+      else if (!first && any(firstKeys, nameAttr)) {
+        var parts = value.toLowerCase().split(" ");
+        first = parts[0];
+        if (!last && parts.length > 1) last = parts[parts.length - 1];
+      } else if (!last && any(lastKeys, nameAttr)) last = value.toLowerCase();
+    }
+
+    var current = getUserDataCookie();
+    if (first) current.first_name = first;
+    if (last) current.last_name = last;
+    if (email) current.email = email;
+    if (phone) current.phone = phone;
+    saveUserDataCookie(current);
+  }
+
+  // === UTM origin tagging ==============================================
+
+  function setUTMs() {
+    var origin = TF_CONFIG.utm_origin_param || "utm_source";
+    try {
+      var url = new URL(window.location.href);
+      var current = url.searchParams.get(origin);
+      var marker = "|userId" + userId + "|";
+      if (!current) url.searchParams.set(origin, marker);
+      else if (current.indexOf(marker) === -1) url.searchParams.set(origin, current + marker);
+      window.history.replaceState({}, "", url);
+    } catch (e) {}
+  }
+
+  // === Checkout buttons ================================================
+
+  function setButtonsURLs() {
+    var checkoutKey = TF_CONFIG.product_checkout || "";
+    if (!checkoutKey) return;
+    var origin = TF_CONFIG.utm_origin_param || "utm_source";
+    var prices = TF_CONFIG.product_value || [];
+    var currency = TF_CONFIG.product_currency || "BRL";
+
+    function rewriteAndAttach() {
+      var allLinks = document.querySelectorAll("a[href]");
+      var buttons = [];
+      for (var i = 0; i < allLinks.length; i++) {
+        var href = (allLinks[i].getAttribute("href") || "").toLowerCase();
+        if (!href || href.indexOf("#") === 0 || href.indexOf("javascript:") === 0) continue;
+        if (href.indexOf(checkoutKey) > -1) buttons.push(allLinks[i]);
+      }
+
+      for (var b = 0; b < buttons.length; b++) {
+        var link = buttons[b];
+        var idx = b;
+        try {
+          var url = new URL(link.href);
+          var qp = new URLSearchParams(window.location.search);
+          var params = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+          for (var p = 0; p < params.length; p++) {
+            var k = params[p], v = qp.get(k);
+            if (v && k !== "utm_source") url.searchParams.set(k, v);
+          }
+
+          var marker = "|userId" + userId + "|";
+          if (url.searchParams.has(origin)) {
+            if (url.searchParams.get(origin) !== marker) url.searchParams.set(origin, marker);
+          } else url.searchParams.append(origin, marker);
+
+          var fbc = getCookie("_fbc"), fbp = getCookie("_fbp"), sck = getCookie("_sck"), gclid = getOrSaveGclid();
+          if (fbc) url.searchParams.set("fbc", fbc);
+          if (fbp) url.searchParams.set("fbp", fbp);
+          if (sck) url.searchParams.set("sck", sck);
+          if (gclid) url.searchParams.set("gclid", gclid);
+          link.href = url.toString();
+        } catch (e) {}
+
+        if (!link.dataset.tfPriceAttached && prices[idx] !== undefined) {
+          (function (l, value) {
+            l.addEventListener("click", function () {
+              sendEvent("InitiateCheckout", { value: value, currency: currency });
+            });
+            l.dataset.tfPriceAttached = "1";
+          })(link, prices[idx]);
+        }
+      }
+    }
+
+    rewriteAndAttach();
+    var obs = new MutationObserver(rewriteAndAttach);
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // === WhatsApp protocol ===============================================
+
+  function setupWhatsAppProtocol() {
+    function intercept() {
+      var links = document.querySelectorAll('a[href*="wa.me"], a[href*="api.whatsapp"]');
+      for (var i = 0; i < links.length; i++) {
+        var link = links[i];
+        if (link.dataset.tfWaProtocol) continue;
+        try {
+          var url = new URL(link.href);
+          var msg = "Protocolo: " + userId;
+          if (url.searchParams.has("text")) {
+            url.searchParams.set("text", url.searchParams.get("text") + "\n" + msg);
+          } else url.searchParams.set("text", msg);
+          link.href = url.toString();
+          link.dataset.tfWaProtocol = "1";
+          link.addEventListener("click", function () { sendEvent("Lead"); });
+        } catch (e) {}
+      }
+    }
+    intercept();
+    var obs = new MutationObserver(intercept);
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // === Scroll / timer / video tracking =================================
+
+  function setupScrollTracking() {
+    function check() {
+      var pos = window.scrollY + window.innerHeight;
+      var pct = (pos / document.documentElement.scrollHeight) * 100;
+      [25, 50, 75, 90].forEach(function (p) {
+        if (pct >= p) sendEvent("Scroll_" + p);
+      });
+    }
+    window.addEventListener("scroll", check, { passive: true });
+  }
+
+  function setupTimerTracking() {
+    setTimeout(function () { sendEvent("Timer_1min"); }, 60000);
+  }
+
+  function setupVideoTracking() {
+    var observed = [];
+    function attach() {
+      var vids = document.querySelectorAll("video");
+      vids.forEach(function (v) {
+        if (observed.indexOf(v) > -1) return;
+        observed.push(v);
+        var fired = {};
+        v.addEventListener("play", function () { sendEvent("PlayVideo"); });
+        v.addEventListener("timeupdate", function () {
+          if (!v.duration) return;
+          var pct = (v.currentTime / v.duration) * 100;
+          [25, 50, 75, 90].forEach(function (p) {
+            if (!fired[p] && pct >= p) {
+              fired[p] = true;
+              sendEvent("ViewVideo_" + p);
+            }
+          });
+        });
+      });
+    }
+    attach();
+    var obs = new MutationObserver(attach);
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // === Page rules ======================================================
+
+  function applyPageRules() {
+    var rules = TF_CONFIG.page_rules || [];
+    var url = window.location.href.toLowerCase();
+    var host = window.location.hostname.toLowerCase();
+    rules.forEach(function (rule) {
+      if (!rule.page || !rule.event) return;
+      var p = (rule.page || "").toLowerCase();
+      if (url.indexOf(p) > -1 || host.indexOf(p) > -1) {
+        var data = {};
+        if (typeof rule.value === "number") {
+          data.value = rule.value;
+          data.currency = rule.currency || TF_CONFIG.product_currency || "BRL";
+        }
+        sendEvent(rule.event, data);
+      }
+    });
+  }
+
+  // === fbq init helper =================================================
+
+  function initFbq(initData) {
+    initData = initData || {};
+    if (!TF_META_INIT_PIXEL_ID) return; // sem init pixel id, cliente faz init fora
+    var ud = {};
+    if (initData.city) ud.ct = initData.city;
+    if (initData.state) ud.st = initData.state;
+    if (initData.postal_code) ud.zp = initData.postal_code;
+    if (initData.country) ud.country = initData.country;
+    if (initData.client_ip_address) ud.client_ip_address = initData.client_ip_address;
+    if (initData.client_user_agent) ud.client_user_agent = initData.client_user_agent;
+    var fbc = initData.fbc || getCookie("_fbc");
+    var fbp = initData.fbp || getCookie("_fbp");
+    if (fbc) ud.fbc = fbc;
+    if (fbp) ud.fbp = fbp;
+    if (userId) ud.external_id = userId;
+    var fresh = getUserDataCookie();
+    if (fresh.first_name) ud.fn = fresh.first_name;
+    if (fresh.last_name) ud.ln = fresh.last_name;
+    if (fresh.email) ud.em = fresh.email;
+    if (fresh.phone) ud.ph = fresh.phone;
+    clientUserData = ud;
+
+    !function (f, b, e, v, n, t, s) {
+      if (f.fbq) return; n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
+      if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = "2.0";
+      n.queue = []; t = b.createElement(e); t.async = !0;
+      t.src = v; s = b.getElementsByTagName(e)[0]; s.parentNode.insertBefore(t, s);
+    }(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+    window.fbq("init", TF_META_INIT_PIXEL_ID, ud);
+  }
+
+  function waitForCookiesAndPageView() {
+    var hasFbclid = new URLSearchParams(window.location.search).has("fbclid");
+    if (window.fbq) window.fbq("trackCustom", "createCookies");
+    var checkInterval = 100, maxWait = 5000, waited = 0;
+    var iv = setInterval(function () {
+      var fbc = getCookie("_fbc"), fbp = getCookie("_fbp");
+      var ok = hasFbclid ? (fbc && fbp) : !!fbp;
+      if (ok || waited >= maxWait) {
+        clearInterval(iv);
+        if (fbc) clientUserData.fbc = fbc;
+        if (fbp) clientUserData.fbp = fbp;
+        sendEvent("PageView").then(applyPageRules);
+      }
+      waited += checkInterval;
+    }, checkInterval);
+  }
+
+  // === Boot ============================================================
+
+  sendEvent("Init").then(function (initData) {
+    initFbq(initData);
+
+    if (TF_CONFIG.auto_page_view) waitForCookiesAndPageView();
+    if (TF_CONFIG.auto_checkout_buttons) {
+      setUTMs();
+      setButtonsURLs();
+    }
+    if (TF_CONFIG.whatsapp_protocol) setupWhatsAppProtocol();
+    if (TF_CONFIG.send_scrolls) setupScrollTracking();
+    if (TF_CONFIG.send_timer_1min) setupTimerTracking();
+    if (TF_CONFIG.send_view_video) setupVideoTracking();
+  });
+
+  // === API global ======================================================
+
+  var pending = (window.tf && window.tf.q) || [];
+  window.tf = function () {
+    var args = Array.prototype.slice.call(arguments);
+    var cmd = args.shift();
+    if (cmd === "send" || cmd === "event") {
+      sendEvent(args[0], args[1] || {});
+    } else if (cmd === "updateUser") {
+      // grava no cookie e dispara UpdateUserData
+      var patch = args[0] || {};
+      var current = getUserDataCookie();
+      ["first_name", "last_name", "email", "phone"].forEach(function (k) {
+        if (patch[k]) current[k] = patch[k];
+      });
+      saveUserDataCookie(current);
+      sendEvent("UpdateUserData", patch);
+    }
+  };
+  for (var i = 0; i < pending.length; i++) window.tf.apply(null, pending[i]);
+})();
