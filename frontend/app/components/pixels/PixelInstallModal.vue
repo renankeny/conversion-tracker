@@ -140,21 +140,39 @@
       <section class="check-section">
         <h4 class="section-title">4. Eventos automáticos do tracker</h4>
         <p class="section-hint">
-          Configure quais eventos disparar automaticamente na aba Tracker Config (em breve).
+          Comportamento que o tracker dispara automaticamente sem código adicional.
+          Edite o pixel na aba <strong>Tracker Config</strong> para ajustar.
         </p>
         <div class="events-grid">
-          <div v-for="event in autoEvents" :key="event.key" class="event-item" :class="{ enabled: event.enabled }">
+          <div
+            v-for="event in autoEvents"
+            :key="event.key"
+            class="event-item"
+            :class="{ enabled: event.enabled }"
+          >
             <div class="event-icon">
-              <svg v-if="event.enabled" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <svg
+                v-if="event.enabled"
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
                 <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
               </svg>
-              <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <svg
+                v-else
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
                 <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
               </svg>
             </div>
             <div>
               <p class="event-name">{{ event.label }}</p>
-              <p class="event-key">{{ event.key }}</p>
+              <p class="event-key">{{ event.tag }}</p>
             </div>
           </div>
         </div>
@@ -233,22 +251,53 @@ const manualSnippet = computed(() => {
   ].join('\n')
 })
 
-const eventLabels: Record<string, string> = {
-  page_view: 'PageView',
-  view_content: 'ViewContent',
-  add_to_cart: 'AddToCart',
-  initiate_checkout: 'InitiateCheckout',
-  purchase: 'Purchase',
-  lead: 'Lead',
-}
-
 const autoEvents = computed(() => {
-  const events = props.pixel?.tracker_config?.events || {}
-  return Object.entries(eventLabels).map(([key, label]) => ({
-    key,
-    label,
-    enabled: !!events[key],
-  }))
+  const cfg = props.pixel?.tracker_config
+  if (!cfg) return []
+  return [
+    {
+      key: 'auto_page_view',
+      label: 'PageView automático',
+      tag: 'PageView',
+      enabled: !!cfg.auto_page_view,
+    },
+    {
+      key: 'auto_checkout_buttons',
+      label: 'Botões de checkout',
+      tag: 'InitiateCheckout',
+      enabled: !!cfg.auto_checkout_buttons,
+    },
+    {
+      key: 'auto_form_scraping',
+      label: 'Captura de formulário',
+      tag: 'PII',
+      enabled: !!cfg.auto_form_scraping,
+    },
+    {
+      key: 'whatsapp_protocol',
+      label: 'Protocolo WhatsApp',
+      tag: 'Lead',
+      enabled: !!cfg.whatsapp_protocol,
+    },
+    {
+      key: 'send_scrolls',
+      label: 'Scroll tracking',
+      tag: 'Scroll_*',
+      enabled: !!cfg.send_scrolls,
+    },
+    {
+      key: 'send_timer_1min',
+      label: 'Timer 1 minuto',
+      tag: 'Timer_1min',
+      enabled: !!cfg.send_timer_1min,
+    },
+    {
+      key: 'send_view_video',
+      label: 'View Video',
+      tag: 'ViewVideo_*',
+      enabled: !!cfg.send_view_video,
+    },
+  ]
 })
 
 // DNS verification

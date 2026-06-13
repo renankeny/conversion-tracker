@@ -1,47 +1,43 @@
+export interface PageRule {
+  page: string
+  event: string
+  value?: number
+  currency?: string
+}
+
+export interface FormMappings {
+  email: string[]
+  phone: string[]
+  first_name: string[]
+  last_name: string[]
+}
+
 export interface TrackerConfig {
-  enabled?: boolean
-  auto_form_scraping?: boolean
-  whatsapp_protocol?: boolean
+  // Produto / checkout
+  product_value: number[]
+  product_currency: string
+  product_checkout: string
 
-  events?: {
-    page_view?: boolean
-    view_content?: boolean
-    add_to_cart?: boolean
-    initiate_checkout?: boolean
-    purchase?: boolean
-    lead?: boolean
-    [key: string]: boolean | undefined
-  }
+  // Auto-triggers
+  auto_page_view: boolean
+  auto_checkout_buttons: boolean
+  auto_form_scraping: boolean
+  whatsapp_protocol: boolean
+  send_scrolls: boolean
+  send_timer_1min: boolean
+  send_view_video: boolean
 
-  scroll_tracking?: {
-    enabled?: boolean
-    thresholds?: number[]
-  }
+  // Page rules
+  page_rules: PageRule[]
 
-  timer_tracking?: {
-    enabled?: boolean
-    intervals?: number[]
-  }
+  // Form mappings
+  form_mappings: FormMappings
 
-  video_tracking?: {
-    enabled?: boolean
-  }
+  // Meta
+  meta_init_pixel_id: string
 
-  page_rules?: Array<{
-    path?: string
-    event?: string
-    enabled?: boolean
-  }>
-
-  product_values?: {
-    value?: number
-    currency?: string
-  }
-
-  meta_init_pixel_id?: string
-  utm_origin_param?: string
-
-  [key: string]: any
+  // UTM
+  utm_origin_param: string
 }
 
 export interface Pixel {
@@ -82,7 +78,6 @@ export interface PixelsListResponse {
 export interface PixelDefaults {
   tracker_config: TrackerConfig
 }
-
 
 export interface DNSVerifyResponse {
   status: 'ok' | 'wrong_target' | 'not_found' | 'no_host'

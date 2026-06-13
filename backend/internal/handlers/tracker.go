@@ -101,7 +101,16 @@ func (h *TrackerHandler) Tracker(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pixelNameJSON, _ := json.Marshal(pixel.Name)
-	metaInitIDJSON, _ := json.Marshal(pixel.TrackerConfig.MetaInitPixelID)
+
+	// Usa MetaInitPixelID explícito; se não definido, faz fallback para o primeiro pixel_id.
+	// Assim o cliente não precisa preencher esse campo separadamente — o tracker
+	// inicializa o browser pixel automaticamente para o pixel principal.
+	metaInitID := pixel.TrackerConfig.MetaInitPixelID
+	if metaInitID == "" && len(pixel.PixelIDs) > 0 {
+		metaInitID = pixel.PixelIDs[0]
+	}
+	metaInitIDJSON, _ := json.Marshal(metaInitID)
+
 	apiURLJSON, _ := json.Marshal(h.fallbackAPIURL)
 
 	var buf bytes.Buffer
