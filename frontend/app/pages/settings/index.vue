@@ -21,6 +21,56 @@
       </button>
     </div>
 
+    <!-- Aba: Contas (somente owners) -->
+    <section v-if="activeTab === 'accounts'" class="accounts-section">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Contas</h3>
+            <p class="card-hint">
+              Cada conta isola pixels, eventos e usuários rastreados. Members só
+              enxergam dados da própria conta. Owners enxergam tudo.
+            </p>
+          </div>
+          <BaseButton variant="primary" size="sm" @click="newAccountOpen = true">
+            + Nova conta
+          </BaseButton>
+        </div>
+
+        <div v-if="loadingAccounts" class="muted">Carregando...</div>
+
+        <div v-else-if="!accounts.length" class="muted">Nenhuma conta cadastrada.</div>
+
+        <div v-else class="account-list">
+          <div v-for="a in accounts" :key="a.id" class="account-row">
+            <div class="account-info">
+              <div class="account-name">
+                {{ a.name }}
+                <BaseBadge v-if="!a.enabled" variant="warning">desabilitada</BaseBadge>
+              </div>
+              <span class="account-meta">
+                ID #{{ a.id }} · slug <code>{{ a.slug }}</code> ·
+                criada {{ formatDate(a.created_at) }}
+              </span>
+            </div>
+            <div class="account-actions">
+              <BaseButton variant="ghost" size="sm" @click="editAccount(a)">
+                Editar
+              </BaseButton>
+              <BaseButton
+                v-if="a.id !== 1"
+                variant="ghost"
+                size="sm"
+                @click="askDeleteAccount(a)"
+              >
+                <span class="text-danger">Remover</span>
+              </BaseButton>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Aba: Conta -->
     <section v-if="activeTab === 'account'" class="card">
       <h3 class="card-title">Trocar minha senha</h3>
@@ -217,11 +267,54 @@
           label="Senha (mínimo 6 caracteres)"
           required
         />
+        <div v-if="isOwner" class="form-field">
+          <label class="form-label">Tipo de acesso</label>
+          <select v-model="newAdminForm.role" class="form-select">
+            <option value="owner">Owner — acesso total a todas as contas</option>
+            <option value="member">Member — restrito a uma conta</option>
+          </select>
+        </div>
+        <div v-if="isOwner && newAdminForm.role === 'member'" class="form-field">
+          <label class="form-label">Conta vinculada</label>
+          <select v-model="newAdminForm.account_id" class="form-select">
+            <option :value="null" disabled>Selecione...</option>
+            <option v-for="a in accounts" :key="a.id" :value="a.id">
+              {{ a.name }} (#{{ a.id }})
+            </option>
+          </select>
+        </div>
       </div>
       <template #footer>
         <BaseButton variant="ghost" @click="newAdminOpen = false">Cancelar</BaseButton>
         <BaseButton variant="primary" :loading="creatingAdmin" @click="onCreateAdmin">
           Criar
+        </BaseButton>
+      </template>
+    </BaseModal>
+
+    <BaseModal v-model="newAccountOpen" :title="editingAccount ? 'Editar conta' : 'Nova conta'" size="sm">
+      <div class="form">
+        <BaseInput
+          v-model="accountForm.name"
+          label="Nome"
+          placeholder="Conta do Cliente"
+          required
+        />
+        <BaseInput
+          v-model="accountForm.slug"
+          label="Slug"
+          placeholder="cliente-foo"
+          hint="Apenas a-z, 0-9 e -. Auto-gerado a partir do nome se vazio."
+        />
+        <label class="checkbox-row">
+          <input v-model="accountForm.enabled" type="checkbox" />
+          <span>Conta habilitada</span>
+        </label>
+      </div>
+      <template #footer>
+        <BaseButton variant="ghost" @click="closeAccountModal">Cancelar</BaseButton>
+        <BaseButton variant="primary" :loading="savingAccount" @click="onSaveAccount">
+          {{ editingAccount ? 'Salvar' : 'Criar' }}
         </BaseButton>
       </template>
     </BaseModal>
@@ -247,11 +340,24 @@
       :loading="pruning"
       @confirm="onPrune"
     />
+
+    <ConfirmModal
+      v-model="deleteAccountOpen"
+      title="Remover conta?"
+      :message="deletingAccount
+        ? `A conta '${deletingAccount.name}' (#${deletingAccount.id}) será removida. Não é possível remover se houver pixels/admins vinculados.`
+        : ''"
+      confirm-label="Remover"
+      variant="danger"
+      :loading="deletingAccountNow"
+      @confirm="onConfirmDeleteAccount"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import type {
+  Account,
   AdminUser,
   GeoIPStatus,
   MaintenanceStatusResponse,
@@ -266,17 +372,30 @@ definePageMeta({
 useHead({ title: 'Configurações - TrackFind' })
 
 const settings = useSettings()
+const accountsAPI = useAccounts()
 const { user } = useAuth()
 const toast = useToast()
 
-const tabs = [
-  { value: 'account', label: 'Conta' },
-  { value: 'admins', label: 'Administradores' },
-  { value: 'geoip', label: 'GeoIP' },
-  { value: 'retention', label: 'Retenção' },
-] as const
+const isOwner = computed(() => {
+  // Compatível com tokens antigos (sem role) que são tratados como owner.
+  const role = user.value?.role
+  return !role || role === 'owner'
+})
 
-type TabValue = (typeof tabs)[number]['value']
+const tabs = computed(() => {
+  const base = [
+    { value: 'account', label: 'Conta' },
+    { value: 'admins', label: 'Administradores' },
+    { value: 'geoip', label: 'GeoIP' },
+    { value: 'retention', label: 'Retenção' },
+  ] as const
+  if (isOwner.value) {
+    return [...base, { value: 'accounts' as const, label: 'Contas' }]
+  }
+  return base
+})
+
+type TabValue = 'account' | 'admins' | 'geoip' | 'retention' | 'accounts'
 
 const activeTab = ref<TabValue>('account')
 
@@ -320,7 +439,12 @@ const onChangePassword = async () => {
 const admins = ref<AdminUser[]>([])
 const loadingAdmins = ref(false)
 const newAdminOpen = ref(false)
-const newAdminForm = reactive({ email: '', password: '' })
+const newAdminForm = reactive({
+  email: '',
+  password: '',
+  role: 'owner' as 'owner' | 'member',
+  account_id: null as number | null,
+})
 const creatingAdmin = ref(false)
 
 const deleteAdminOpen = ref(false)
@@ -340,17 +464,27 @@ const loadAdmins = async () => {
 }
 
 const onCreateAdmin = async () => {
+  if (newAdminForm.role === 'member' && !newAdminForm.account_id) {
+    toast.error('Erro', 'Members precisam de uma conta vinculada')
+    return
+  }
   creatingAdmin.value = true
   try {
     const created = await settings.createAdmin({
       email: newAdminForm.email.trim().toLowerCase(),
       password: newAdminForm.password,
+      role: isOwner.value ? newAdminForm.role : undefined,
+      account_id: isOwner.value && newAdminForm.role === 'member'
+        ? newAdminForm.account_id
+        : null,
     })
     admins.value = [...admins.value, created]
     toast.success('Admin criado', `${created.email} já pode logar`)
     newAdminOpen.value = false
     newAdminForm.email = ''
     newAdminForm.password = ''
+    newAdminForm.role = 'owner'
+    newAdminForm.account_id = null
   } catch (error: any) {
     toast.error('Erro', error.message || 'Falha ao criar admin')
   } finally {
@@ -376,6 +510,104 @@ const onConfirmDeleteAdmin = async () => {
     toast.error('Erro', error.message || 'Falha ao remover')
   } finally {
     deletingNow.value = false
+  }
+}
+
+// === Accounts (multi-tenant; só owners) ===
+const accounts = ref<Account[]>([])
+const loadingAccounts = ref(false)
+const newAccountOpen = ref(false)
+const editingAccount = ref<Account | null>(null)
+const accountForm = reactive({
+  name: '',
+  slug: '',
+  enabled: true,
+})
+const savingAccount = ref(false)
+const deleteAccountOpen = ref(false)
+const deletingAccount = ref<Account | null>(null)
+const deletingAccountNow = ref(false)
+
+const loadAccounts = async () => {
+  loadingAccounts.value = true
+  try {
+    const res = await accountsAPI.list()
+    accounts.value = res.data || []
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao listar contas')
+  } finally {
+    loadingAccounts.value = false
+  }
+}
+
+const editAccount = (a: Account) => {
+  editingAccount.value = a
+  accountForm.name = a.name
+  accountForm.slug = a.slug
+  accountForm.enabled = a.enabled
+  newAccountOpen.value = true
+}
+
+const closeAccountModal = () => {
+  newAccountOpen.value = false
+  editingAccount.value = null
+  accountForm.name = ''
+  accountForm.slug = ''
+  accountForm.enabled = true
+}
+
+const onSaveAccount = async () => {
+  if (!accountForm.name.trim()) {
+    toast.error('Erro', 'Nome é obrigatório')
+    return
+  }
+  savingAccount.value = true
+  try {
+    if (editingAccount.value) {
+      const updated = await accountsAPI.update(editingAccount.value.id, {
+        name: accountForm.name,
+        slug: accountForm.slug || undefined,
+        enabled: accountForm.enabled,
+      })
+      accounts.value = accounts.value.map((a) =>
+        a.id === updated.id ? updated : a
+      )
+      toast.success('Conta atualizada')
+    } else {
+      const created = await accountsAPI.create({
+        name: accountForm.name,
+        slug: accountForm.slug || undefined,
+        enabled: accountForm.enabled,
+      })
+      accounts.value = [...accounts.value, created]
+      toast.success('Conta criada', `Slug: ${created.slug}`)
+    }
+    closeAccountModal()
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao salvar conta')
+  } finally {
+    savingAccount.value = false
+  }
+}
+
+const askDeleteAccount = (a: Account) => {
+  deletingAccount.value = a
+  deleteAccountOpen.value = true
+}
+
+const onConfirmDeleteAccount = async () => {
+  if (!deletingAccount.value) return
+  deletingAccountNow.value = true
+  try {
+    await accountsAPI.remove(deletingAccount.value.id)
+    accounts.value = accounts.value.filter((a) => a.id !== deletingAccount.value!.id)
+    toast.success('Conta removida')
+    deleteAccountOpen.value = false
+    deletingAccount.value = null
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao remover conta (talvez ainda tenha pixels/admins vinculados)')
+  } finally {
+    deletingAccountNow.value = false
   }
 }
 
@@ -486,6 +718,13 @@ watch(activeTab, (tab) => {
   if (tab === 'admins') loadAdmins()
   if (tab === 'geoip') loadGeoIP()
   if (tab === 'retention') loadMaintenance()
+  if (tab === 'accounts') loadAccounts()
+})
+
+// Carrega lista de contas em background quando o modal de novo admin abre
+// (pra alimentar o <select> de account_id pra members).
+watch(newAdminOpen, (open) => {
+  if (open && isOwner.value && !accounts.value.length) loadAccounts()
 })
 </script>
 
@@ -749,5 +988,100 @@ watch(activeTab, (tab) => {
   background: var(--surface-soft);
   padding: 0.125rem 0.5rem;
   border-radius: 4px;
+}
+
+/* === Accounts ============================================================= */
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--surface-soft-2);
+}
+
+.account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.account-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.account-meta {
+  font-size: 0.75rem;
+  color: var(--text-3);
+}
+
+.account-meta code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--surface-soft);
+  padding: 0.0625rem 0.375rem;
+  border-radius: 4px;
+}
+
+.account-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* === Form fields extras (select / checkbox) =============================== */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.form-select {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: var(--surface-deep);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-1);
+  font-size: 0.9375rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.form-select:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.checkbox-row input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--brand);
+  cursor: pointer;
 }
 </style>
