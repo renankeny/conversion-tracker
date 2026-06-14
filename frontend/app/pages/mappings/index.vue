@@ -4,8 +4,9 @@
       <div>
         <h1 class="page-title">URL Mappings</h1>
         <p class="page-subtitle">
-          Mapeie URLs externas (campanhas, encurtadores) para URLs canônicas.
-          O backend reescreve antes de enviar pra Meta CAPI, padronizando atribuição.
+          Reescrita de URLs antes do envio pra Meta CAPI. Use para anunciar uma página black
+          (vendas) e mostrar ao Facebook uma página white (institucional/segura), protegendo
+          o pixel contra reprovação e limitando entrega.
         </p>
       </div>
       <BaseButton variant="primary" @click="openCreateModal">
@@ -57,23 +58,82 @@
       size="md"
     >
       <div class="form">
+        <div class="info-box">
+          <div class="info-box-title">Como funciona</div>
+          <p class="info-box-text">
+            Toda vez que um evento (PageView, Purchase, etc) for enviado pra Meta CAPI,
+            o sistema procura a URL real (de onde o usuário veio) na tabela abaixo. Se houver
+            match, a URL é trocada antes do envio. O Meta passa a "ver" a página white
+            no lugar da black.
+          </p>
+          <p class="info-box-text">
+            <strong>3 níveis de match</strong>, do mais específico pro mais genérico:
+          </p>
+          <ul class="info-list">
+            <li>
+              <code>https://black.com/oferta</code> → substitui a URL inteira pelo target
+            </li>
+            <li>
+              <code>black.com/oferta</code> → idem, ignorando scheme
+            </li>
+            <li>
+              <code>black.com</code> → troca só o domínio, preservando path/query/fragment original
+            </li>
+          </ul>
+        </div>
+
         <BaseInput
           v-model="form.source"
-          label="URL de origem (source)"
-          placeholder="https://encurtador.com/abc123"
-          hint="A URL que chega via UTM/campanha"
+          label="Source — URL black (que o usuário acessa de verdade)"
+          placeholder="https://meublack.com.br/oferta-emagrecedor"
+          hint="A URL real onde o tracker dispara. Pode ser domínio inteiro (ex.: meublack.com.br) ou URL específica."
           required
         />
         <BaseInput
           v-model="form.target"
-          label="URL canônica (target)"
-          placeholder="https://meusite.com.br/produto-x"
-          hint="Para qual URL o source será reescrito antes de enviar pra Meta"
+          label="Target — URL white (que o Meta vai ver)"
+          placeholder="https://meuwhite.com.br/produto"
+          hint="A URL inofensiva que vai como event_source_url pro Facebook. Costuma ser uma página institucional/about/blog do mesmo nicho."
           required
         />
+
+        <details class="examples">
+          <summary>Ver exemplos práticos</summary>
+          <div class="example-block">
+            <div class="example-label">Domínio inteiro (mais comum)</div>
+            <div class="example-row">
+              <span class="example-tag source">source</span>
+              <code>blackpage.com.br</code>
+            </div>
+            <div class="example-row">
+              <span class="example-tag target">target</span>
+              <code>https://whitepage.com.br</code>
+            </div>
+            <div class="example-note">
+              Qualquer URL de blackpage.com.br vira whitepage.com.br mantendo o path original.
+            </div>
+          </div>
+
+          <div class="example-block">
+            <div class="example-label">Override de página específica</div>
+            <div class="example-row">
+              <span class="example-tag source">source</span>
+              <code>https://blackpage.com.br/oferta-vip</code>
+            </div>
+            <div class="example-row">
+              <span class="example-tag target">target</span>
+              <code>https://whitepage.com.br/blog/saude</code>
+            </div>
+            <div class="example-note">
+              Substitui inteira. Útil quando o domínio já tem regra mais ampla mas você quer
+              direcionar uma URL específica pra outro destino white.
+            </div>
+          </div>
+        </details>
+
         <label class="enable-toggle">
           <input v-model="form.enabled" type="checkbox" />
-          <span>Ativo</span>
+          <span>Ativo (regra começa a valer imediatamente após salvar)</span>
         </label>
       </div>
       <template #footer>
@@ -348,6 +408,137 @@ onMounted(fetchMappings)
   gap: 0.875rem;
 }
 
+.info-box {
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-border);
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.info-box-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.info-box-text {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-1);
+  margin: 0;
+}
+
+.info-list {
+  margin: 0;
+  padding-left: 1.125rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-1);
+  line-height: 1.5;
+}
+
+.info-list code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  background: var(--surface-soft);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  color: var(--text-strong);
+}
+
+.examples {
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.8125rem;
+}
+
+.examples summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--text-1);
+  user-select: none;
+  padding: 0.125rem 0;
+}
+
+.examples summary:hover {
+  color: var(--brand);
+}
+
+.example-block {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-faint);
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.example-block:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.example-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.example-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.example-tag {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.example-tag.source {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.example-tag.target {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.example-row code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  background: var(--surface-2);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  color: var(--text-1);
+  word-break: break-all;
+}
+
+.example-note {
+  font-size: 0.75rem;
+  color: var(--text-2);
+  line-height: 1.4;
+  font-style: italic;
+}
+
 .enable-toggle {
   display: inline-flex;
   align-items: center;
@@ -355,6 +546,7 @@ onMounted(fetchMappings)
   font-size: 0.875rem;
   cursor: pointer;
   user-select: none;
+  color: var(--text-1);
 }
 
 .enable-toggle input[type='checkbox'] {

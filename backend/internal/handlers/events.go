@@ -175,6 +175,24 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 		return
 	}
 
+	// Recarrega o tracked user pra usar os dados de geo persistidos (capturados no Init,
+	// quando o IP do client era o real e não de um CDN/proxy). Se não houver no banco,
+	// mantém os dados do lookup atual.
+	if existing, err := h.users.FindByExternalID(ctx, req.UserID); err == nil && existing != nil {
+		if existing.Country != "" {
+			country = existing.Country
+		}
+		if existing.State != "" {
+			state = existing.State
+		}
+		if existing.City != "" {
+			city = existing.City
+		}
+		if existing.PostalCode != "" {
+			postal = existing.PostalCode
+		}
+	}
+
 	// Determina o eventID: usa o que veio do client (compat com dedup do pixel.js)
 	// ou gera um novo de 10 chars.
 	eventID := req.EventID

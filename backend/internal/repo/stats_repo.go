@@ -169,6 +169,15 @@ type GeoStat struct {
 	Count   int64  `json:"count"`
 }
 
+// GeoStatByEvent representa a distribuição geográfica por tipo de evento.
+type GeoStatByEvent struct {
+	Country   string `json:"country"`
+	State     string `json:"state"`
+	City      string `json:"city"`
+	EventName string `json:"event_name"`
+	Count     int64  `json:"count"`
+}
+
 // GeoDistribution retorna a distribuição geográfica dos usuários rastreados no período.
 func (s *StatsRepo) GeoDistribution(ctx context.Context, f StatsFilter) ([]GeoStat, error) {
 	args := []any{}
@@ -221,4 +230,109 @@ func (s *StatsRepo) GeoDistribution(ctx context.Context, f StatsFilter) ([]GeoSt
 	}
 	return stats, rows.Err()
 }
+
+// GeoDistributionByEvent retorna a distribuição geográfica por tipo de evento.
+// Para PageView (visitas), busca em tracked_users (todo usuário rastreado teve PageView).
+// Para outros eventos (Purchase, Lead, etc), busca em sent_events JOIN tracked_users.
+func (s *StatsRepo) GeoDistributionByEvent(ctx context.Context, f StatsFilter, eventName string) ([]GeoStatByEvent, error) {
+	args := []any{}
+	conds := []string{}
+	idx := 0
+	add := func(v any) string {
+		args = append(args, v)
+		idx++
+		return "$" + itoa(idx)
+	}
+
+	// PageView é um caso especial: agregamos por tracked_users
+	// (visitas são contadas em event_counters, sem location granular)
+	if eventName == "PageView" || eventName == "" {
+		if !f.From.IsZero() {
+			conds = append(conds, "created_at >= "+add(f.From))
+		}
+		if !f.To.IsZero() {
+			conds = append(conds, "created_at < "+add(f.To))
+		}
+		if f.PixelName != "" {
+			conds = append(conds, "pixel_name = "+add(f.PixelName))
+		}
+		if f.AccountID > 0 {
+			conds = append(conds, "account_id = "+add(f.AccountID))
+		}
+		conds = append(conds, "country <> ''")
+
+		where := "WHERE " + strings.Join(conds, " AND ")
+
+		q := `
+			SELECT country, state, city, 'PageView' as event_name, COUNT(*) as count
+			FROM tracked_users
+			` + where + `
+			GROUP BY country, state, city
+			ORDER BY count DESC
+			LIMIT 200
+		`
+
+		rows, err := s.pool.Query(ctx, q, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var stats []GeoStatByEvent
+		for rows.Next() {
+			var g GeoStatByEvent
+			if err := rows.Scan(&g.Country, &g.State, &g.City, &g.EventName, &g.Count); err != nil {
+				return nil, err
+			}
+			stats = append(stats, g)
+		}
+		return stats, rows.Err()
+	}
+
+	// Outros eventos: buscar em sent_events JOIN tracked_users
+	if !f.From.IsZero() {
+		conds = append(conds, "e.created_at >= "+add(f.From))
+	}
+	if !f.To.IsZero() {
+		conds = append(conds, "e.created_at < "+add(f.To))
+	}
+	if f.PixelName != "" {
+		conds = append(conds, "e.pixel_name = "+add(f.PixelName))
+	}
+	if f.AccountID > 0 {
+		conds = append(conds, "e.account_id = "+add(f.AccountID))
+	}
+	conds = append(conds, "e.event_name = "+add(eventName))
+	conds = append(conds, "u.country <> ''")
+	conds = append(conds, "e.status = 'sent'") // Apenas eventos enviados com sucesso
+
+	where := "WHERE " + strings.Join(conds, " AND ")
+
+	q := `
+		SELECT u.country, u.state, u.city, e.event_name, COUNT(*) as count
+		FROM sent_events e
+		INNER JOIN tracked_users u ON e.external_id = u.external_id
+		` + where + `
+		GROUP BY u.country, u.state, u.city, e.event_name
+		ORDER BY count DESC
+		LIMIT 200
+	`
+
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []GeoStatByEvent
+	for rows.Next() {
+		var g GeoStatByEvent
+		if err := rows.Scan(&g.Country, &g.State, &g.City, &g.EventName, &g.Count); err != nil {
+			return nil, err
+		}
+		stats = append(stats, g)
+	}
+	return stats, rows.Err()
+}
+
 
