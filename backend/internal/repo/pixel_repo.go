@@ -23,7 +23,7 @@ func NewPixelRepo(pool *pgxpool.Pool) *PixelRepo {
 }
 
 const pixelColumns = `id, name, label, pixel_ids, access_tokens, test_codes,
-		domains, tracker_config, enabled, tracking_host, created_at, updated_at`
+		domains, tracker_config, enabled, tracking_host, account_id, created_at, updated_at`
 
 func (r *PixelRepo) FindByName(ctx context.Context, name string) (*domain.Pixel, error) {
 	q := `SELECT ` + pixelColumns + ` FROM pixels WHERE name = $1`
@@ -47,6 +47,29 @@ func (r *PixelRepo) FindByDomain(ctx context.Context, host string) (*domain.Pixe
 func (r *PixelRepo) List(ctx context.Context) ([]domain.Pixel, error) {
 	q := `SELECT ` + pixelColumns + ` FROM pixels ORDER BY id DESC`
 	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Pixel
+	for rows.Next() {
+		p, err := scanPixel(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *p)
+	}
+	return out, rows.Err()
+}
+
+// ListByAccount filtra pixels por account_id. Se accountID == 0 retorna todos
+// (uso owner). Caso contrário filtra (uso member).
+func (r *PixelRepo) ListByAccount(ctx context.Context, accountID int64) ([]domain.Pixel, error) {
+	if accountID == 0 {
+		return r.List(ctx)
+	}
+	q := `SELECT ` + pixelColumns + ` FROM pixels WHERE account_id = $1 ORDER BY id DESC`
+	rows, err := r.pool.Query(ctx, q, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -89,13 +112,16 @@ func (r *PixelRepo) Create(ctx context.Context, p *domain.Pixel) error {
 	if err != nil {
 		return fmt.Errorf("marshal tracker_config: %w", err)
 	}
+	if p.AccountID == 0 {
+		p.AccountID = 1 // default account
+	}
 	const q = `INSERT INTO pixels (name, label, pixel_ids, access_tokens, test_codes,
-	                               domains, tracker_config, enabled, tracking_host)
-	           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+	                               domains, tracker_config, enabled, tracking_host, account_id)
+	           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 	           RETURNING id, created_at, updated_at`
 	return r.pool.QueryRow(ctx, q,
 		p.Name, p.Label, p.PixelIDs, p.AccessTokens, p.TestCodes,
-		p.Domains, cfgJSON, p.Enabled, p.TrackingHost,
+		p.Domains, cfgJSON, p.Enabled, p.TrackingHost, p.AccountID,
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -129,7 +155,7 @@ func scanPixel(row rowScanner) (*domain.Pixel, error) {
 	var cfgJSON []byte
 	err := row.Scan(
 		&p.ID, &p.Name, &p.Label, &p.PixelIDs, &p.AccessTokens, &p.TestCodes,
-		&p.Domains, &cfgJSON, &p.Enabled, &p.TrackingHost, &p.CreatedAt, &p.UpdatedAt,
+		&p.Domains, &cfgJSON, &p.Enabled, &p.TrackingHost, &p.AccountID, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

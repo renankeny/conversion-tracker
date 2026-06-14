@@ -38,10 +38,16 @@ type pixelInput struct {
 	TrackerConfig *domain.TrackerConfig `json:"tracker_config"`
 	Enabled       *bool                 `json:"enabled"`
 	TrackingHost  *string               `json:"tracking_host"`
+	AccountID     *int64                `json:"account_id"` // owners podem definir; members é ignorado
 }
 
 func (h *AdminPixels) List(w http.ResponseWriter, r *http.Request) {
-	list, err := h.repo.List(r.Context())
+	scope := TenantFromContext(r.Context())
+	accountID := int64(0)
+	if !scope.IsOwner {
+		accountID = scope.AccountID
+	}
+	list, err := h.repo.ListByAccount(r.Context(), accountID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list error")
 		return
@@ -66,6 +72,11 @@ func (h *AdminPixels) Get(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "load error")
+		return
+	}
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner && p.AccountID != scope.AccountID {
+		writeError(w, http.StatusForbidden, "sem acesso")
 		return
 	}
 	writeJSON(w, http.StatusOK, p.PublicView())
@@ -93,6 +104,11 @@ func (h *AdminPixels) Create(w http.ResponseWriter, r *http.Request) {
 	if in.TrackerConfig != nil {
 		cfg = *in.TrackerConfig
 	}
+	scope := TenantFromContext(r.Context())
+	override := int64(0)
+	if in.AccountID != nil {
+		override = *in.AccountID
+	}
 	p := &domain.Pixel{
 		Name:          strings.TrimSpace(in.Name),
 		Label:         in.Label,
@@ -102,6 +118,7 @@ func (h *AdminPixels) Create(w http.ResponseWriter, r *http.Request) {
 		Domains:       cleanDomains(in.Domains),
 		TrackerConfig: cfg,
 		Enabled:       true,
+		AccountID:     scope.EffectiveAccountID(override),
 	}
 	if in.Enabled != nil {
 		p.Enabled = *in.Enabled
@@ -129,6 +146,11 @@ func (h *AdminPixels) Update(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "load error")
+		return
+	}
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner && existing.AccountID != scope.AccountID {
+		writeError(w, http.StatusForbidden, "sem acesso")
 		return
 	}
 	var in pixelInput
@@ -182,6 +204,20 @@ func (h *AdminPixels) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	existing, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "load error")
+		return
+	}
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner && existing.AccountID != scope.AccountID {
+		writeError(w, http.StatusForbidden, "sem acesso")
 		return
 	}
 	var body struct {

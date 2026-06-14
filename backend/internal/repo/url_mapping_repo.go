@@ -12,6 +12,7 @@ import (
 // URLMapping representa uma linha de mapeamento black -> white.
 type URLMapping struct {
 	ID        int64     `json:"id"`
+	AccountID int64     `json:"account_id"`
 	Source    string    `json:"source"`
 	Target    string    `json:"target"`
 	Enabled   bool      `json:"enabled"`
@@ -27,12 +28,19 @@ func NewURLMappingRepo(pool *pgxpool.Pool) *URLMappingRepo {
 	return &URLMappingRepo{pool: pool}
 }
 
-const urlMappingCols = `id, source, target, enabled, created_at, updated_at`
+const urlMappingCols = `id, account_id, source, target, enabled, created_at, updated_at`
 
 // List devolve todas as linhas (incluindo desabilitadas) ordenadas por id desc.
-func (r *URLMappingRepo) List(ctx context.Context) ([]URLMapping, error) {
-	q := `SELECT ` + urlMappingCols + ` FROM url_mappings ORDER BY id DESC`
-	rows, err := r.pool.Query(ctx, q)
+// Se accountID > 0, filtra pela conta. Se 0, retorna todas (uso owner).
+func (r *URLMappingRepo) List(ctx context.Context, accountID int64) ([]URLMapping, error) {
+	args := []any{}
+	where := ""
+	if accountID > 0 {
+		where = "WHERE account_id = $1"
+		args = append(args, accountID)
+	}
+	q := `SELECT ` + urlMappingCols + ` FROM url_mappings ` + where + ` ORDER BY id DESC`
+	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +48,7 @@ func (r *URLMappingRepo) List(ctx context.Context) ([]URLMapping, error) {
 	var out []URLMapping
 	for rows.Next() {
 		var m URLMapping
-		if err := rows.Scan(&m.ID, &m.Source, &m.Target, &m.Enabled, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.AccountID, &m.Source, &m.Target, &m.Enabled, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -67,12 +75,31 @@ func (r *URLMappingRepo) ActiveAsMap(ctx context.Context) (map[string]string, er
 	return out, rows.Err()
 }
 
-// Create insere um novo mapeamento.
+// FindByID busca um mapeamento pelo id (pra validações de acesso).
+func (r *URLMappingRepo) FindByID(ctx context.Context, id int64) (*URLMapping, error) {
+	q := `SELECT ` + urlMappingCols + ` FROM url_mappings WHERE id = $1`
+	var m URLMapping
+	err := r.pool.QueryRow(ctx, q, id).Scan(
+		&m.ID, &m.AccountID, &m.Source, &m.Target, &m.Enabled, &m.CreatedAt, &m.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// Create insere um novo mapeamento. Se m.AccountID == 0, usa default 1.
 func (r *URLMappingRepo) Create(ctx context.Context, m *URLMapping) error {
-	const q = `INSERT INTO url_mappings (source, target, enabled)
-	           VALUES ($1, $2, $3)
+	if m.AccountID == 0 {
+		m.AccountID = 1
+	}
+	const q = `INSERT INTO url_mappings (account_id, source, target, enabled)
+	           VALUES ($1, $2, $3, $4)
 	           RETURNING id, created_at, updated_at`
-	return r.pool.QueryRow(ctx, q, m.Source, m.Target, m.Enabled).
+	return r.pool.QueryRow(ctx, q, m.AccountID, m.Source, m.Target, m.Enabled).
 		Scan(&m.ID, &m.CreatedAt, &m.UpdatedAt)
 }
 

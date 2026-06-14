@@ -12,6 +12,8 @@ type TrackedUser struct {
 	ExternalID string `json:"external_id"`
 	IDWpp      string `json:"id_wpp"`
 	PixelName  string `json:"pixel_name"`
+	// AccountID vincula o tracked_user à conta do pixel (multi-tenant).
+	AccountID int64 `json:"account_id"`
 
 	FBP             string `json:"fbp"`
 	FBC             string `json:"fbc"`

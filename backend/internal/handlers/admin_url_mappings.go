@@ -28,13 +28,19 @@ func NewAdminURLMappings(r *repo.URLMappingRepo, urls *util.URLMapper) *AdminURL
 }
 
 type urlMappingInput struct {
-	Source  string `json:"source"`
-	Target  string `json:"target"`
-	Enabled *bool  `json:"enabled"`
+	Source    string `json:"source"`
+	Target    string `json:"target"`
+	Enabled   *bool  `json:"enabled"`
+	AccountID *int64 `json:"account_id"` // owners podem definir; members ignorado
 }
 
 func (h *AdminURLMappings) List(w http.ResponseWriter, r *http.Request) {
-	list, err := h.repo.List(r.Context())
+	scope := TenantFromContext(r.Context())
+	accountID := int64(0)
+	if !scope.IsOwner {
+		accountID = scope.AccountID
+	}
+	list, err := h.repo.List(r.Context(), accountID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list error")
 		return
@@ -52,10 +58,16 @@ func (h *AdminURLMappings) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "source and target are required")
 		return
 	}
+	scope := TenantFromContext(r.Context())
+	override := int64(0)
+	if in.AccountID != nil {
+		override = *in.AccountID
+	}
 	m := &repo.URLMapping{
-		Source:  in.Source,
-		Target:  in.Target,
-		Enabled: in.Enabled == nil || *in.Enabled,
+		AccountID: scope.EffectiveAccountID(override),
+		Source:    in.Source,
+		Target:    in.Target,
+		Enabled:   in.Enabled == nil || *in.Enabled,
 	}
 	if err := h.repo.Create(r.Context(), m); err != nil {
 		writeError(w, http.StatusInternalServerError, "create error: "+err.Error())
@@ -71,12 +83,26 @@ func (h *AdminURLMappings) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
+	existing, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "load error")
+		return
+	}
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner && existing.AccountID != scope.AccountID {
+		writeError(w, http.StatusForbidden, "sem acesso")
+		return
+	}
 	var in urlMappingInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	m := &repo.URLMapping{ID: id, Source: in.Source, Target: in.Target}
+	m := &repo.URLMapping{ID: id, AccountID: existing.AccountID, Source: in.Source, Target: in.Target}
 	if in.Enabled != nil {
 		m.Enabled = *in.Enabled
 	} else {
@@ -98,6 +124,20 @@ func (h *AdminURLMappings) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	existing, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "load error")
+		return
+	}
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner && existing.AccountID != scope.AccountID {
+		writeError(w, http.StatusForbidden, "sem acesso")
 		return
 	}
 	if err := h.repo.Delete(r.Context(), id); err != nil {

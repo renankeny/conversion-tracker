@@ -24,6 +24,10 @@ func (h *AdminStats) Overview(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := repo.StatsFilter{PixelName: q.Get("pixel")}
 
+	if scope := TenantFromContext(r.Context()); !scope.IsOwner {
+		f.AccountID = scope.AccountID
+	}
+
 	if v := q.Get("from"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {

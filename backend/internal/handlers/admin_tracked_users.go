@@ -19,11 +19,15 @@ func NewAdminTrackedUsers(r *repo.UserRepo) *AdminTrackedUsers {
 // List GET /admin/tracked-users?pixel=&search=&limit=&offset=
 //
 // `search` casa parcialmente (ILIKE) em external_id, id_wpp, email e phone.
+// Aplica filtro multi-tenant: members só veem tracked users da própria conta.
 func (h *AdminTrackedUsers) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := repo.TrackedUserFilter{
 		PixelName: q.Get("pixel"),
 		Search:    q.Get("search"),
+	}
+	if scope := TenantFromContext(r.Context()); !scope.IsOwner {
+		f.AccountID = scope.AccountID
 	}
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)

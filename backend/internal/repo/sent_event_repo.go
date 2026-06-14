@@ -54,6 +54,7 @@ func (r *SentEventRepo) ExistsSent(ctx context.Context, eventID, pixelName strin
 
 // ListFilter agrupa os filtros aceitos por List.
 type ListFilter struct {
+	AccountID int64     // 0 = todos (owner); >0 = filtra por conta (member)
 	PixelName string    // exato (vazio = todos)
 	EventName string    // exato (vazio = todos)
 	Status    string    // queued|sent|failed (vazio = todos)
@@ -76,10 +77,13 @@ func (r *SentEventRepo) List(ctx context.Context, f ListFilter) ([]SentEvent, in
 	}
 
 	args := make([]any, 0, 6)
-	conds := make([]string, 0, 5)
+	conds := make([]string, 0, 6)
 	add := func(cond string, value any) {
 		args = append(args, value)
 		conds = append(conds, strings.Replace(cond, "$N", "$"+itoa(len(args)), 1))
+	}
+	if f.AccountID > 0 {
+		add("account_id = $N", f.AccountID)
 	}
 	if f.PixelName != "" {
 		add("pixel_name = $N", f.PixelName)

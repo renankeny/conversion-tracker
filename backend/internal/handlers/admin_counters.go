@@ -71,6 +71,13 @@ func parseSummaryFilters(r *http.Request) (repo.SummaryFilters, error) {
 		PixelName: q.Get("pixel"),
 		EventName: q.Get("event"),
 	}
+
+	// Aplica filtro multi-tenant: members só veem a própria conta.
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner {
+		f.AccountID = scope.AccountID
+	}
+
 	if v := q.Get("from"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {

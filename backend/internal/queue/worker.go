@@ -99,7 +99,7 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 
 			// Counter agregado (sempre).
 			if deps.Counters != nil {
-				if cerr := deps.Counters.Increment(ctx, pixel.Name, in.EventName, eventTime, delta); cerr != nil {
+				if cerr := deps.Counters.Increment(ctx, pixel.AccountID, pixel.Name, in.EventName, eventTime, delta); cerr != nil {
 					slog.Warn("counter increment failed",
 						"pixel", pixel.Name,
 						"event", in.EventName,
@@ -111,7 +111,7 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 			// Payload completo apenas para eventos importantes ou falhas.
 			// Falhas SEMPRE são persistidas (independente do tipo) para auditoria.
 			if storeFullPayload || r.Err != nil {
-				persistResult(ctx, deps.Pool, in, r)
+				persistResult(ctx, deps.Pool, pixel.AccountID, in, r)
 			}
 		}
 		if hasErr {
@@ -121,7 +121,10 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 	}
 }
 
-func persistResult(ctx context.Context, pool *pgxpool.Pool, in domain.SendEventInput, r meta.SendResult) {
+func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in domain.SendEventInput, r meta.SendResult) {
+	if accountID == 0 {
+		accountID = 1
+	}
 	status := "sent"
 	errMsg := ""
 	if r.Err != nil {
@@ -129,7 +132,7 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, in domain.SendEventI
 		errMsg = util.RedactSecrets(r.Err.Error())
 	}
 	_, _ = pool.Exec(ctx, `
-		INSERT INTO sent_events (event_id, event_name, pixel_name, external_id, status, response_code, response_body, error)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-	`, in.EventID, in.EventName, in.PixelName, in.ExternalID, status, r.StatusCode, util.RedactSecrets(r.Body), errMsg)
+		INSERT INTO sent_events (event_id, event_name, pixel_name, external_id, account_id, status, response_code, response_body, error)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+	`, in.EventID, in.EventName, in.PixelName, in.ExternalID, accountID, status, r.StatusCode, util.RedactSecrets(r.Body), errMsg)
 }

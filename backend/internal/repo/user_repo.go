@@ -18,7 +18,8 @@ func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 	return &UserRepo{pool: pool}
 }
 
-const userColumns = `id, external_id, id_wpp, pixel_name, fbp, fbc, gclid,
+const userColumns = `id, external_id, id_wpp, pixel_name, account_id,
+		fbp, fbc, gclid,
 		client_ip, client_user_agent,
 		country, state, city, postal_code,
 		first_name, last_name, email, phone, url,
@@ -78,14 +79,14 @@ func (r *UserRepo) FindByIDWpp(ctx context.Context, idWpp string) (*domain.Track
 func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 	const q = `
 	INSERT INTO tracked_users (
-		external_id, id_wpp, pixel_name,
+		external_id, id_wpp, pixel_name, account_id,
 		fbp, fbc, gclid, client_ip, client_user_agent,
 		country, state, city, postal_code,
 		first_name, last_name, email, phone, url,
 		first_utm_source, first_utm_medium, first_utm_campaign, first_utm_content, first_utm_term,
 		last_utm_source,  last_utm_medium,  last_utm_campaign,  last_utm_content,  last_utm_term
 	) VALUES (
-		$1,$2,$3,
+		$1,$2,$3,$23,
 		$4,$5,$6,$7,$8,
 		$9,$10,$11,$12,
 		$13,$14,$15,$16,$17,
@@ -95,6 +96,7 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 	ON CONFLICT (external_id) DO UPDATE SET
 		id_wpp            = CASE WHEN tracked_users.id_wpp = '' THEN EXCLUDED.id_wpp ELSE tracked_users.id_wpp END,
 		pixel_name        = COALESCE(NULLIF(EXCLUDED.pixel_name, ''), tracked_users.pixel_name),
+		account_id        = CASE WHEN EXCLUDED.account_id > 0 THEN EXCLUDED.account_id ELSE tracked_users.account_id END,
 		fbp               = COALESCE(NULLIF(EXCLUDED.fbp,  ''), tracked_users.fbp),
 		fbc               = COALESCE(NULLIF(EXCLUDED.fbc,  ''), tracked_users.fbc),
 		gclid             = COALESCE(NULLIF(EXCLUDED.gclid,''), tracked_users.gclid),
@@ -116,12 +118,17 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 		last_utm_term     = COALESCE(NULLIF(EXCLUDED.last_utm_term, ''),     tracked_users.last_utm_term),
 		updated_at        = NOW()
 	`
+	accountID := u.AccountID
+	if accountID == 0 {
+		accountID = 1
+	}
 	_, err := r.pool.Exec(ctx, q,
 		u.ExternalID, u.IDWpp, u.PixelName,
 		u.FBP, u.FBC, u.GCLID, u.ClientIP, u.ClientUserAgent,
 		u.Country, u.State, u.City, u.PostalCode,
 		u.FirstName, u.LastName, u.Email, u.Phone, u.URL,
 		u.FirstUTMSource, u.FirstUTMMedium, u.FirstUTMCampaign, u.FirstUTMContent, u.FirstUTMTerm,
+		accountID,
 	)
 	return err
 }
@@ -129,7 +136,8 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 func scanUser(row pgx.Row) (*domain.TrackedUser, error) {
 	var u domain.TrackedUser
 	err := row.Scan(
-		&u.ID, &u.ExternalID, &u.IDWpp, &u.PixelName, &u.FBP, &u.FBC, &u.GCLID,
+		&u.ID, &u.ExternalID, &u.IDWpp, &u.PixelName, &u.AccountID,
+		&u.FBP, &u.FBC, &u.GCLID,
 		&u.ClientIP, &u.ClientUserAgent,
 		&u.Country, &u.State, &u.City, &u.PostalCode,
 		&u.FirstName, &u.LastName, &u.Email, &u.Phone, &u.URL,
@@ -149,6 +157,7 @@ func scanUser(row pgx.Row) (*domain.TrackedUser, error) {
 
 // TrackedUserFilter agrupa os filtros aceitos por List.
 type TrackedUserFilter struct {
+	AccountID int64  // 0 = todos (owner); >0 = filtra por conta (member)
 	PixelName string // exato (vazio = todos)
 	Search    string // busca em external_id/id_wpp/email/phone (LIKE %s%)
 	Limit     int    // default 50, max 500
@@ -169,12 +178,15 @@ func (r *UserRepo) List(ctx context.Context, f TrackedUserFilter) ([]domain.Trac
 	}
 
 	args := make([]any, 0, 4)
-	conds := make([]string, 0, 2)
+	conds := make([]string, 0, 3)
 	idx := 0
 	addArg := func(value any) string {
 		args = append(args, value)
 		idx++
 		return "$" + itoa(idx)
+	}
+	if f.AccountID > 0 {
+		conds = append(conds, "account_id = "+addArg(f.AccountID))
 	}
 	if f.PixelName != "" {
 		conds = append(conds, "pixel_name = "+addArg(f.PixelName))

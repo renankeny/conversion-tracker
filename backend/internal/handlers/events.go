@@ -164,7 +164,7 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 	mappedURL := h.urls.Apply(req.URL)
 
 	// Persiste / atualiza o tracked user de acordo com o evento.
-	if err := h.upsertTrackedUser(ctx, req, pixel.Name, ip, ua, mappedURL, country, state, city, postal, email, phone); err != nil {
+	if err := h.upsertTrackedUser(ctx, req, pixel.Name, pixel.AccountID, ip, ua, mappedURL, country, state, city, postal, email, phone); err != nil {
 		slog.Error("upsert tracked user", "err", err, "external_id", req.UserID)
 		// não interrompe o fluxo; continua e tenta enfileirar mesmo assim
 	}
@@ -246,28 +246,31 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 func (h *Events) upsertTrackedUser(
 	ctx context.Context,
 	req sendRequest,
-	pixelName, ip, ua, mappedURL, country, state, city, postal, email, phone string,
+	pixelName string,
+	accountID int64,
+	ip, ua, mappedURL, country, state, city, postal, email, phone string,
 ) error {
 	switch req.EventType {
 	case domain.EventPageView, domain.EventViewContent:
 		// Snapshot completo do contexto da visita.
 		tu := &domain.TrackedUser{
-			ExternalID:       req.UserID,
-			IDWpp:            req.IDWpp,
-			PixelName:        pixelName,
-			FBP:              req.FBP,
-			FBC:              req.FBC,
-			GCLID:            req.GCLID,
-			ClientIP:         ip,
-			ClientUserAgent:  ua,
-			Country:          country,
-			State:            state,
-			City:             city,
-			PostalCode:       postal,
-			FirstName:        req.FirstName,
-			LastName:         req.LastName,
-			Email:            email,
-			Phone:            phone,
+			ExternalID:      req.UserID,
+			IDWpp:           req.IDWpp,
+			PixelName:       pixelName,
+			AccountID:       accountID,
+			FBP:             req.FBP,
+			FBC:             req.FBC,
+			GCLID:           req.GCLID,
+			ClientIP:        ip,
+			ClientUserAgent: ua,
+			Country:         country,
+			State:           state,
+			City:            city,
+			PostalCode:      postal,
+			FirstName:       req.FirstName,
+			LastName:        req.LastName,
+			Email:           email,
+			Phone:           phone,
 			URL:              mappedURL,
 			FirstUTMSource:   req.UTMSource,
 			FirstUTMMedium:   req.UTMMedium,
@@ -284,6 +287,7 @@ func (h *Events) upsertTrackedUser(
 			ExternalID:      req.UserID,
 			IDWpp:           req.IDWpp,
 			PixelName:       pixelName,
+			AccountID:       accountID,
 			FBP:             req.FBP,
 			FBC:             req.FBC,
 			GCLID:           req.GCLID,
@@ -300,6 +304,7 @@ func (h *Events) upsertTrackedUser(
 	case domain.EventUpdateUserData:
 		tu := &domain.TrackedUser{
 			ExternalID: req.UserID,
+			AccountID:  accountID,
 			FBP:        req.FBP,
 			FBC:        req.FBC,
 			GCLID:      req.GCLID,

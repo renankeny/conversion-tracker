@@ -25,24 +25,28 @@ func NewEventCounterRepo(pool *pgxpool.Pool) *EventCounterRepo {
 // pra mesma bucket, todos os deltas são aplicados sem race.
 func (r *EventCounterRepo) Increment(
 	ctx context.Context,
+	accountID int64,
 	pixelName, eventName string,
 	at time.Time,
 	delta domain.CounterDelta,
 ) error {
+	if accountID == 0 {
+		accountID = 1
+	}
 	bucket := at.UTC().Truncate(time.Hour)
 	const q = `
 		INSERT INTO event_counters
-			(pixel_name, event_name, bucket_at, count_total, count_sent, count_failed)
+			(account_id, pixel_name, event_name, bucket_at, count_total, count_sent, count_failed)
 		VALUES
-			($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (pixel_name, event_name, bucket_at) DO UPDATE
+			($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (account_id, pixel_name, event_name, bucket_at) DO UPDATE
 		SET count_total  = event_counters.count_total  + EXCLUDED.count_total,
 		    count_sent   = event_counters.count_sent   + EXCLUDED.count_sent,
 		    count_failed = event_counters.count_failed + EXCLUDED.count_failed,
 		    updated_at   = NOW()
 	`
 	_, err := r.pool.Exec(ctx, q,
-		pixelName, eventName, bucket,
+		accountID, pixelName, eventName, bucket,
 		delta.Total, delta.Sent, delta.Failed,
 	)
 	return err
@@ -63,6 +67,7 @@ type SummaryFilters struct {
 	To        *time.Time
 	PixelName string // opcional, filtra por pixel
 	EventName string // opcional, filtra por evento
+	AccountID int64  // opcional, 0 = todos (uso owner); >0 = filtra por conta
 }
 
 // SummaryByEvent agrega por evento dentro do intervalo. Retorna { event_name → totais }.
@@ -96,6 +101,11 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 	if f.EventName != "" {
 		q += " AND event_name = $" + strconv.Itoa(idx)
 		args = append(args, f.EventName)
+		idx++
+	}
+	if f.AccountID > 0 {
+		q += " AND account_id = $" + strconv.Itoa(idx)
+		args = append(args, f.AccountID)
 		idx++
 	}
 	q += " GROUP BY event_name ORDER BY total DESC"
@@ -162,6 +172,11 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 	if f.EventName != "" {
 		q += " AND event_name = $" + strconv.Itoa(idx)
 		args = append(args, f.EventName)
+		idx++
+	}
+	if f.AccountID > 0 {
+		q += " AND account_id = $" + strconv.Itoa(idx)
+		args = append(args, f.AccountID)
 		idx++
 	}
 	q += " GROUP BY bucket, event_name ORDER BY bucket ASC"

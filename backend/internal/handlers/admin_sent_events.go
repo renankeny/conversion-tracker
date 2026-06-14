@@ -36,6 +36,9 @@ func (h *AdminSentEvents) List(w http.ResponseWriter, r *http.Request) {
 		EventName: q.Get("event"),
 		Status:    q.Get("status"),
 	}
+	if scope := TenantFromContext(r.Context()); !scope.IsOwner {
+		f.AccountID = scope.AccountID
+	}
 	if v := q.Get("from"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {

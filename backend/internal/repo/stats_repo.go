@@ -23,6 +23,7 @@ type StatsFilter struct {
 	From      time.Time // inclusive (created_at >= From)
 	To        time.Time // exclusive (created_at < To)
 	PixelName string    // vazio = todos
+	AccountID int64     // 0 = todos (owner); >0 = filtra (member)
 }
 
 // Overview agrupa as três séries básicas que o painel costuma mostrar.
@@ -60,6 +61,9 @@ func (s *StatsRepo) Overview(ctx context.Context, f StatsFilter) (*Overview, err
 	}
 	if f.PixelName != "" {
 		conds = append(conds, "pixel_name = "+add(f.PixelName))
+	}
+	if f.AccountID > 0 {
+		conds = append(conds, "account_id = "+add(f.AccountID))
 	}
 	where := ""
 	if len(conds) > 0 {
@@ -128,20 +132,30 @@ func (s *StatsRepo) Overview(ctx context.Context, f StatsFilter) (*Overview, err
 	}
 	rows.Close()
 
-	// (4) total tracked users (filtra só por pixel, não por janela — costuma ser
-	// "quantos tracked users tem cadastrados nesse pixel")
+	// (4) total tracked users (filtra só por pixel/account, não por janela — costuma ser
+	// "quantos tracked users tem cadastrados nesse pixel/conta")
+	tuConds := []string{}
+	tuArgs := []any{}
+	tuIdx := 0
+	tuAdd := func(v any) string {
+		tuArgs = append(tuArgs, v)
+		tuIdx++
+		return "$" + itoa(tuIdx)
+	}
 	if f.PixelName != "" {
-		if err := s.pool.QueryRow(ctx,
-			"SELECT COUNT(*) FROM tracked_users WHERE pixel_name = $1", f.PixelName,
-		).Scan(&out.TrackedUsers); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := s.pool.QueryRow(ctx,
-			"SELECT COUNT(*) FROM tracked_users",
-		).Scan(&out.TrackedUsers); err != nil {
-			return nil, err
-		}
+		tuConds = append(tuConds, "pixel_name = "+tuAdd(f.PixelName))
+	}
+	if f.AccountID > 0 {
+		tuConds = append(tuConds, "account_id = "+tuAdd(f.AccountID))
+	}
+	tuWhere := ""
+	if len(tuConds) > 0 {
+		tuWhere = "WHERE " + strings.Join(tuConds, " AND ")
+	}
+	if err := s.pool.QueryRow(ctx,
+		"SELECT COUNT(*) FROM tracked_users "+tuWhere, tuArgs...,
+	).Scan(&out.TrackedUsers); err != nil {
+		return nil, err
 	}
 
 	return out, nil

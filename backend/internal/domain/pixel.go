@@ -14,9 +14,11 @@ type Pixel struct {
 	Enabled       bool          `json:"enabled"`
 	// TrackingHost é o subdomínio first-party do cliente (ex: "tracking.cliente.com").
 	// Quando preenchido, o snippet usa esse host em vez do host padrão da API.
-	TrackingHost string    `json:"tracking_host"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	TrackingHost string `json:"tracking_host"`
+	// AccountID vincula o pixel a uma conta (multi-tenant). Default 1 = conta principal.
+	AccountID int64     `json:"account_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // PublicView esconde tokens (lista do painel mostra só prefixo+sufixo).
@@ -32,6 +34,7 @@ func (p Pixel) PublicView() map[string]any {
 		"tracker_config": p.TrackerConfig,
 		"enabled":        p.Enabled,
 		"tracking_host":  p.TrackingHost,
+		"account_id":     p.AccountID,
 		"pixel_count":    len(p.PixelIDs),
 		"created_at":     p.CreatedAt,
 		"updated_at":     p.UpdatedAt,
