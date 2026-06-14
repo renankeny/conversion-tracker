@@ -1,12 +1,16 @@
 // Plataformas (gateways) com webhooks suportados pelo TrackFind.
 //
-// A URL final é construída em runtime: `${API_URL}${webhookPath}`. Por exemplo,
-// se API_URL = "https://api.trackfind.com.br/api/v1" e webhookPath =
-// "/webhooks/kiwify", a URL final é
-// "https://api.trackfind.com.br/api/v1/webhooks/kiwify".
+// A URL final é construída em runtime: `${API_URL}${webhookPath}`.
+// Por exemplo, com API_URL = "https://api.trackfind.com.br/api/v1" e
+// webhookPath = "/webhooks/cakto", a URL final é
+// "https://api.trackfind.com.br/api/v1/webhooks/cakto".
 //
 // Cada gateway só precisa que o cliente cole essa URL nas configurações de
 // "compra aprovada" na plataforma — o resto é automático.
+//
+// IMPORTANTE: só listamos gateways com payload validado em produção real.
+// Pra adicionar uma plataforma nova, capture um payload real do gateway
+// e ajuste o handler em backend/internal/handlers/webhook_<nome>.go.
 
 export interface PlatformDef {
   /** id estável usado em paths e logs */
@@ -42,22 +46,6 @@ export interface PlatformDef {
 
 export const PLATFORMS: PlatformDef[] = [
   {
-    id: 'kiwify',
-    name: 'Kiwify',
-    description: 'Gateway de infoprodutos brasileiro com checkout próprio.',
-    webhookPath: '/webhooks/kiwify',
-    brandColor: '#9F7AEA',
-    events: ['Compra aprovada (purchase)'],
-    setupSteps: [
-      'Acesse o painel Kiwify → Apps → Webhooks',
-      'Clique em "Criar webhook"',
-      'Cole a URL ao lado',
-      'Marque o evento "Compra aprovada"',
-      'Salve',
-    ],
-    notes: 'A Kiwify envia o valor em centavos; o TrackFind converte automaticamente.',
-  },
-  {
     id: 'hotmart',
     name: 'Hotmart',
     description: 'Plataforma de produtos digitais com afiliados e checkout.',
@@ -71,42 +59,8 @@ export const PLATFORMS: PlatformDef[] = [
       'Selecione "Compra aprovada"',
       'Salve',
     ],
-    notes: 'O Hotmart manda PII junto (nome, email, telefone) — capturado automaticamente.',
-  },
-  {
-    id: 'eduzz',
-    name: 'Eduzz',
-    description: 'Plataforma de venda de produtos digitais e físicos.',
-    webhookPath: '/webhooks/eduzz',
-    brandColor: '#F59E0B',
-    events: ['Fatura paga (myeduzz.invoice_paid)'],
-    setupSteps: [
-      'Painel Eduzz → Configurações → API/Webhooks',
-      'Crie um novo webhook',
-      'Cole a URL ao lado',
-      'Selecione o evento "myeduzz.invoice_paid"',
-      'Salve',
-    ],
-  },
-  {
-    id: 'yampi',
-    name: 'Yampi',
-    description: 'Plataforma de e-commerce com checkout integrado.',
-    webhookPath: '/webhooks/yampi',
-    brandColor: '#06B6D4',
-    needsHmac: true,
-    hmacEnvVar: 'YAMPI_WEBHOOK_SECRET',
-    events: ['order.paid (Purchase)', 'order.created (AddPaymentInfo)'],
-    setupSteps: [
-      'Configurações da loja Yampi → Notificações → Webhooks',
-      'Clique em "Adicionar webhook"',
-      'Cole a URL ao lado',
-      'Marque os eventos "order.paid" e "order.created"',
-      'Copie o secret gerado e configure a env YAMPI_WEBHOOK_SECRET no servidor',
-      'Salve',
-    ],
     notes:
-      'A Yampi assina cada request com HMAC-SHA256. Configure YAMPI_WEBHOOK_SECRET nas envs para o TrackFind validar a assinatura. Sem isso, o webhook é rejeitado em produção.',
+      'Suporta v2.0 (sckPaymentLink) e v1 (origin.xcod). PII (nome, email, telefone) é capturado automaticamente.',
   },
   {
     id: 'cakto',
@@ -114,7 +68,7 @@ export const PLATFORMS: PlatformDef[] = [
     description: 'Gateway de checkout para infoprodutos.',
     webhookPath: '/webhooks/cakto',
     brandColor: '#10B981',
-    events: ['pedido_aprovado'],
+    events: ['purchase_approved (status=paid)'],
     setupSteps: [
       'Painel Cakto → Integrações → Webhooks',
       'Clique em "Adicionar URL"',
@@ -122,34 +76,40 @@ export const PLATFORMS: PlatformDef[] = [
       'Selecione "Pedido aprovado"',
       'Salve',
     ],
+    notes:
+      'Usa baseAmount (preço da oferta) priorizando sobre amount (com juros do parcelamento). UTMs lidos de data.utm_source/utm_term/utm_medium/utm_content/utm_campaign/sck.',
   },
   {
-    id: 'braip',
-    name: 'Braip',
-    description: 'Plataforma de venda online de produtos físicos e digitais.',
-    webhookPath: '/webhooks/braip',
-    brandColor: '#8B5CF6',
-    events: ['Status: paid / approved'],
+    id: 'kirvano',
+    name: 'Kirvano',
+    description: 'Plataforma de venda de produtos digitais.',
+    webhookPath: '/webhooks/kirvano',
+    brandColor: '#14B8A6',
+    events: ['SALE_APPROVED (status=APPROVED)'],
     setupSteps: [
-      'Painel Braip → Configurações → Postback / Webhook',
-      'Insira a URL ao lado no campo "URL Postback"',
-      'Marque a opção de "Vendas aprovadas"',
-      'Salve',
-    ],
-  },
-  {
-    id: 'monetizze',
-    name: 'Monetizze',
-    description: 'Plataforma de venda de produtos digitais com afiliados.',
-    webhookPath: '/webhooks/monetizze',
-    brandColor: '#3B82F6',
-    events: ['status_descricao = Aprovada'],
-    setupSteps: [
-      'Painel Monetizze → Mais → Postback',
-      'Adicionar nova URL',
+      'Configurações → Integrações → Webhooks',
+      'Clique em "Novo webhook"',
       'Cole a URL ao lado',
-      'Marque "Venda Aprovada"',
+      'Selecione o evento "SALE_APPROVED"',
       'Salve',
     ],
+    notes:
+      'Lê valor de fiscal.total_value (numérico). UTMs em data.utm.{utm_source, utm_term, utm_medium, utm_content, utm_campaign, src}.',
+  },
+  {
+    id: 'rkcursos',
+    name: 'RKCursos',
+    description: 'Plataforma de cursos online com checkout integrado.',
+    webhookPath: '/webhooks/rkcursos',
+    brandColor: '#0891B2',
+    events: ['checkout.purchased'],
+    setupSteps: [
+      'Painel RKCursos → Configurações → Webhooks',
+      'Cole a URL ao lado',
+      'Selecione "checkout.purchased"',
+      'Salve',
+    ],
+    notes:
+      'Aceita UTMs (utm_source/term/medium/content/campaign/sck/src) E faz fallback por phone (variantes 55) e email quando não vem userId.',
   },
 ]

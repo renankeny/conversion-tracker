@@ -115,15 +115,13 @@ func New(deps Deps) (*Server, error) {
 		})
 
 		// Webhooks de gateway: payloads grandes, sem rate limit (o gateway controla).
+		// Apenas gateways com payload validado em produção real.
 		r.Group(func(r chi.Router) {
 			r.Use(MaxBodyBytes(2 * 1024 * 1024)) // 2 MB
-			r.Post("/webhooks/kiwify", webhookH.Kiwify)
-			r.Post("/webhooks/hotmart", webhookH.Hotmart)
-			r.Post("/webhooks/eduzz", webhookH.Eduzz)
-			r.Post("/webhooks/yampi", webhookH.Yampi)
 			r.Post("/webhooks/cakto", webhookH.Cakto)
-			r.Post("/webhooks/braip", webhookH.Braip)
-			r.Post("/webhooks/monetizze", webhookH.Monetizze)
+			r.Post("/webhooks/hotmart", webhookH.Hotmart)
+			r.Post("/webhooks/kirvano", webhookH.Kirvano)
+			r.Post("/webhooks/rkcursos", webhookH.RkCursos)
 		})
 
 		// Admin login: separado pra aplicar rate limit anti brute-force.

@@ -94,9 +94,7 @@ func main() {
 		URLs:           urls,
 		AllowedDomains: allowedDomains,
 		RedisOpt:       queue.BuildRedisClientOpt(cfg),
-		Secrets: handlers.GatewaySecrets{
-			Yampi: cfg.WebhookYampiSecret,
-		},
+		Secrets:        handlers.GatewaySecrets{},
 	})
 	if err != nil {
 		slog.Error("server init", "err", err)

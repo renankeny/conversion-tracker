@@ -59,11 +59,6 @@ type Config struct {
 	// domínio cadastrado em pixels.domains. Default false (dev).
 	StrictCORS bool
 
-	// Segredos opcionais usados na verificação de assinatura de webhooks.
-	// Vazios desabilitam a checagem (mantemos o gateway funcionando sem
-	// rejeitar payload — útil em dev).
-	WebhookYampiSecret string
-
 	// TrackingTargetHost é o host de destino que os clientes devem apontar
 	// via CNAME quando configuram um tracking_host no pixel.
 	// Ex: "track.trackfind.com.br". Em dev fica vazio (DNS não funciona em localhost).
@@ -95,7 +90,6 @@ func Load() (*Config, error) {
 		PublicAPIURL:       getenv("PUBLIC_API_URL", "http://localhost:8080/api/v1"),
 		AppURL:             getenv("APP_URL", "http://localhost:3000"),
 		StrictCORS:         getenv("STRICT_CORS", "false") == "true",
-		WebhookYampiSecret: getenv("WEBHOOK_YAMPI_SECRET", ""),
 		TrackingTargetHost: getenv("TRACKING_TARGET_HOST", ""),
 	}
 	if c.JWTSecret == "" {

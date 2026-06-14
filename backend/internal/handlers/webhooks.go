@@ -14,10 +14,9 @@ import (
 )
 
 // GatewaySecrets agrupa segredos opcionais usados na validação de assinatura
-// de webhooks (atualmente só Yampi). Vazios desabilitam a verificação.
-type GatewaySecrets struct {
-	Yampi string
-}
+// de webhooks. Hoje vazia — Cakto, Hotmart, Kirvano e RKCursos não exigem
+// HMAC. Mantido por extensibilidade.
+type GatewaySecrets struct{}
 
 // Webhooks expõe um handler por gateway. O processamento real é compartilhado
 // em processGenericPurchase para garantir que todos os 22 gateways apliquem
@@ -51,8 +50,8 @@ func NewWebhooks(
 // Os parsers específicos de cada gateway (webhook_<nome>.go) preenchem essa
 // struct e chamam processGenericPurchase para o restante do fluxo.
 type purchaseInput struct {
-	GatewayName string  // identificador legível para logs (ex: "kiwify")
-	EventName   string  // domain.EventPurchase ou domain.EventAddPaymentInfo (Yampi)
+	GatewayName string  // identificador legível para logs (ex: "cakto")
+	EventName   string  // domain.EventPurchase ou domain.EventAddPaymentInfo
 	ExternalID  string  // userId extraído do utm_source (pode vir vazio)
 	OrderID     string  // id da venda no gateway, usado como event_id pra dedup natural
 	Value       float64 // valor da venda (já em moeda real, não centavos)
