@@ -22,6 +22,18 @@
 
     <!-- Aba Básico -->
     <form v-show="activeTab === 'basic'" class="tab-content" @submit.prevent="onSubmit">
+      <div v-if="accounts.length > 0" class="form-field">
+        <label class="form-label">Empresa</label>
+        <select v-model="form.account_id" class="form-select" :disabled="isEditing">
+          <option v-for="a in accounts" :key="a.id" :value="a.id">
+            {{ a.name }}
+          </option>
+        </select>
+        <small class="form-hint">
+          {{ isEditing ? 'Empresa do pixel (não editável após criação).' : 'Cliente da agência ao qual este pixel pertence.' }}
+        </small>
+      </div>
+
       <BaseInput
         v-model="form.name"
         label="Nome"
@@ -183,6 +195,7 @@ const form = reactive<{
   test_codes: string[]
   domains: string[]
   enabled: boolean
+  account_id: number | null
   tracker_config: TrackerConfig
 }>({
   name: '',
@@ -193,6 +206,7 @@ const form = reactive<{
   test_codes: [''],
   domains: [],
   enabled: true,
+  account_id: null,
   tracker_config: defaultTrackerConfig(),
 })
 
@@ -213,6 +227,7 @@ const fillFromPixel = (pixel: Pixel) => {
   form.test_codes = [...(pixel.test_codes || pixel.pixel_ids.map(() => ''))]
   form.domains = [...(pixel.domains || [])]
   form.enabled = pixel.enabled
+  form.account_id = pixel.account_id || null
   form.tracker_config = {
     ...defaultTrackerConfig(),
     ...(pixel.tracker_config || {}),
@@ -283,6 +298,9 @@ const buildPayload = (): PixelInput => {
     enabled: form.enabled,
     tracker_config: form.tracker_config,
   }
+  if (form.account_id) {
+    payload.account_id = form.account_id
+  }
 
   const tokens = indexes.map((i) => (form.access_tokens[i] || '').trim())
   const allFilled = tokens.every((t) => t.length > 0)
@@ -302,6 +320,28 @@ const onSubmit = () => {
 }
 
 defineExpose({ submit: onSubmit })
+
+// Carrega empresas pra preencher o seletor. Se a API retornar erro
+// (ex: token sem permissão), o seletor fica oculto e o backend usa default.
+const accountsAPI = useAccounts()
+const accounts = ref<Array<{ id: number; name: string }>>([])
+
+onMounted(async () => {
+  try {
+    const res = await accountsAPI.list()
+    accounts.value = (res.data || []).map((a) => ({ id: a.id, name: a.name }))
+    // Se o pixel já tem empresa (edição), mantém. Se é novo e tem só uma
+    // empresa visível, pré-seleciona.
+    if (!form.account_id && accounts.value.length === 1) {
+      form.account_id = accounts.value[0].id
+    } else if (!form.account_id && accounts.value.length > 0) {
+      // Seleciona a primeira pra evitar enviar null no create
+      form.account_id = accounts.value[0].id
+    }
+  } catch {
+    // sem permissão ou indisponível — segue sem o seletor (backend usa default)
+  }
+})
 </script>
 
 <style scoped>
@@ -439,5 +479,44 @@ defineExpose({ submit: onSubmit })
   height: 1rem;
   accent-color: var(--brand);
   cursor: pointer;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.form-select {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: var(--surface-deep);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-1);
+  font-size: 0.9375rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.form-select:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.form-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--text-3);
 }
 </style>

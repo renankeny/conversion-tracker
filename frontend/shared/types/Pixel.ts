@@ -52,6 +52,7 @@ export interface Pixel {
   tracker_config: TrackerConfig
   enabled: boolean
   tracking_host: string
+  account_id: number
   pixel_count: number
   created_at: string
   updated_at: string
@@ -67,6 +68,9 @@ export interface PixelInput {
   tracker_config?: TrackerConfig
   enabled?: boolean
   tracking_host?: string
+  // Multi-tenant: ownership da empresa que recebe o pixel.
+  // Owner pode definir; member é ignorado (backend força a própria conta).
+  account_id?: number
 }
 
 export type CreatePixelInput = PixelInput
