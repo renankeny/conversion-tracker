@@ -160,10 +160,11 @@ func New(deps Deps) (*Server, error) {
 			r.Put("/admin/maintenance/retention", adminMaintenanceH.UpdateRetention)
 			r.Post("/admin/maintenance/reset", adminMaintenanceH.Reset)
 
-			// Admin users (CRUD + change password)
+			// Admin users (CRUD + change password + perfil)
 			r.Get("/admin/users", adminUsersH.List)
 			r.Post("/admin/users", adminUsersH.Create)
 			r.Delete("/admin/users/{id}", adminUsersH.Delete)
+			r.Put("/admin/me", adminUsersH.UpdateMyProfile)
 			r.Post("/admin/me/password", adminUsersH.ChangeMyPassword)
 
 			// Accounts (multi-tenant)

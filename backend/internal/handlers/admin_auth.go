@@ -42,11 +42,14 @@ func (h *AdminAuth) Login(w http.ResponseWriter, r *http.Request) {
 		hash      string
 		role      string
 		accountID *int64
+		name      string
+		phone     string
 	)
 	err := h.pool.QueryRow(r.Context(),
-		`SELECT id, password_hash, COALESCE(role, 'owner'), account_id
+		`SELECT id, password_hash, COALESCE(role, 'owner'), account_id,
+		        COALESCE(name, ''), COALESCE(phone, '')
 		   FROM admin_users WHERE email = $1`, req.Email,
-	).Scan(&id, &hash, &role, &accountID)
+	).Scan(&id, &hash, &role, &accountID, &name, &phone)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "invalid credentials")
@@ -73,6 +76,8 @@ func (h *AdminAuth) Login(w http.ResponseWriter, r *http.Request) {
 		"user": map[string]any{
 			"id":         id,
 			"email":      req.Email,
+			"name":       name,
+			"phone":      phone,
 			"role":       role,
 			"account_id": accID,
 		},
@@ -85,9 +90,22 @@ func (h *AdminAuth) Me(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
+
+	// Carrega name/phone do banco — esses campos não vão pro JWT pra evitar
+	// invalidar tokens quando o usuário só atualiza o perfil.
+	var name, phone string
+	if c.UserID > 0 {
+		_ = h.pool.QueryRow(r.Context(),
+			`SELECT COALESCE(name, ''), COALESCE(phone, '') FROM admin_users WHERE id = $1`,
+			c.UserID,
+		).Scan(&name, &phone)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":         c.UserID,
 		"email":      c.Email,
+		"name":       name,
+		"phone":      phone,
 		"role":       c.Role,
 		"account_id": c.AccountID,
 	})

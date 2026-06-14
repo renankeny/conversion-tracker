@@ -27,6 +27,8 @@ func NewAdminUsers(pool *pgxpool.Pool) *AdminUsers {
 type adminUserView struct {
 	ID        int64  `json:"id"`
 	Email     string `json:"email"`
+	Name      string `json:"name"`
+	Phone     string `json:"phone"`
 	Role      string `json:"role"`
 	AccountID *int64 `json:"account_id"`
 	CreatedAt string `json:"created_at"`
@@ -36,7 +38,8 @@ type adminUserView struct {
 // List retorna todos os admins (sem hash de senha).
 func (h *AdminUsers) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.pool.Query(r.Context(),
-		`SELECT id, email, COALESCE(role, 'owner'), account_id, created_at, updated_at
+		`SELECT id, email, COALESCE(name, ''), COALESCE(phone, ''),
+		        COALESCE(role, 'owner'), account_id, created_at, updated_at
 		   FROM admin_users ORDER BY id ASC`)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list error: "+err.Error())
@@ -48,7 +51,7 @@ func (h *AdminUsers) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var v adminUserView
 		var created, updated time.Time
-		if err := rows.Scan(&v.ID, &v.Email, &v.Role, &v.AccountID, &created, &updated); err != nil {
+		if err := rows.Scan(&v.ID, &v.Email, &v.Name, &v.Phone, &v.Role, &v.AccountID, &created, &updated); err != nil {
 			writeError(w, http.StatusInternalServerError, "scan error: "+err.Error())
 			return
 		}
@@ -62,6 +65,8 @@ func (h *AdminUsers) List(w http.ResponseWriter, r *http.Request) {
 type createAdminInput struct {
 	Email     string `json:"email"`
 	Password  string `json:"password"`
+	Name      string `json:"name"`
+	Phone     string `json:"phone"`
 	Role      string `json:"role"`
 	AccountID *int64 `json:"account_id"`
 }
@@ -105,9 +110,10 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	var created, updated time.Time
 	err = h.pool.QueryRow(r.Context(),
-		`INSERT INTO admin_users (email, password_hash, role, account_id)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, created_at, updated_at`, in.Email, hash, role, in.AccountID,
+		`INSERT INTO admin_users (email, password_hash, name, phone, role, account_id)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 RETURNING id, created_at, updated_at`,
+		in.Email, hash, strings.TrimSpace(in.Name), strings.TrimSpace(in.Phone), role, in.AccountID,
 	).Scan(&id, &created, &updated)
 	if err != nil {
 		if isDuplicateKey(err) {
@@ -121,6 +127,8 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, adminUserView{
 		ID:        id,
 		Email:     in.Email,
+		Name:      strings.TrimSpace(in.Name),
+		Phone:     strings.TrimSpace(in.Phone),
 		Role:      role,
 		AccountID: in.AccountID,
 		CreatedAt: created.Format(time.RFC3339),
@@ -169,6 +177,50 @@ func (h *AdminUsers) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type updateProfileInput struct {
+	Name  string `json:"name"`
+	Phone string `json:"phone"`
+	// Email é opcional na resposta — alterar e-mail troca também a chave única
+	// de login. Pra manter simples, deixamos só nome/telefone editáveis aqui.
+}
+
+// UpdateMyProfile atualiza name/phone do admin atual. Não muda email/senha
+// (cada um tem endpoint próprio).
+func (h *AdminUsers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.ClaimsFrom(r.Context())
+	if !ok || claims.UserID == 0 {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+
+	var in updateProfileInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	name := strings.TrimSpace(in.Name)
+	phone := strings.TrimSpace(in.Phone)
+
+	tag, err := h.pool.Exec(r.Context(),
+		`UPDATE admin_users SET name = $1, phone = $2, updated_at = NOW()
+		 WHERE id = $3`, name, phone, claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "update error: "+err.Error())
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "admin não encontrado")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":    claims.UserID,
+		"email": claims.Email,
+		"name":  name,
+		"phone": phone,
+	})
 }
 
 type changePasswordInput struct {

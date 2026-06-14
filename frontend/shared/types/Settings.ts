@@ -7,9 +7,16 @@ export interface AdminUsersListResponse {
 export interface CreateAdminInput {
   email: string
   password: string
+  name?: string
+  phone?: string
   // Multi-tenant: 'owner' enxerga tudo, 'member' apenas a própria account_id.
   role?: 'owner' | 'member'
   account_id?: number | null
+}
+
+export interface UpdateProfileInput {
+  name: string
+  phone: string
 }
 
 export interface ChangePasswordInput {

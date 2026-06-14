@@ -8,6 +8,7 @@ import type {
   MaintenanceStatusResponse,
   PruneResponse,
   ResetAccountResponse,
+  UpdateProfileInput,
   UpdateRetentionInput,
 } from '#shared/types'
 
@@ -26,6 +27,10 @@ export const useSettings = () => {
 
   const changeMyPassword = (input: ChangePasswordInput): Promise<{ ok: boolean }> =>
     api.post<{ ok: boolean }>('/admin/me/password', input)
+
+  // Atualiza nome/telefone do admin atual. Email e senha têm endpoints próprios.
+  const updateMyProfile = (input: UpdateProfileInput): Promise<AdminUser> =>
+    api.put<AdminUser>('/admin/me', input)
 
   // GeoIP
   const geoipStatus = (): Promise<GeoIPStatus> =>
@@ -76,5 +81,6 @@ export const useSettings = () => {
     pruneNow,
     updateRetention,
     resetAccount,
+    updateMyProfile,
   }
 }

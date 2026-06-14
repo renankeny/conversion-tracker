@@ -21,25 +21,28 @@
       </button>
     </div>
 
-    <!-- Aba: Contas (somente owners) -->
+    <!-- Aba: Empresas (somente owners) -->
     <section v-if="activeTab === 'accounts'" class="accounts-section">
       <div class="card">
         <div class="card-header">
           <div>
-            <h3 class="card-title">Contas</h3>
+            <h3 class="card-title">Empresas rastreadas</h3>
             <p class="card-hint">
-              Cada conta isola pixels, eventos e usuários rastreados. Members só
-              enxergam dados da própria conta. Owners enxergam tudo.
+              Cada empresa cliente da agência fica isolada aqui — pixels,
+              eventos, usuários e configurações ficam vinculados à empresa.
+              Você cadastra a empresa pra organizar os trackings; <strong>não há
+              login separado por empresa</strong>, só você (e admins que adicionar)
+              entra no painel.
             </p>
           </div>
           <BaseButton variant="primary" size="sm" @click="newAccountOpen = true">
-            + Nova conta
+            + Nova empresa
           </BaseButton>
         </div>
 
         <div v-if="loadingAccounts" class="muted">Carregando...</div>
 
-        <div v-else-if="!accounts.length" class="muted">Nenhuma conta cadastrada.</div>
+        <div v-else-if="!accounts.length" class="muted">Nenhuma empresa cadastrada.</div>
 
         <div v-else class="account-list">
           <div v-for="a in accounts" :key="a.id" class="account-row">
@@ -72,41 +75,81 @@
     </section>
 
     <!-- Aba: Conta -->
-    <section v-if="activeTab === 'account'" class="card">
-      <h3 class="card-title">Trocar minha senha</h3>
-      <p class="card-hint">
-        Logado como <strong>{{ user?.email }}</strong>. A nova senha precisa ter no mínimo 6 caracteres.
-      </p>
-      <form class="form" @submit.prevent="onChangePassword">
-        <BaseInput
-          v-model="passwordForm.current"
-          type="password"
-          label="Senha atual"
-          required
-        />
-        <BaseInput
-          v-model="passwordForm.next"
-          type="password"
-          label="Nova senha"
-          required
-        />
-        <BaseInput
-          v-model="passwordForm.confirm"
-          type="password"
-          label="Confirmar nova senha"
-          :error="passwordError"
-          required
-        />
-        <div class="form-actions">
-          <BaseButton
-            variant="primary"
-            type="submit"
-            :loading="changingPassword"
-          >
-            Salvar nova senha
-          </BaseButton>
-        </div>
-      </form>
+    <section v-if="activeTab === 'account'" class="account-stack">
+      <div class="card">
+        <h3 class="card-title">Meu perfil</h3>
+        <p class="card-hint">
+          Esses dados aparecem no painel (sidebar, listas) e ajudam o time a
+          identificar quem está logado. Não afetam autenticação.
+        </p>
+        <form class="form" @submit.prevent="onSaveProfile">
+          <BaseInput
+            v-model="profileForm.name"
+            type="text"
+            label="Nome"
+            placeholder="Como deve aparecer no painel"
+          />
+          <BaseInput
+            :model-value="user?.email || ''"
+            type="email"
+            label="E-mail (login)"
+            disabled
+            hint="O e-mail é o identificador único de login e não pode ser alterado por aqui."
+          />
+          <BaseInput
+            v-model="profileForm.phone"
+            type="tel"
+            label="Telefone"
+            placeholder="(11) 99999-9999"
+          />
+          <div class="form-actions">
+            <BaseButton
+              variant="primary"
+              type="submit"
+              :loading="savingProfile"
+            >
+              Salvar perfil
+            </BaseButton>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Trocar minha senha</h3>
+        <p class="card-hint">
+          Logado como <strong>{{ user?.email }}</strong>. A nova senha precisa ter no mínimo 6 caracteres.
+        </p>
+        <form class="form" @submit.prevent="onChangePassword">
+          <BaseInput
+            v-model="passwordForm.current"
+            type="password"
+            label="Senha atual"
+            required
+          />
+          <BaseInput
+            v-model="passwordForm.next"
+            type="password"
+            label="Nova senha"
+            required
+          />
+          <BaseInput
+            v-model="passwordForm.confirm"
+            type="password"
+            label="Confirmar nova senha"
+            :error="passwordError"
+            required
+          />
+          <div class="form-actions">
+            <BaseButton
+              variant="primary"
+              type="submit"
+              :loading="changingPassword"
+            >
+              Salvar nova senha
+            </BaseButton>
+          </div>
+        </form>
+      </div>
     </section>
 
     <!-- Aba: Admins -->
@@ -150,9 +193,8 @@
           <div>
             <h3 class="card-title">API Keys</h3>
             <p class="card-hint">
-              Tokens server-to-server pra integrar o TrackFind com seu backend.
-              Cada key é vinculada a uma conta e atua como member dela.
               <strong>O segredo aparece uma única vez na criação</strong> — copie e guarde.
+              Cada key é vinculada a uma empresa e atua como member dela.
             </p>
           </div>
           <BaseButton variant="primary" size="sm" @click="newKeyOpen = true">
@@ -173,7 +215,7 @@
                 <BaseBadge v-else variant="success">ativa</BaseBadge>
               </div>
               <span class="account-meta">
-                <code>{{ k.key_prefix }}...</code> · conta #{{ k.account_id }} ·
+                <code>{{ k.key_prefix }}...</code> · empresa #{{ k.account_id }} ·
                 criada {{ formatDate(k.created_at) }}
                 <span v-if="k.last_used_at"> · usada {{ formatDate(k.last_used_at) }}</span>
                 <span v-else> · nunca usada</span>
@@ -297,7 +339,7 @@
       </div>
 
       <div class="retention-form">
-        <h4 class="card-subtitle">Ajustar retenção desta conta</h4>
+        <h4 class="card-subtitle">Ajustar retenção desta empresa</h4>
         <div class="form-row">
           <BaseInput
             v-model.number="retentionForm.sent_events"
@@ -339,7 +381,7 @@
           Executar limpeza agora
         </BaseButton>
         <BaseButton variant="danger" :loading="resetting" @click="confirmReset = true">
-          ⚠️ Resetar tudo desta conta
+          ⚠️ Resetar tudo desta empresa
         </BaseButton>
       </div>
 
@@ -386,12 +428,12 @@
         <div v-if="isOwner" class="form-field">
           <label class="form-label">Tipo de acesso</label>
           <select v-model="newAdminForm.role" class="form-select">
-            <option value="owner">Owner — acesso total a todas as contas</option>
-            <option value="member">Member — restrito a uma conta</option>
+            <option value="owner">Owner — acesso total a todas as empresas</option>
+            <option value="member">Member — restrito a uma empresa</option>
           </select>
         </div>
         <div v-if="isOwner && newAdminForm.role === 'member'" class="form-field">
-          <label class="form-label">Conta vinculada</label>
+          <label class="form-label">Empresa vinculada</label>
           <select v-model="newAdminForm.account_id" class="form-select">
             <option :value="null" disabled>Selecione...</option>
             <option v-for="a in accounts" :key="a.id" :value="a.id">
@@ -408,23 +450,23 @@
       </template>
     </BaseModal>
 
-    <BaseModal v-model="newAccountOpen" :title="editingAccount ? 'Editar conta' : 'Nova conta'" size="sm">
+    <BaseModal v-model="newAccountOpen" :title="editingAccount ? 'Editar empresa' : 'Nova empresa'" size="sm">
       <div class="form">
         <BaseInput
           v-model="accountForm.name"
-          label="Nome"
-          placeholder="Conta do Cliente"
+          label="Nome da empresa"
+          placeholder="Ex: AutoMarks"
           required
         />
         <BaseInput
           v-model="accountForm.slug"
-          label="Slug"
-          placeholder="cliente-foo"
+          label="Slug (identificador interno)"
+          placeholder="automarks"
           hint="Apenas a-z, 0-9 e -. Auto-gerado a partir do nome se vazio."
         />
         <label class="checkbox-row">
           <input v-model="accountForm.enabled" type="checkbox" />
-          <span>Conta habilitada</span>
+          <span>Empresa habilitada (eventos podem ser rastreados)</span>
         </label>
       </div>
       <template #footer>
@@ -459,8 +501,8 @@
 
     <ConfirmModal
       v-model="confirmReset"
-      title="Resetar TUDO desta conta?"
-      message="Vai apagar TODOS os sent_events e event_counters desta conta — independente da idade. Histórico de envios à Meta CAPI, contadores de PageView, conversões — tudo. Pixels, tracked_users e configurações ficam intactos. Operação IRREVERSÍVEL."
+      title="Resetar TUDO desta empresa?"
+      message="Vai apagar TODOS os sent_events e event_counters desta empresa — independente da idade. Histórico de envios à Meta CAPI, contadores de PageView, conversões — tudo. Pixels, tracked_users e configurações ficam intactos. Operação IRREVERSÍVEL."
       confirm-label="Sim, apagar tudo"
       variant="danger"
       :loading="resetting"
@@ -477,7 +519,7 @@
           required
         />
         <div v-if="isOwner" class="form-field">
-          <label class="form-label">Conta vinculada</label>
+          <label class="form-label">Empresa vinculada</label>
           <select v-model="keyForm.account_id" class="form-select">
             <option v-for="a in accounts" :key="a.id" :value="a.id">
               {{ a.name }} (#{{ a.id }})
@@ -527,9 +569,9 @@
 
     <ConfirmModal
       v-model="deleteAccountOpen"
-      title="Remover conta?"
+      title="Remover empresa?"
       :message="deletingAccount
-        ? `A conta '${deletingAccount.name}' (#${deletingAccount.id}) será removida. Não é possível remover se houver pixels/admins vinculados.`
+        ? `A empresa '${deletingAccount.name}' (#${deletingAccount.id}) será removida. Não é possível remover se houver pixels/admins vinculados.`
         : ''"
       confirm-label="Remover"
       variant="danger"
@@ -571,14 +613,14 @@ const isOwner = computed(() => {
 
 const tabs = computed(() => {
   const base = [
-    { value: 'account', label: 'Conta' },
+    { value: 'account', label: 'Meu perfil' },
     { value: 'admins', label: 'Administradores' },
     { value: 'api-keys', label: 'API Keys' },
     { value: 'geoip', label: 'GeoIP' },
     { value: 'retention', label: 'Retenção' },
   ] as const
   if (isOwner.value) {
-    return [...base, { value: 'accounts' as const, label: 'Contas' }]
+    return [...base, { value: 'accounts' as const, label: 'Empresas' }]
   }
   return base
 })
@@ -595,6 +637,43 @@ const passwordForm = reactive({
 })
 const passwordError = ref('')
 const changingPassword = ref(false)
+
+// === Perfil ===
+const profileForm = reactive({
+  name: user.value?.name || '',
+  phone: user.value?.phone || '',
+})
+const savingProfile = ref(false)
+
+// Mantém o form sincronizado se o user carregar/atualizar depois.
+watch(
+  () => user.value,
+  (u) => {
+    if (!u) return
+    profileForm.name = u.name || ''
+    profileForm.phone = u.phone || ''
+  },
+  { immediate: true }
+)
+
+const onSaveProfile = async () => {
+  savingProfile.value = true
+  try {
+    const updated = await settings.updateMyProfile({
+      name: profileForm.name.trim(),
+      phone: profileForm.phone.trim(),
+    })
+    // Atualiza o cookie do usuário pra propagar pro resto da UI (sidebar etc).
+    if (user.value) {
+      user.value = { ...user.value, name: updated.name, phone: updated.phone }
+    }
+    toast.success('Perfil atualizado')
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao salvar perfil')
+  } finally {
+    savingProfile.value = false
+  }
+}
 
 const onChangePassword = async () => {
   passwordError.value = ''
@@ -1022,7 +1101,7 @@ const onReset = async () => {
     const res = await settings.resetAccount()
     lastResetResult.value = res
     toast.success(
-      'Conta resetada',
+      'Empresa resetada',
       `${formatNumber(res.deleted_sent_events)} eventos + ${formatNumber(res.deleted_event_counters)} contadores apagados`
     )
     confirmReset.value = false
@@ -1482,5 +1561,11 @@ watch(newKeyOpen, (open) => {
   color: var(--text-3);
   font-style: italic;
   margin-top: 0.125rem;
+}
+
+.account-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 </style>
