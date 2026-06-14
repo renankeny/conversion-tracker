@@ -9,8 +9,11 @@ type Account struct {
 	Name      string    `json:"name"`
 	Slug      string    `json:"slug"`
 	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	// Override de retenção. NULL => usa env global; 0 => sem retenção; N>0 => N dias.
+	SentEventsRetentionDays    *int      `json:"sent_events_retention_days,omitempty"`
+	EventCountersRetentionDays *int      `json:"event_counters_retention_days,omitempty"`
+	CreatedAt                  time.Time `json:"created_at"`
+	UpdatedAt                  time.Time `json:"updated_at"`
 }
 
 // AdminRole controla o nível de acesso do admin no painel.

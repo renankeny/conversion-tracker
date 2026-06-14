@@ -59,6 +59,7 @@ func New(deps Deps) (*Server, error) {
 	stats := repo.NewStatsRepo(deps.Pool)
 	counters := repo.NewEventCounterRepo(deps.Pool)
 	apiKeys := repo.NewAPIKeyRepo(deps.Pool)
+	accountRepo := repo.NewAccountRepo(deps.Pool)
 
 	eventH := handlers.NewEvents(pixels, users, sentEvents, deps.GeoIP, deps.Enqueuer, deps.URLs)
 	webhookH := handlers.NewWebhooks(pixels, users, deps.Enqueuer, deps.URLs, deps.Secrets)
@@ -68,9 +69,9 @@ func New(deps Deps) (*Server, error) {
 	adminPixelH.SetDNSTarget(deps.Cfg.TrackingTargetHost)
 	adminPixelTestH := handlers.NewAdminPixelTestEvent(pixels, deps.Cfg.MetaAPIVersion, deps.Cfg.MetaPartnerAgent)
 	adminGeoIPH := handlers.NewAdminGeoIP(deps.Cfg.MaxMindLicenseKey, deps.Cfg.GeoIPDBPath, deps.GeoIP)
-	adminMaintenanceH := handlers.NewAdminMaintenance(deps.Pool, deps.Cfg.SentEventsRetentionDays, deps.Cfg.EventCountersRetentionDays)
+	adminMaintenanceH := handlers.NewAdminMaintenance(deps.Pool, accountRepo, deps.Cfg.SentEventsRetentionDays, deps.Cfg.EventCountersRetentionDays)
 	adminUsersH := handlers.NewAdminUsers(deps.Pool)
-	adminAccountsH := handlers.NewAdminAccounts(repo.NewAccountRepo(deps.Pool))
+	adminAccountsH := handlers.NewAdminAccounts(accountRepo)
 	adminURLH := handlers.NewAdminURLMappings(urlMaps, deps.URLs)
 	adminSentH := handlers.NewAdminSentEvents(sentEvents)
 	adminTUH := handlers.NewAdminTrackedUsers(users)
@@ -151,6 +152,8 @@ func New(deps Deps) (*Server, error) {
 			// Maintenance (retention)
 			r.Get("/admin/maintenance/status", adminMaintenanceH.Status)
 			r.Post("/admin/maintenance/prune", adminMaintenanceH.PruneNow)
+			r.Put("/admin/maintenance/retention", adminMaintenanceH.UpdateRetention)
+			r.Post("/admin/maintenance/reset", adminMaintenanceH.Reset)
 
 			// Admin users (CRUD + change password)
 			r.Get("/admin/users", adminUsersH.List)

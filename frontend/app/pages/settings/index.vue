@@ -261,8 +261,8 @@
       <h3 class="card-title">Retenção de dados</h3>
       <p class="card-hint">
         Os registros são apagados automaticamente todo dia às 03:00 (horário São Paulo).
-        Defina via env <code>SENT_EVENTS_RETENTION_DAYS</code> e
-        <code>EVENT_COUNTERS_RETENTION_DAYS</code>.
+        Você pode definir um override por conta abaixo. Use <strong>0</strong> pra desativar
+        a retenção (mantém para sempre) ou deixe vazio pra usar o default global.
       </p>
 
       <div v-if="!maintenanceData" class="muted">Carregando...</div>
@@ -271,22 +271,75 @@
         <div class="retention-item">
           <span class="retention-label">Eventos completos (sent_events)</span>
           <span class="retention-value">
-            {{ maintenanceData.sent_events_retention_days || '∞' }}
-            <small v-if="maintenanceData.sent_events_retention_days">dias</small>
+            {{ maintenanceData.effective_sent_events_retention_days
+              ?? maintenanceData.sent_events_retention_days
+              ?? '∞' }}
+            <small>dias</small>
           </span>
+          <small v-if="maintenanceData.account_sent_events_retention_days != null" class="retention-source">
+            override da conta
+          </small>
+          <small v-else class="retention-source">default global</small>
         </div>
         <div class="retention-item">
           <span class="retention-label">Agregados (event_counters)</span>
           <span class="retention-value">
-            {{ maintenanceData.event_counters_retention_days || '∞' }}
-            <small v-if="maintenanceData.event_counters_retention_days">dias</small>
+            {{ maintenanceData.effective_event_counters_retention_days
+              ?? maintenanceData.event_counters_retention_days
+              ?? '∞' }}
+            <small>dias</small>
           </span>
+          <small v-if="maintenanceData.account_event_counters_retention_days != null" class="retention-source">
+            override da conta
+          </small>
+          <small v-else class="retention-source">default global</small>
+        </div>
+      </div>
+
+      <div class="retention-form">
+        <h4 class="card-subtitle">Ajustar retenção desta conta</h4>
+        <div class="form-row">
+          <BaseInput
+            v-model.number="retentionForm.sent_events"
+            type="number"
+            label="sent_events (dias)"
+            placeholder="vazio = usa default global"
+            hint="0 = nunca apaga; >0 = mantém os últimos N dias"
+            min="0"
+          />
+          <BaseInput
+            v-model.number="retentionForm.event_counters"
+            type="number"
+            label="event_counters (dias)"
+            placeholder="vazio = usa default global"
+            hint="0 = nunca apaga; >0 = mantém os últimos N dias"
+            min="0"
+          />
+        </div>
+        <div class="retention-actions">
+          <BaseButton
+            variant="primary"
+            :loading="savingRetention"
+            @click="onSaveRetention"
+          >
+            Salvar retenção
+          </BaseButton>
+          <BaseButton
+            variant="ghost"
+            :loading="savingRetention"
+            @click="onResetRetention"
+          >
+            Voltar pro default global
+          </BaseButton>
         </div>
       </div>
 
       <div class="retention-actions">
-        <BaseButton variant="danger" :loading="pruning" @click="confirmPrune = true">
+        <BaseButton variant="outline" :loading="pruning" @click="confirmPrune = true">
           Executar limpeza agora
+        </BaseButton>
+        <BaseButton variant="danger" :loading="resetting" @click="confirmReset = true">
+          ⚠️ Resetar tudo desta conta
         </BaseButton>
       </div>
 
@@ -298,6 +351,18 @@
             <strong>{{ formatNumber(r.deleted) }}</strong> rows apagadas
             <small v-if="r.retention_days">({{ r.retention_days }} dias)</small>
           </span>
+        </div>
+      </div>
+
+      <div v-if="lastResetResult" class="prune-results">
+        <h4>Reset executado:</h4>
+        <div class="prune-row">
+          <code>sent_events</code>
+          <span><strong>{{ formatNumber(lastResetResult.deleted_sent_events) }}</strong> rows apagadas</span>
+        </div>
+        <div class="prune-row">
+          <code>event_counters</code>
+          <span><strong>{{ formatNumber(lastResetResult.deleted_event_counters) }}</strong> rows apagadas</span>
         </div>
       </div>
     </section>
@@ -392,6 +457,16 @@
       @confirm="onPrune"
     />
 
+    <ConfirmModal
+      v-model="confirmReset"
+      title="Resetar TUDO desta conta?"
+      message="Vai apagar TODOS os sent_events e event_counters desta conta — independente da idade. Histórico de envios à Meta CAPI, contadores de PageView, conversões — tudo. Pixels, tracked_users e configurações ficam intactos. Operação IRREVERSÍVEL."
+      confirm-label="Sim, apagar tudo"
+      variant="danger"
+      :loading="resetting"
+      @confirm="onReset"
+    />
+
     <BaseModal v-model="newKeyOpen" title="Criar API Key" size="sm">
       <div class="form">
         <BaseInput
@@ -472,6 +547,7 @@ import type {
   GeoIPStatus,
   MaintenanceStatusResponse,
   PruneResultRow,
+  ResetAccountResponse,
 } from '#shared/types'
 
 definePageMeta({
@@ -871,9 +947,22 @@ const pruning = ref(false)
 const confirmPrune = ref(false)
 const lastPruneResults = ref<PruneResultRow[]>([])
 
+const retentionForm = reactive<{
+  sent_events: number | null
+  event_counters: number | null
+}>({ sent_events: null, event_counters: null })
+const savingRetention = ref(false)
+
+const confirmReset = ref(false)
+const resetting = ref(false)
+const lastResetResult = ref<ResetAccountResponse | null>(null)
+
 const loadMaintenance = async () => {
   try {
     maintenanceData.value = await settings.maintenanceStatus()
+    // Pré-popula o form com o override atual da conta (se houver).
+    retentionForm.sent_events = maintenanceData.value.account_sent_events_retention_days ?? null
+    retentionForm.event_counters = maintenanceData.value.account_event_counters_retention_days ?? null
   } catch (error: any) {
     toast.error('Erro', error.message || 'Falha ao consultar retenção')
   }
@@ -890,6 +979,57 @@ const onPrune = async () => {
     toast.error('Erro', error.message || 'Falha ao executar limpeza')
   } finally {
     pruning.value = false
+  }
+}
+
+const onSaveRetention = async () => {
+  savingRetention.value = true
+  try {
+    await settings.updateRetention({
+      sent_events_retention_days: retentionForm.sent_events,
+      event_counters_retention_days: retentionForm.event_counters,
+    })
+    toast.success('Retenção atualizada', 'Próxima limpeza usará a nova janela')
+    await loadMaintenance()
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao salvar retenção')
+  } finally {
+    savingRetention.value = false
+  }
+}
+
+const onResetRetention = async () => {
+  savingRetention.value = true
+  try {
+    await settings.updateRetention({
+      sent_events_retention_days: null,
+      event_counters_retention_days: null,
+    })
+    retentionForm.sent_events = null
+    retentionForm.event_counters = null
+    toast.success('Override removido', 'Conta volta a usar o default global')
+    await loadMaintenance()
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao remover override')
+  } finally {
+    savingRetention.value = false
+  }
+}
+
+const onReset = async () => {
+  resetting.value = true
+  try {
+    const res = await settings.resetAccount()
+    lastResetResult.value = res
+    toast.success(
+      'Conta resetada',
+      `${formatNumber(res.deleted_sent_events)} eventos + ${formatNumber(res.deleted_event_counters)} contadores apagados`
+    )
+    confirmReset.value = false
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao resetar conta')
+  } finally {
+    resetting.value = false
   }
 }
 
@@ -1314,5 +1454,33 @@ watch(newKeyOpen, (open) => {
   font-size: 0.8125rem;
   color: var(--brand);
   word-break: break-all;
+}
+
+/* === Retention form ====================================================== */
+.retention-form {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.card-subtitle {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-bottom: 0.875rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.retention-source {
+  font-size: 0.6875rem;
+  color: var(--text-3);
+  font-style: italic;
+  margin-top: 0.125rem;
 }
 </style>

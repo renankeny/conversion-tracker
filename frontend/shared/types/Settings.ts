@@ -39,6 +39,25 @@ export interface MaintenanceStatusResponse {
   sent_events_retention_days: number
   event_counters_retention_days: number
   now: string
+  // Multi-tenant: presentes quando o caller está em escopo de conta.
+  account_id?: number
+  account_sent_events_retention_days?: number | null
+  account_event_counters_retention_days?: number | null
+  effective_sent_events_retention_days?: number
+  effective_event_counters_retention_days?: number
+}
+
+export interface UpdateRetentionInput {
+  // null = remove override e volta pro env global
+  sent_events_retention_days?: number | null
+  event_counters_retention_days?: number | null
+  account_id?: number
+}
+
+export interface ResetAccountResponse {
+  account_id: number
+  deleted_sent_events: number
+  deleted_event_counters: number
 }
 
 export interface PruneResultRow {

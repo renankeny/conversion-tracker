@@ -19,7 +19,9 @@ func NewAccountRepo(pool *pgxpool.Pool) *AccountRepo {
 	return &AccountRepo{pool: pool}
 }
 
-const accountColumns = `id, name, slug, enabled, created_at, updated_at`
+const accountColumns = `id, name, slug, enabled,
+	sent_events_retention_days, event_counters_retention_days,
+	created_at, updated_at`
 
 func (r *AccountRepo) FindByID(ctx context.Context, id int64) (*domain.Account, error) {
 	q := `SELECT ` + accountColumns + ` FROM accounts WHERE id = $1`
@@ -85,7 +87,11 @@ func (r *AccountRepo) Delete(ctx context.Context, id int64) error {
 
 func scanAccount(row rowScanner) (*domain.Account, error) {
 	var a domain.Account
-	err := row.Scan(&a.ID, &a.Name, &a.Slug, &a.Enabled, &a.CreatedAt, &a.UpdatedAt)
+	err := row.Scan(
+		&a.ID, &a.Name, &a.Slug, &a.Enabled,
+		&a.SentEventsRetentionDays, &a.EventCountersRetentionDays,
+		&a.CreatedAt, &a.UpdatedAt,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -93,4 +99,50 @@ func scanAccount(row rowScanner) (*domain.Account, error) {
 		return nil, err
 	}
 	return &a, nil
+}
+
+// UpdateRetention atualiza apenas as colunas de retenção. Use NULL pra
+// resetar pro default global; 0 pra desabilitar; N>0 pra N dias.
+func (r *AccountRepo) UpdateRetention(ctx context.Context, accountID int64, sentDays, countersDays *int) error {
+	const q = `UPDATE accounts
+	           SET sent_events_retention_days = $1,
+	               event_counters_retention_days = $2,
+	               updated_at = NOW()
+	           WHERE id = $3
+	           RETURNING id`
+	var id int64
+	err := r.pool.QueryRow(ctx, q, sentDays, countersDays, accountID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
+}
+
+// AccountRetention é o que ListRetentions devolve. Mesma forma que
+// maintenance.PerAccountRetention pra facilitar adapters no scheduler de prune.
+type AccountRetention struct {
+	AccountID                  int64
+	SentEventsRetentionDays    *int
+	EventCountersRetentionDays *int
+}
+
+// ListRetentions devolve as contas habilitadas + seus overrides de retenção.
+// Usada pelo scheduler de prune.
+func (r *AccountRepo) ListRetentions(ctx context.Context) ([]AccountRetention, error) {
+	const q = `SELECT id, sent_events_retention_days, event_counters_retention_days
+	           FROM accounts WHERE enabled = TRUE`
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AccountRetention
+	for rows.Next() {
+		var ar AccountRetention
+		if err := rows.Scan(&ar.AccountID, &ar.SentEventsRetentionDays, &ar.EventCountersRetentionDays); err != nil {
+			return nil, err
+		}
+		out = append(out, ar)
+	}
+	return out, rows.Err()
 }

@@ -7,6 +7,8 @@ import type {
   GeoIPStatus,
   MaintenanceStatusResponse,
   PruneResponse,
+  ResetAccountResponse,
+  UpdateRetentionInput,
 } from '#shared/types'
 
 export const useSettings = () => {
@@ -51,6 +53,18 @@ export const useSettings = () => {
     return api.post<PruneResponse>('/admin/maintenance/prune' + qs)
   }
 
+  // Atualiza override de retenção da conta. Passe null em qualquer campo
+  // pra resetar pro default global.
+  const updateRetention = (input: UpdateRetentionInput): Promise<void> =>
+    api.put<void>('/admin/maintenance/retention', input)
+
+  // Apaga TODOS os sent_events e event_counters da conta. Operação destrutiva.
+  const resetAccount = (accountID?: number): Promise<ResetAccountResponse> =>
+    api.post<ResetAccountResponse>('/admin/maintenance/reset', {
+      confirm: true,
+      account_id: accountID,
+    })
+
   return {
     listAdmins,
     createAdmin,
@@ -60,5 +74,7 @@ export const useSettings = () => {
     geoipRefresh,
     maintenanceStatus,
     pruneNow,
+    updateRetention,
+    resetAccount,
   }
 }

@@ -50,8 +50,13 @@ func main() {
 	// Scheduler de manutenção: roda diariamente às 03:00 (horário São Paulo)
 	// removendo registros antigos de sent_events e event_counters conforme
 	// SENT_EVENTS_RETENTION_DAYS e EVENT_COUNTERS_RETENTION_DAYS.
+	//
+	// O scheduler iterates contas e usa o override de cada uma quando definido,
+	// caindo no env global apenas quando a conta não tem override.
+	accountRepo := repo.NewAccountRepo(pool)
 	scheduler := &maintenance.Scheduler{
 		Pool:                   pool,
+		Accounts:               &accountRetentionAdapter{repo: accountRepo},
 		SentEventsRetention:    cfg.SentEventsRetentionDays,
 		EventCountersRetention: cfg.EventCountersRetentionDays,
 		HourSP:                 3,
@@ -64,4 +69,28 @@ func main() {
 		slog.Error("worker stopped", "err", err)
 		os.Exit(1)
 	}
+}
+
+
+// accountRetentionAdapter adapta repo.AccountRepo à interface
+// maintenance.PerAccountRetentionLister sem criar dependência do package
+// maintenance no package repo.
+type accountRetentionAdapter struct {
+	repo *repo.AccountRepo
+}
+
+func (a *accountRetentionAdapter) ListRetentions(ctx context.Context) ([]maintenance.PerAccountRetention, error) {
+	rows, err := a.repo.ListRetentions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]maintenance.PerAccountRetention, len(rows))
+	for i, r := range rows {
+		out[i] = maintenance.PerAccountRetention{
+			AccountID:                  r.AccountID,
+			SentEventsRetentionDays:    r.SentEventsRetentionDays,
+			EventCountersRetentionDays: r.EventCountersRetentionDays,
+		}
+	}
+	return out, nil
 }
