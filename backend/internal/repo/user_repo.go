@@ -68,6 +68,60 @@ func (r *UserRepo) FindByIDWpp(ctx context.Context, idWpp string) (*domain.Track
 	return scanUser(r.pool.QueryRow(ctx, q, idWpp))
 }
 
+// UpdateByID atualiza um tracked_user por ID (PK), permitindo editar
+// qualquer campo editável a partir do painel admin. Diferente do Upsert,
+// não usa external_id como chave de conflito e não preserva valores —
+// sobrescreve com o que vier no payload (admin assume responsabilidade).
+//
+// Campos não-editáveis (preservados): id, account_id (uso por owner via
+// outra rota), created_at; updated_at é sempre atualizado pra NOW().
+func (r *UserRepo) UpdateByID(ctx context.Context, u *domain.TrackedUser) error {
+	const q = `
+	UPDATE tracked_users SET
+		external_id = $2,
+		id_wpp = $3,
+		pixel_name = $4,
+		fbp = $5, fbc = $6, gclid = $7,
+		client_ip = $8, client_user_agent = $9,
+		country = $10, state = $11, city = $12, postal_code = $13,
+		first_name = $14, last_name = $15, email = $16, phone = $17,
+		url = $18,
+		first_utm_source = $19, first_utm_medium = $20,
+		first_utm_campaign = $21, first_utm_content = $22, first_utm_term = $23,
+		last_utm_source = $24, last_utm_medium = $25,
+		last_utm_campaign = $26, last_utm_content = $27, last_utm_term = $28,
+		updated_at = NOW()
+	WHERE id = $1
+	`
+	tag, err := r.pool.Exec(ctx, q,
+		u.ID,
+		u.ExternalID, u.IDWpp, u.PixelName,
+		u.FBP, u.FBC, u.GCLID,
+		u.ClientIP, u.ClientUserAgent,
+		u.Country, u.State, u.City, u.PostalCode,
+		u.FirstName, u.LastName, u.Email, u.Phone,
+		u.URL,
+		u.FirstUTMSource, u.FirstUTMMedium,
+		u.FirstUTMCampaign, u.FirstUTMContent, u.FirstUTMTerm,
+		u.LastUTMSource, u.LastUTMMedium,
+		u.LastUTMCampaign, u.LastUTMContent, u.LastUTMTerm,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// FindByID busca pelo PK numérico (não pelo external_id). Usado pelo
+// painel admin pra carregar os dados antes de editar.
+func (r *UserRepo) FindByID(ctx context.Context, id int64) (*domain.TrackedUser, error) {
+	q := `SELECT ` + userColumns + ` FROM tracked_users WHERE id = $1`
+	return scanUser(r.pool.QueryRow(ctx, q, id))
+}
+
 // Upsert cria ou atualiza pelo external_id.
 //
 // Os campos UTM "first_*" só são preenchidos na criação (não são sobrescritos depois).

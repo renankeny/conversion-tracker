@@ -184,6 +184,8 @@ func New(deps Deps) (*Server, error) {
 
 			// Tracked users (visitantes/leads).
 			r.Get("/admin/tracked-users", adminTUH.List)
+			r.Get("/admin/tracked-users/{id}", adminTUH.Get)
+			r.Put("/admin/tracked-users/{id}", adminTUH.Update)
 
 			// Stats agregadas pra dashboard.
 			r.Get("/admin/stats", adminStatsH.Overview)

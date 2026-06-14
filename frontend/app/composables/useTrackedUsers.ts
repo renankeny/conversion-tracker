@@ -1,4 +1,4 @@
-import type { TrackedUser, TrackedUserFilters, TrackedUsersResponse } from '#shared/types'
+import type { TrackedUser, TrackedUserFilters, TrackedUserUpdateInput, TrackedUsersResponse } from '#shared/types'
 
 export const useTrackedUsers = () => {
   const api = useAPI()
@@ -11,7 +11,13 @@ export const useTrackedUsers = () => {
     return api.get<TrackedUser>(`/admin/tracked-users/${id}`)
   }
 
-  return { list, find }
+  // update aceita patch parcial — só os campos enviados são alterados.
+  // Pra limpar um campo, envie string vazia explícita.
+  const update = (id: number, patch: TrackedUserUpdateInput): Promise<TrackedUser> => {
+    return api.put<TrackedUser>(`/admin/tracked-users/${id}`, patch)
+  }
+
+  return { list, find, update }
 }
 
 const buildQuery = (params: Record<string, string | number | undefined>): string => {

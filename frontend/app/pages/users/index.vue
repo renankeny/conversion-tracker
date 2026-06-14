@@ -63,7 +63,7 @@
       </div>
     </div>
 
-    <UserDetailsModal v-model="modalOpen" :user="selected" />
+    <UserDetailsModal v-model="modalOpen" :user="selected" @saved="onUserSaved" />
   </div>
 </template>
 
@@ -150,6 +150,16 @@ const nextPage = () => {
 const onSelect = (u: TrackedUser) => {
   selected.value = u
   modalOpen.value = true
+}
+
+// Atualiza a linha na lista local quando o modal salva edições — evita
+// fetch inteiro só pra refletir 1 mudança.
+const onUserSaved = (updated: TrackedUser) => {
+  const idx = users.value.findIndex((u) => u.id === updated.id)
+  if (idx !== -1) {
+    users.value[idx] = updated
+  }
+  selected.value = updated
 }
 
 const formatNumber = (n: number): string => new Intl.NumberFormat('pt-BR').format(n)
