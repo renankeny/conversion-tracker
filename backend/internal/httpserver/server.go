@@ -189,6 +189,7 @@ func New(deps Deps) (*Server, error) {
 
 			// Stats agregadas pra dashboard.
 			r.Get("/admin/stats", adminStatsH.Overview)
+			r.Get("/admin/stats/geo", adminStatsH.Geo)
 
 			// Counters agregados (PageView, ViewContent, scroll, etc).
 			r.Get("/admin/counters/summary", adminCountersH.Summary)

@@ -92,11 +92,14 @@
       />
     </div>
 
-    <!-- Últimas compras -->
-    <RecentPurchases
-      :purchases="recentPurchases"
-      :subtitle="purchasesSubtitle"
-    />
+    <!-- Globo + Últimas compras -->
+    <div class="grid-2-globe">
+      <GeoGlobe :stats="geoData" />
+      <RecentPurchases
+        :purchases="recentPurchases"
+        :subtitle="purchasesSubtitle"
+      />
+    </div>
   </div>
 </template>
 
@@ -105,6 +108,7 @@ import KpiCard from '~/components/dashboard/KpiCard.vue'
 import EventsChart from '~/components/dashboard/EventsChart.vue'
 import ConversionFunnel from '~/components/dashboard/ConversionFunnel.vue'
 import RecentPurchases from '~/components/dashboard/RecentPurchases.vue'
+import GeoGlobe from '~/components/dashboard/GeoGlobe.vue'
 import PeriodSelector, { type PeriodValue } from '~/components/dashboard/PeriodSelector.vue'
 import type {
   CounterSummaryResponse,
@@ -129,6 +133,7 @@ const loading = ref(false)
 const summaryData = ref<CounterSummaryResponse | null>(null)
 const seriesData = ref<CounterSeriesResponse | null>(null)
 const recentPurchases = ref<SentEvent[]>([])
+const geoData = ref<any[]>([])
 
 // === Helpers de período ===
 const periodLabels: Record<PeriodValue, string> = {
@@ -227,15 +232,17 @@ const fetchAll = async () => {
     const to = new Date().toISOString()
     const granularity = granularityFor(period.value)
 
-    const [summary, series, purchases] = await Promise.all([
+    const [summary, series, purchases, geo] = await Promise.all([
       dashboard.summary({ from, to }),
       dashboard.series({ from, to, granularity }),
       dashboard.recentPurchases({ from, to, limit: 10 }),
+      dashboard.geoStats({ from, to }),
     ])
 
     summaryData.value = summary
     seriesData.value = series
     recentPurchases.value = purchases.data || []
+    geoData.value = geo || []
   } catch (error: any) {
     toast.error('Erro', error.message || 'Não foi possível carregar a dashboard')
   } finally {
@@ -302,8 +309,15 @@ onMounted(fetchAll)
   gap: 1rem;
 }
 
+.grid-2-globe {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 1rem;
+}
+
 @media (max-width: 1023px) {
-  .grid-2 {
+  .grid-2,
+  .grid-2-globe {
     grid-template-columns: 1fr;
   }
 }

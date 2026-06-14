@@ -26,10 +26,14 @@ export const useDashboard = () => {
     return api.get<EventsResponse>('/admin/sent-events' + buildQuery(merged))
   }
 
-  return { summary, series, recentPurchases }
+  const geoStats = (filters: CounterFilters = {}) => {
+    return api.get<any[]>('/admin/stats/geo' + buildQuery(filters))
+  }
+
+  return { summary, series, recentPurchases, geoStats }
 }
 
-const buildQuery = (params: Record<string, string | number | undefined>): string => {
+const buildQuery = (params: Record<string, any>): string => {
   const entries = Object.entries(params).filter(
     ([, v]) => v !== undefined && v !== '' && v !== null
   )

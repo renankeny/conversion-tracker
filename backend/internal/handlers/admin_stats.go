@@ -54,3 +54,40 @@ func (h *AdminStats) Overview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, overview)
 }
+
+// Geo GET /admin/stats/geo?from=&to=&pixel=
+func (h *AdminStats) Geo(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := repo.StatsFilter{PixelName: q.Get("pixel")}
+
+	if scope := TenantFromContext(r.Context()); !scope.IsOwner {
+		f.AccountID = scope.AccountID
+	}
+
+	if v := q.Get("from"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid 'from' (RFC3339)")
+			return
+		}
+		f.From = t
+	} else {
+		f.From = time.Now().AddDate(0, 0, -30)
+	}
+	if v := q.Get("to"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid 'to' (RFC3339)")
+			return
+		}
+		f.To = t
+	}
+
+	geo, err := h.repo.GeoDistribution(r.Context(), f)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "geo stats error: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, geo)
+}
+

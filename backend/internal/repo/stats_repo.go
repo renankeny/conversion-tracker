@@ -160,3 +160,65 @@ func (s *StatsRepo) Overview(ctx context.Context, f StatsFilter) (*Overview, err
 
 	return out, nil
 }
+
+// GeoStat representa a quantidade de usuários agrupados geograficamente.
+type GeoStat struct {
+	Country string `json:"country"`
+	State   string `json:"state"`
+	City    string `json:"city"`
+	Count   int64  `json:"count"`
+}
+
+// GeoDistribution retorna a distribuição geográfica dos usuários rastreados no período.
+func (s *StatsRepo) GeoDistribution(ctx context.Context, f StatsFilter) ([]GeoStat, error) {
+	args := []any{}
+	conds := []string{}
+	idx := 0
+	add := func(v any) string {
+		args = append(args, v)
+		idx++
+		return "$" + itoa(idx)
+	}
+
+	if !f.From.IsZero() {
+		conds = append(conds, "created_at >= "+add(f.From))
+	}
+	if !f.To.IsZero() {
+		conds = append(conds, "created_at < "+add(f.To))
+	}
+	if f.PixelName != "" {
+		conds = append(conds, "pixel_name = "+add(f.PixelName))
+	}
+	if f.AccountID > 0 {
+		conds = append(conds, "account_id = "+add(f.AccountID))
+	}
+	conds = append(conds, "country <> ''")
+
+	where := "WHERE " + strings.Join(conds, " AND ")
+
+	q := `
+		SELECT country, state, city, COUNT(*) as count
+		FROM tracked_users
+		` + where + `
+		GROUP BY country, state, city
+		ORDER BY count DESC
+		LIMIT 200
+	`
+
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []GeoStat
+	for rows.Next() {
+		var g GeoStat
+		if err := rows.Scan(&g.Country, &g.State, &g.City, &g.Count); err != nil {
+			return nil, err
+		}
+		stats = append(stats, g)
+	}
+	return stats, rows.Err()
+}
+
