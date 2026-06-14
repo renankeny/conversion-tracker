@@ -30,8 +30,26 @@
         <pre><code>{{ event.error }}</code></pre>
       </div>
 
+      <div v-if="event.payload" class="payload-block">
+        <div class="block-header">
+          <h4>Payload enviado para Meta CAPI</h4>
+          <button class="copy-btn" type="button" @click="copyPayload">
+            {{ copiedPayload ? '✓ Copiado' : 'Copiar' }}
+          </button>
+        </div>
+        <p class="block-hint">
+          PII hasheada (SHA-256). Access tokens vão na URL, não no body.
+        </p>
+        <pre><code>{{ formattedPayload }}</code></pre>
+      </div>
+
       <div v-if="event.response_body" class="response-block">
-        <h4>Resposta da Meta</h4>
+        <div class="block-header">
+          <h4>Resposta da Meta</h4>
+          <button class="copy-btn" type="button" @click="copyResponse">
+            {{ copiedResponse ? '✓ Copiado' : 'Copiar' }}
+          </button>
+        </div>
         <pre><code>{{ formattedResponse }}</code></pre>
       </div>
     </div>
@@ -97,6 +115,42 @@ const formattedResponse = computed(() => {
     return props.event.response_body
   }
 })
+
+const formattedPayload = computed(() => {
+  if (!props.event?.payload) return ''
+  try {
+    return JSON.stringify(JSON.parse(props.event.payload), null, 2)
+  } catch {
+    return props.event.payload
+  }
+})
+
+const copiedPayload = ref(false)
+const copiedResponse = ref(false)
+
+const copyToClipboard = async (text: string): Promise<boolean> => {
+  if (!text) return false
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const copyPayload = async () => {
+  if (await copyToClipboard(formattedPayload.value)) {
+    copiedPayload.value = true
+    setTimeout(() => (copiedPayload.value = false), 2000)
+  }
+}
+
+const copyResponse = async () => {
+  if (await copyToClipboard(formattedResponse.value)) {
+    copiedResponse.value = true
+    setTimeout(() => (copiedResponse.value = false), 2000)
+  }
+}
 </script>
 
 <script lang="ts">
@@ -164,21 +218,24 @@ export { DetailRow }
 }
 
 .error-block,
-.response-block {
+.response-block,
+.payload-block {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
 .error-block h4,
-.response-block h4 {
+.response-block h4,
+.payload-block h4 {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-strong);
 }
 
 .error-block pre,
-.response-block pre {
+.response-block pre,
+.payload-block pre {
   background: var(--surface-deep);
   border: 1px solid var(--border-soft);
   border-radius: 8px;
@@ -194,6 +251,39 @@ export { DetailRow }
 .error-block pre {
   border-color: var(--danger);
   background: var(--danger-soft);
+}
+
+.payload-block pre {
+  border-color: var(--brand-border);
+}
+
+.block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.block-hint {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  margin-top: -0.25rem;
+}
+
+.copy-btn {
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.copy-btn:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
 }
 
 .http {

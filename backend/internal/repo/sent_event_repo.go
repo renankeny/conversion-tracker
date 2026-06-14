@@ -9,7 +9,9 @@ import (
 )
 
 // SentEvent é a representação leve de uma linha de sent_events pra
-// listagem no painel admin (não inclui payload pra evitar JSON pesado).
+// listagem no painel admin. Inclui também o payload enviado para a Meta
+// (campo `payload` JSONB no banco) — útil pra debugar o que de fato foi
+// transmitido (PII hasheada, custom_data, etc).
 type SentEvent struct {
 	ID           int64     `json:"id"`
 	EventID      string    `json:"event_id"`
@@ -19,6 +21,7 @@ type SentEvent struct {
 	Status       string    `json:"status"`
 	ResponseCode int       `json:"response_code"`
 	ResponseBody string    `json:"response_body,omitempty"`
+	Payload      string    `json:"payload,omitempty"` // JSON enviado à Meta CAPI
 	Error        string    `json:"error,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -116,7 +119,8 @@ func (r *SentEventRepo) List(ctx context.Context, f ListFilter) ([]SentEvent, in
 	// Page
 	args = append(args, f.Limit, f.Offset)
 	q := "SELECT id, event_id, event_name, pixel_name, external_id, status, " +
-		"response_code, response_body, error, created_at, updated_at " +
+		"response_code, response_body, error, COALESCE(payload::text, '') AS payload, " +
+		"created_at, updated_at " +
 		"FROM sent_events " + where + " ORDER BY id DESC " +
 		"LIMIT $" + itoa(len(args)-1) + " OFFSET $" + itoa(len(args))
 
@@ -131,7 +135,7 @@ func (r *SentEventRepo) List(ctx context.Context, f ListFilter) ([]SentEvent, in
 		var e SentEvent
 		if err := rows.Scan(&e.ID, &e.EventID, &e.EventName, &e.PixelName,
 			&e.ExternalID, &e.Status, &e.ResponseCode, &e.ResponseBody, &e.Error,
-			&e.CreatedAt, &e.UpdatedAt); err != nil {
+			&e.Payload, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, e)

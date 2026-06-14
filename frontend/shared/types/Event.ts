@@ -7,6 +7,8 @@ export interface SentEvent {
   status: EventStatus
   error: string
   response_body: string
+  /** Payload JSON enviado pra Meta CAPI (com PII hasheada, tokens redatados). */
+  payload?: string
   created_at: string
   sent_at: string | null
 }

@@ -52,10 +52,11 @@ func New(apiVersion, partnerAgent string) *Client {
 
 // SendResult agrupa a resposta de um envio.
 type SendResult struct {
-	PixelID    string
-	StatusCode int
-	Body       string
-	Err        error
+	PixelID     string
+	StatusCode  int
+	Body        string // resposta da Meta (com tokens redatados antes de persistir)
+	RequestBody string // payload JSON enviado (sem token — só headers/url tinham)
+	Err         error
 }
 
 // Send envia o evento para todos os pixel_id/access_token configurados no domain.Pixel.
@@ -99,6 +100,7 @@ func (c *Client) sendOne(ctx context.Context, pixelID, token, testCode string, i
 		res.Err = err
 		return res
 	}
+	res.RequestBody = string(raw)
 
 	url := fmt.Sprintf("%s/%s/%s/events?access_token=%s", baseURL, c.apiVersion, pixelID, token)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))

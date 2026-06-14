@@ -131,8 +131,20 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 		status = "failed"
 		errMsg = util.RedactSecrets(r.Err.Error())
 	}
+	// Payload é gravado como JSONB. Aplicamos RedactSecrets como defesa em
+	// profundidade — embora os tokens fiquem na URL (não no body), eventuais
+	// echoes em campos de debug são neutralizados.
+	payload := util.RedactSecrets(r.RequestBody)
+	if payload == "" {
+		payload = "null" // JSONB válido pra requests que falharam antes do marshal
+	}
 	_, _ = pool.Exec(ctx, `
-		INSERT INTO sent_events (event_id, event_name, pixel_name, external_id, account_id, status, response_code, response_body, error)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-	`, in.EventID, in.EventName, in.PixelName, in.ExternalID, accountID, status, r.StatusCode, util.RedactSecrets(r.Body), errMsg)
+		INSERT INTO sent_events
+			(event_id, event_name, pixel_name, external_id, account_id,
+			 status, response_code, response_body, error, payload)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+	`,
+		in.EventID, in.EventName, in.PixelName, in.ExternalID, accountID,
+		status, r.StatusCode, util.RedactSecrets(r.Body), errMsg, payload,
+	)
 }
