@@ -37,6 +37,13 @@
         >
           <span class="link-label">Pixels</span>
         </NuxtLink>
+        <NuxtLink
+          to="/integracoes/plataformas"
+          class="sidebar-link sidebar-sublink"
+          :class="{ active: isActive('/integracoes/plataformas') }"
+        >
+          <span class="link-label">Plataformas</span>
+        </NuxtLink>
       </SidebarGroup>
 
       <NuxtLink to="/events" class="sidebar-link" :class="{ active: isActive('/events') }">
