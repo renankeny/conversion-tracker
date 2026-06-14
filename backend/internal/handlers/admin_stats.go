@@ -91,3 +91,40 @@ func (h *AdminStats) Geo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, geo)
 }
 
+// GeoByEvent GET /admin/stats/geo-by-event?from=&to=&pixel=&event=
+func (h *AdminStats) GeoByEvent(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := repo.StatsFilter{PixelName: q.Get("pixel")}
+	eventName := q.Get("event") // PageView, Purchase, etc
+
+	if scope := TenantFromContext(r.Context()); !scope.IsOwner {
+		f.AccountID = scope.AccountID
+	}
+
+	if v := q.Get("from"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid 'from' (RFC3339)")
+			return
+		}
+		f.From = t
+	} else {
+		f.From = time.Now().AddDate(0, 0, -30)
+	}
+	if v := q.Get("to"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid 'to' (RFC3339)")
+			return
+		}
+		f.To = t
+	}
+
+	geo, err := h.repo.GeoDistributionByEvent(r.Context(), f, eventName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "geo by event stats error: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, geo)
+}
+

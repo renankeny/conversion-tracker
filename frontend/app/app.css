@@ -108,3 +108,13 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-3);
 }
+
+/* Safe Area Support - iOS notch handling */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: max(1rem, env(safe-area-inset-left, 0));
+    padding-right: max(1rem, env(safe-area-inset-right, 0));
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0));
+  }
+}
+

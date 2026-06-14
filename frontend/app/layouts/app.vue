@@ -2,11 +2,15 @@
   <div class="app-layout">
     <div class="app-background" aria-hidden="true" />
 
+    <!-- Desktop Sidebar -->
     <AppSidebar />
 
     <main class="app-main">
       <slot />
     </main>
+
+    <!-- Mobile Bottom Navigation -->
+    <MobileBottomNav />
   </div>
 </template>
 
@@ -38,12 +42,22 @@
   margin-left: 260px;
   padding: 2rem;
   min-height: 100vh;
+  /* Espaço para o bottom nav no mobile */
+  padding-bottom: 2rem;
 }
 
+/* Mobile - bottom nav handling */
 @media (max-width: 1023px) {
   .app-main {
     margin-left: 0;
     padding: 1rem;
+    /* Bottom nav + safe area do iOS */
+    padding-bottom: calc(75px + 1rem + max(0.5rem, env(safe-area-inset-bottom, 0)));
   }
+}
+
+/* Garante que o bottom nav fique sempre no topo do conteúdo */
+:deep(> nav) {
+  z-index: 40;
 }
 </style>

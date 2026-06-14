@@ -30,7 +30,11 @@ export const useDashboard = () => {
     return api.get<any[]>('/admin/stats/geo' + buildQuery(filters))
   }
 
-  return { summary, series, recentPurchases, geoStats }
+  const geoStatsByEvent = (filters: CounterFilters & { event?: string } = {}) => {
+    return api.get<any[]>('/admin/stats/geo-by-event' + buildQuery(filters))
+  }
+
+  return { summary, series, recentPurchases, geoStats, geoStatsByEvent }
 }
 
 const buildQuery = (params: Record<string, any>): string => {

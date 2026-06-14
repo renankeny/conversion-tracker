@@ -94,7 +94,11 @@
 
     <!-- Globo + Últimas compras -->
     <div class="grid-2-globe">
-      <GeoGlobe :stats="geoData" />
+      <GeoGlobe 
+        :stats="geoData" 
+        :from="periodToFromIso(period)"
+        :to="new Date().toISOString()"
+      />
       <RecentPurchases
         :purchases="recentPurchases"
         :subtitle="purchasesSubtitle"
