@@ -143,6 +143,57 @@
       </div>
     </section>
 
+    <!-- Aba: API Keys -->
+    <section v-if="activeTab === 'api-keys'" class="api-keys-section">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">API Keys</h3>
+            <p class="card-hint">
+              Tokens server-to-server pra integrar o TrackFind com seu backend.
+              Cada key é vinculada a uma conta e atua como member dela.
+              <strong>O segredo aparece uma única vez na criação</strong> — copie e guarde.
+            </p>
+          </div>
+          <BaseButton variant="primary" size="sm" @click="newKeyOpen = true">
+            + Nova key
+          </BaseButton>
+        </div>
+
+        <div v-if="loadingKeys" class="muted">Carregando...</div>
+
+        <div v-else-if="!apiKeys.length" class="muted">Nenhuma API key cadastrada.</div>
+
+        <div v-else class="account-list">
+          <div v-for="k in apiKeys" :key="k.id" class="account-row">
+            <div class="account-info">
+              <div class="account-name">
+                {{ k.name }}
+                <BaseBadge v-if="k.revoked_at" variant="danger">revogada</BaseBadge>
+                <BaseBadge v-else variant="success">ativa</BaseBadge>
+              </div>
+              <span class="account-meta">
+                <code>{{ k.key_prefix }}...</code> · conta #{{ k.account_id }} ·
+                criada {{ formatDate(k.created_at) }}
+                <span v-if="k.last_used_at"> · usada {{ formatDate(k.last_used_at) }}</span>
+                <span v-else> · nunca usada</span>
+              </span>
+            </div>
+            <div class="account-actions">
+              <BaseButton
+                v-if="!k.revoked_at"
+                variant="ghost"
+                size="sm"
+                @click="askRevokeKey(k)"
+              >
+                <span class="text-danger">Revogar</span>
+              </BaseButton>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Aba: GeoIP -->
     <section v-if="activeTab === 'geoip'" class="card">
       <h3 class="card-title">Base GeoIP</h3>
@@ -341,6 +392,64 @@
       @confirm="onPrune"
     />
 
+    <BaseModal v-model="newKeyOpen" title="Criar API Key" size="sm">
+      <div class="form">
+        <BaseInput
+          v-model="keyForm.name"
+          label="Nome da key"
+          placeholder="Integração CRM, Bot WhatsApp, etc"
+          hint="Apenas pra você se localizar no painel."
+          required
+        />
+        <div v-if="isOwner" class="form-field">
+          <label class="form-label">Conta vinculada</label>
+          <select v-model="keyForm.account_id" class="form-select">
+            <option v-for="a in accounts" :key="a.id" :value="a.id">
+              {{ a.name }} (#{{ a.id }})
+            </option>
+          </select>
+        </div>
+      </div>
+      <template #footer>
+        <BaseButton variant="ghost" @click="newKeyOpen = false">Cancelar</BaseButton>
+        <BaseButton variant="primary" :loading="creatingKey" @click="onCreateKey">
+          Criar
+        </BaseButton>
+      </template>
+    </BaseModal>
+
+    <BaseModal v-model="newKeyResultOpen" title="API Key criada" size="sm" :close-on-backdrop="false">
+      <div class="form">
+        <p class="card-hint">
+          <strong>Copie agora.</strong> O segredo não aparece de novo em parte alguma.
+          Ao fechar este modal, fica registrado apenas o prefixo no painel.
+        </p>
+        <div class="key-secret">
+          <code>{{ createdKeyPlaintext }}</code>
+          <BaseButton size="sm" variant="ghost" @click="copyKey">Copiar</BaseButton>
+        </div>
+        <p class="card-hint">
+          Use no header HTTP:
+          <code>Authorization: Bearer {{ createdKeyPlaintext || 'trk_xxx' }}</code>
+        </p>
+      </div>
+      <template #footer>
+        <BaseButton variant="primary" @click="closeKeyResult">Entendi, fechar</BaseButton>
+      </template>
+    </BaseModal>
+
+    <ConfirmModal
+      v-model="revokeKeyOpen"
+      title="Revogar API Key?"
+      :message="revokingKey
+        ? `A key '${revokingKey.name}' (${revokingKey.key_prefix}...) deixará de funcionar imediatamente. Operação irreversível.`
+        : ''"
+      confirm-label="Revogar"
+      variant="danger"
+      :loading="revokingKeyNow"
+      @confirm="onConfirmRevokeKey"
+    />
+
     <ConfirmModal
       v-model="deleteAccountOpen"
       title="Remover conta?"
@@ -359,6 +468,7 @@
 import type {
   Account,
   AdminUser,
+  APIKey,
   GeoIPStatus,
   MaintenanceStatusResponse,
   PruneResultRow,
@@ -373,6 +483,7 @@ useHead({ title: 'Configurações - TrackFind' })
 
 const settings = useSettings()
 const accountsAPI = useAccounts()
+const apiKeysAPI = useAPIKeys()
 const { user } = useAuth()
 const toast = useToast()
 
@@ -386,6 +497,7 @@ const tabs = computed(() => {
   const base = [
     { value: 'account', label: 'Conta' },
     { value: 'admins', label: 'Administradores' },
+    { value: 'api-keys', label: 'API Keys' },
     { value: 'geoip', label: 'GeoIP' },
     { value: 'retention', label: 'Retenção' },
   ] as const
@@ -395,7 +507,7 @@ const tabs = computed(() => {
   return base
 })
 
-type TabValue = 'account' | 'admins' | 'geoip' | 'retention' | 'accounts'
+type TabValue = 'account' | 'admins' | 'api-keys' | 'geoip' | 'retention' | 'accounts'
 
 const activeTab = ref<TabValue>('account')
 
@@ -510,6 +622,100 @@ const onConfirmDeleteAdmin = async () => {
     toast.error('Erro', error.message || 'Falha ao remover')
   } finally {
     deletingNow.value = false
+  }
+}
+
+// === API Keys ===
+const apiKeys = ref<APIKey[]>([])
+const loadingKeys = ref(false)
+const newKeyOpen = ref(false)
+const keyForm = reactive<{ name: string; account_id: number | null }>({
+  name: '',
+  account_id: null,
+})
+const creatingKey = ref(false)
+
+const newKeyResultOpen = ref(false)
+const createdKeyPlaintext = ref('')
+
+const revokeKeyOpen = ref(false)
+const revokingKey = ref<APIKey | null>(null)
+const revokingKeyNow = ref(false)
+
+const loadAPIKeys = async () => {
+  loadingKeys.value = true
+  try {
+    const res = await apiKeysAPI.list()
+    apiKeys.value = res.data || []
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao listar keys')
+  } finally {
+    loadingKeys.value = false
+  }
+}
+
+const onCreateKey = async () => {
+  if (!keyForm.name.trim()) {
+    toast.error('Erro', 'Nome é obrigatório')
+    return
+  }
+  creatingKey.value = true
+  try {
+    const res = await apiKeysAPI.create({
+      name: keyForm.name.trim(),
+      account_id: isOwner.value && keyForm.account_id
+        ? keyForm.account_id
+        : undefined,
+    })
+    apiKeys.value = [res.key, ...apiKeys.value]
+    createdKeyPlaintext.value = res.plaintext
+    newKeyOpen.value = false
+    newKeyResultOpen.value = true
+    keyForm.name = ''
+    keyForm.account_id = null
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao criar key')
+  } finally {
+    creatingKey.value = false
+  }
+}
+
+const copyKey = async () => {
+  try {
+    await navigator.clipboard.writeText(createdKeyPlaintext.value)
+    toast.success('Copiado', 'A key foi copiada pra área de transferência')
+  } catch {
+    toast.error('Erro', 'Não foi possível copiar — selecione manualmente')
+  }
+}
+
+const closeKeyResult = () => {
+  newKeyResultOpen.value = false
+  createdKeyPlaintext.value = ''
+}
+
+const askRevokeKey = (k: APIKey) => {
+  revokingKey.value = k
+  revokeKeyOpen.value = true
+}
+
+const onConfirmRevokeKey = async () => {
+  if (!revokingKey.value) return
+  revokingKeyNow.value = true
+  try {
+    await apiKeysAPI.revoke(revokingKey.value.id)
+    apiKeys.value = apiKeys.value.map((k) =>
+      k.id === revokingKey.value!.id
+        ? { ...k, revoked_at: new Date().toISOString() }
+        : k
+    )
+    toast.success('Key revogada')
+    revokeKeyOpen.value = false
+    revokingKey.value = null
+  } catch (error: any) {
+    toast.error('Erro', error.message || 'Falha ao revogar')
+  } finally {
+    revokingKeyNow.value = false
   }
 }
 
@@ -719,11 +925,17 @@ watch(activeTab, (tab) => {
   if (tab === 'geoip') loadGeoIP()
   if (tab === 'retention') loadMaintenance()
   if (tab === 'accounts') loadAccounts()
+  if (tab === 'api-keys') loadAPIKeys()
 })
 
 // Carrega lista de contas em background quando o modal de novo admin abre
 // (pra alimentar o <select> de account_id pra members).
 watch(newAdminOpen, (open) => {
+  if (open && isOwner.value && !accounts.value.length) loadAccounts()
+})
+
+// Mesma coisa pro modal de nova API key (owner pode escolher conta destino).
+watch(newKeyOpen, (open) => {
   if (open && isOwner.value && !accounts.value.length) loadAccounts()
 })
 </script>
@@ -1083,5 +1295,24 @@ watch(newAdminOpen, (open) => {
   height: 1rem;
   accent-color: var(--brand);
   cursor: pointer;
+}
+
+/* === Secret reveal block (API key plaintext) ============================= */
+.key-secret {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  background: var(--surface-deep);
+  border: 1px solid var(--brand-border);
+  border-radius: 8px;
+}
+
+.key-secret code {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  color: var(--brand);
+  word-break: break-all;
 }
 </style>

@@ -58,6 +58,7 @@ func New(deps Deps) (*Server, error) {
 	sentEvents := repo.NewSentEventRepo(deps.Pool)
 	stats := repo.NewStatsRepo(deps.Pool)
 	counters := repo.NewEventCounterRepo(deps.Pool)
+	apiKeys := repo.NewAPIKeyRepo(deps.Pool)
 
 	eventH := handlers.NewEvents(pixels, users, sentEvents, deps.GeoIP, deps.Enqueuer, deps.URLs)
 	webhookH := handlers.NewWebhooks(pixels, users, deps.Enqueuer, deps.URLs, deps.Secrets)
@@ -75,6 +76,7 @@ func New(deps Deps) (*Server, error) {
 	adminTUH := handlers.NewAdminTrackedUsers(users)
 	adminStatsH := handlers.NewAdminStats(stats)
 	adminCountersH := handlers.NewAdminCounters(counters)
+	adminAPIKeysH := handlers.NewAdminAPIKeys(apiKeys)
 
 	trackerH, err := handlers.NewTracker(pixels, deps.Cfg.PublicAPIURL)
 	if err != nil {
@@ -125,9 +127,9 @@ func New(deps Deps) (*Server, error) {
 			r.Post("/admin/login", adminAuthH.Login)
 		})
 
-		// Admin protegido por JWT.
+		// Admin protegido por JWT ou API key (trk_*).
 		r.Group(func(r chi.Router) {
-			r.Use(JWTMiddleware(deps.JWT))
+			r.Use(AuthMiddleware(deps.JWT, apiKeys))
 			r.Use(MaxBodyBytes(256 * 1024))
 
 			r.Get("/admin/me", adminAuthH.Me)
@@ -181,6 +183,11 @@ func New(deps Deps) (*Server, error) {
 			// Counters agregados (PageView, ViewContent, scroll, etc).
 			r.Get("/admin/counters/summary", adminCountersH.Summary)
 			r.Get("/admin/counters/series", adminCountersH.TimeSeries)
+
+			// API keys (server-to-server, scoped por conta)
+			r.Get("/admin/api-keys", adminAPIKeysH.List)
+			r.Post("/admin/api-keys", adminAPIKeysH.Create)
+			r.Delete("/admin/api-keys/{id}", adminAPIKeysH.Revoke)
 		})
 	})
 
