@@ -69,6 +69,7 @@ func New(deps Deps) (*Server, error) {
 	adminGeoIPH := handlers.NewAdminGeoIP(deps.Cfg.MaxMindLicenseKey, deps.Cfg.GeoIPDBPath, deps.GeoIP)
 	adminMaintenanceH := handlers.NewAdminMaintenance(deps.Pool, deps.Cfg.SentEventsRetentionDays, deps.Cfg.EventCountersRetentionDays)
 	adminUsersH := handlers.NewAdminUsers(deps.Pool)
+	adminAccountsH := handlers.NewAdminAccounts(repo.NewAccountRepo(deps.Pool))
 	adminURLH := handlers.NewAdminURLMappings(urlMaps, deps.URLs)
 	adminSentH := handlers.NewAdminSentEvents(sentEvents)
 	adminTUH := handlers.NewAdminTrackedUsers(users)
@@ -154,6 +155,13 @@ func New(deps Deps) (*Server, error) {
 			r.Post("/admin/users", adminUsersH.Create)
 			r.Delete("/admin/users/{id}", adminUsersH.Delete)
 			r.Post("/admin/me/password", adminUsersH.ChangeMyPassword)
+
+			// Accounts (multi-tenant)
+			r.Get("/admin/accounts", adminAccountsH.List)
+			r.Get("/admin/accounts/{id}", adminAccountsH.Get)
+			r.Post("/admin/accounts", adminAccountsH.Create)
+			r.Put("/admin/accounts/{id}", adminAccountsH.Update)
+			r.Delete("/admin/accounts/{id}", adminAccountsH.Delete)
 
 			// URL mappings (black -> white)
 			r.Get("/admin/url-mappings", adminURLH.List)

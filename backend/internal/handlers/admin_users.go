@@ -27,6 +27,8 @@ func NewAdminUsers(pool *pgxpool.Pool) *AdminUsers {
 type adminUserView struct {
 	ID        int64  `json:"id"`
 	Email     string `json:"email"`
+	Role      string `json:"role"`
+	AccountID *int64 `json:"account_id"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -34,7 +36,8 @@ type adminUserView struct {
 // List retorna todos os admins (sem hash de senha).
 func (h *AdminUsers) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.pool.Query(r.Context(),
-		`SELECT id, email, created_at, updated_at FROM admin_users ORDER BY id ASC`)
+		`SELECT id, email, COALESCE(role, 'owner'), account_id, created_at, updated_at
+		   FROM admin_users ORDER BY id ASC`)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list error: "+err.Error())
 		return
@@ -45,7 +48,7 @@ func (h *AdminUsers) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var v adminUserView
 		var created, updated time.Time
-		if err := rows.Scan(&v.ID, &v.Email, &created, &updated); err != nil {
+		if err := rows.Scan(&v.ID, &v.Email, &v.Role, &v.AccountID, &created, &updated); err != nil {
 			writeError(w, http.StatusInternalServerError, "scan error: "+err.Error())
 			return
 		}
@@ -57,8 +60,10 @@ func (h *AdminUsers) List(w http.ResponseWriter, r *http.Request) {
 }
 
 type createAdminInput struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	Role      string `json:"role"`
+	AccountID *int64 `json:"account_id"`
 }
 
 // Create insere um novo admin.
@@ -78,6 +83,19 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	role := strings.TrimSpace(in.Role)
+	if role == "" {
+		role = "owner"
+	}
+	if role != "owner" && role != "member" {
+		writeError(w, http.StatusBadRequest, "role inválido (use owner ou member)")
+		return
+	}
+	if role == "member" && in.AccountID == nil {
+		writeError(w, http.StatusBadRequest, "members precisam de account_id")
+		return
+	}
+
 	hash, err := auth.HashPassword(in.Password)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "hash error")
@@ -87,9 +105,9 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	var created, updated time.Time
 	err = h.pool.QueryRow(r.Context(),
-		`INSERT INTO admin_users (email, password_hash)
-		 VALUES ($1, $2)
-		 RETURNING id, created_at, updated_at`, in.Email, hash,
+		`INSERT INTO admin_users (email, password_hash, role, account_id)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id, created_at, updated_at`, in.Email, hash, role, in.AccountID,
 	).Scan(&id, &created, &updated)
 	if err != nil {
 		if isDuplicateKey(err) {
@@ -103,6 +121,8 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, adminUserView{
 		ID:        id,
 		Email:     in.Email,
+		Role:      role,
+		AccountID: in.AccountID,
 		CreatedAt: created.Format(time.RFC3339),
 		UpdatedAt: updated.Format(time.RFC3339),
 	})

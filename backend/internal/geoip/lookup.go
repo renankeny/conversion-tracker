@@ -15,15 +15,24 @@ type Lookup struct {
 
 // New abre a base GeoLite2 City. Se path for vazio devolve um Lookup nulo
 // que retorna sempre Result vazio (útil em dev sem o .mmdb).
+//
+// Se o arquivo não existir ou não puder ser aberto, retorna uma instância
+// VAZIA mas válida (com reader=nil) e nil de erro. Isso permite que o admin
+// chame Reload() depois pra carregar a base sem precisar reiniciar o processo.
+// O caller pode chamar Available() pra verificar se a base está carregada.
 func New(path string) (*Lookup, error) {
+	l := &Lookup{}
 	if path == "" {
-		return &Lookup{}, nil
+		return l, nil
 	}
 	r, err := geoip2.Open(path)
 	if err != nil {
-		return nil, err
+		// Arquivo ausente ou corrompido — retorna instância vazia,
+		// permitindo que o admin chame Reload() depois.
+		return l, nil
 	}
-	return &Lookup{reader: r}, nil
+	l.reader = r
+	return l, nil
 }
 
 func (l *Lookup) Close() error {

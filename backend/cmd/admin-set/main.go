@@ -47,10 +47,14 @@ func main() {
 	}
 
 	// Upsert: se o email já existir, atualiza a senha; senão, insere.
+	// Sempre marca como owner com acesso global (não vinculado a account).
 	_, err = pool.Exec(ctx, `
-		INSERT INTO admin_users (email, password_hash)
-		VALUES ($1, $2)
-		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = NOW()
+		INSERT INTO admin_users (email, password_hash, role, account_id)
+		VALUES ($1, $2, 'owner', NULL)
+		ON CONFLICT (email) DO UPDATE
+		   SET password_hash = EXCLUDED.password_hash,
+		       role = 'owner',
+		       updated_at = NOW()
 	`, cfg.AdminEmail, hash)
 	if err != nil {
 		slog.Error("upsert admin", "err", err)

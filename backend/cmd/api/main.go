@@ -55,7 +55,18 @@ func main() {
 
 	geo, err := geoip.New(cfg.GeoIPDBPath)
 	if err != nil {
-		slog.Warn("geoip disabled", "err", err)
+		slog.Warn("geoip init error", "err", err)
+	}
+	if !geo.Available() && cfg.GeoIPDBPath != "" {
+		// Mesmo que o New não tenha conseguido abrir, tenta carregar
+		// (caso o arquivo tenha sido escrito no volume entre verificações).
+		if rerr := geo.Reload(cfg.GeoIPDBPath); rerr != nil {
+			slog.Warn("geoip disabled", "err", rerr, "path", cfg.GeoIPDBPath)
+		} else {
+			slog.Info("geoip loaded", "path", cfg.GeoIPDBPath)
+		}
+	} else if geo.Available() {
+		slog.Info("geoip loaded", "path", cfg.GeoIPDBPath)
 	}
 	defer geo.Close()
 

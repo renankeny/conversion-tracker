@@ -38,12 +38,15 @@ func (h *AdminAuth) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		id   int64
-		hash string
+		id        int64
+		hash      string
+		role      string
+		accountID *int64
 	)
 	err := h.pool.QueryRow(r.Context(),
-		`SELECT id, password_hash FROM admin_users WHERE email = $1`, req.Email,
-	).Scan(&id, &hash)
+		`SELECT id, password_hash, COALESCE(role, 'owner'), account_id
+		   FROM admin_users WHERE email = $1`, req.Email,
+	).Scan(&id, &hash, &role, &accountID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusUnauthorized, "invalid credentials")
@@ -56,14 +59,23 @@ func (h *AdminAuth) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
-	tok, err := h.jwt.Issue(id, req.Email)
+	var accID int64
+	if accountID != nil {
+		accID = *accountID
+	}
+	tok, err := h.jwt.Issue(id, req.Email, role, accID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "token issue error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token": tok,
-		"user":         map[string]any{"id": id, "email": req.Email},
+		"user": map[string]any{
+			"id":         id,
+			"email":      req.Email,
+			"role":       role,
+			"account_id": accID,
+		},
 	})
 }
 
@@ -73,7 +85,12 @@ func (h *AdminAuth) Me(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": c.UserID, "email": c.Email})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":         c.UserID,
+		"email":      c.Email,
+		"role":       c.Role,
+		"account_id": c.AccountID,
+	})
 }
 
 // EnsureBootstrapAdmin cria um admin padrão se não existir nenhum.
