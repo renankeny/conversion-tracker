@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <!-- TrackFind Pixel: Infoprodutos -->
+  <script async src="https://gtm.automarks.com.br/api/v1/loader.js?pixel=Infoprodutos"></script>
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automarks - Automações Inteligentes</title>
+  <link rel="stylesheet" href="./styles.css">
+
+  <style>
+    /* ===== Seção de testes TrackFind ===== */
+    .tf-test {
+      padding: 80px 0;
+      background: linear-gradient(135deg, rgba(161, 240, 124, 0.08), rgba(104, 211, 145, 0.04));
+      border-top: 1px solid rgba(161, 240, 124, 0.2);
+    }
+
+    .tf-test .section-title {
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .tf-test-subtitle {
+      text-align: center;
+      color: #888;
+      max-width: 640px;
+      margin: 0 auto 48px;
+    }
+
+    .tf-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+    }
+
+    .tf-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(161, 240, 124, 0.2);
+      border-radius: 16px;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .tf-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .tf-badge {
+      display: inline-block;
+      background: rgba(161, 240, 124, 0.15);
+      color: #A1F07C;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .tf-card h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .tf-card p {
+      font-size: 14px;
+      color: #aaa;
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    .tf-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .tf-form input {
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(0, 0, 0, 0.3);
+      color: #fff;
+      font-size: 14px;
+      font-family: inherit;
+    }
+
+    .tf-form input:focus {
+      outline: none;
+      border-color: #A1F07C;
+      box-shadow: 0 0 0 3px rgba(161, 240, 124, 0.15);
+    }
+
+    .tf-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .tf-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .tf-btn-primary {
+      background: linear-gradient(135deg, #A1F07C, #68D391);
+      color: #1a1a1a;
+    }
+
+    .tf-btn-whatsapp {
+      background: #25D366;
+      color: #fff;
+    }
+
+    .tf-link-debug {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      color: #555;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <nav class="nav">
+      <div class="logo">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="40" height="40" rx="8" fill="url(#gradient)"/>
+          <path d="M20 10L25 15L20 20L15 15L20 10Z" fill="#333333"/>
+          <path d="M10 20L15 25L20 20L15 15L10 20Z" fill="#333333" opacity="0.8"/>
+          <path d="M30 20L25 25L20 20L25 15L30 20Z" fill="#333333" opacity="0.8"/>
+          <path d="M20 30L15 25L20 20L25 25L20 30Z" fill="#333333"/>
+          <defs>
+            <linearGradient id="gradient" x1="0" y1="0" x2="40" y2="40">
+              <stop offset="0%" stop-color="#A1F07C"/>
+              <stop offset="100%" stop-color="#68D391"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span>Automarks</span>
+      </div>
+      <ul class="nav-menu">
+        <li><a href="#home">Início</a></li>
+        <li><a href="#benefits">Benefícios</a></li>
+        <li><a href="#solutions">Soluções</a></li>
+        <li><a href="#tf-test">Teste TrackFind</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <section id="home" class="hero">
+      <div class="container">
+        <div class="hero-content">
+          <h1 class="hero-title">Automatize Processos e Aumente sua Produtividade</h1>
+          <p class="hero-subtitle">Descubra como a automação pode transformar sua rotina de trabalho.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         SEÇÃO DE TESTE DO TRACKFIND
+         Os 3 cards abaixo disparam eventos automaticamente:
+           1. Botão de checkout (URL contém "pay") → InitiateCheckout
+           2. Formulário com email/phone           → Lead
+           3. Link wa.me                           → Lead + Protocolo
+         ============================================================ -->
+    <section id="tf-test" class="tf-test">
+      <div class="container">
+        <h2 class="section-title">Teste do Pixel TrackFind</h2>
+        <p class="tf-test-subtitle">
+          Os 3 cards abaixo disparam eventos automaticamente. Abra o DevTools (F12 → Network → "events/send")
+          e o Pixel Helper para ver os eventos sendo disparados em tempo real.
+        </p>
+
+        <div class="tf-grid">
+
+          <!-- ========== Card 1: Checkout ========== -->
+          <div class="tf-card">
+            <div class="tf-card-header">
+              <span class="tf-badge">InitiateCheckout</span>
+            </div>
+            <h3>1. Botão de checkout</h3>
+            <p>
+              O link abaixo contém a palavra-chave configurada no pixel
+              (<code>product_checkout = "pay"</code>). O TrackFind injeta UTMs +
+              fbp + fbc na URL e dispara <strong>InitiateCheckout</strong> no clique.
+            </p>
+            <a href="https://pay.kiwify.com.br/produto-teste-trackfind"
+               class="tf-btn tf-btn-primary"
+               target="_blank"
+               rel="noopener">
+              Comprar agora — R$ 297,00
+            </a>
+            <p class="tf-link-debug">href: pay.kiwify.com.br/produto-teste-trackfind</p>
+          </div>
+
+          <!-- ========== Card 2: Formulário ========== -->
+          <div class="tf-card">
+            <div class="tf-card-header">
+              <span class="tf-badge">Lead + PII</span>
+            </div>
+            <h3>2. Formulário de lead</h3>
+            <p>
+              Preencha e envie. O TrackFind captura email/telefone/nome
+              automaticamente e dispara <strong>Lead</strong> com os dados
+              hasheados no servidor.
+            </p>
+            <form class="tf-form"
+                  onsubmit="event.preventDefault(); alert('✓ Lead disparado! Confira no Network do DevTools.');">
+              <input type="text" name="name" placeholder="Seu nome" required autocomplete="name">
+              <input type="email" name="email" placeholder="seu@email.com" required autocomplete="email">
+              <input type="tel" name="phone" placeholder="(11) 99999-9999" required autocomplete="tel">
+              <button type="submit" class="tf-btn tf-btn-primary">Enviar</button>
+            </form>
+          </div>
+
+          <!-- ========== Card 3: WhatsApp ========== -->
+          <div class="tf-card">
+            <div class="tf-card-header">
+              <span class="tf-badge">Lead via WhatsApp</span>
+            </div>
+            <h3>3. Botão de WhatsApp</h3>
+            <p>
+              O TrackFind reescreve o link do WhatsApp adicionando
+              <code>Protocolo: &lt;userId&gt;</code> na mensagem e dispara
+              <strong>Lead</strong> no clique.
+            </p>
+            <a href="https://wa.me/5511999999999?text=Olá! Gostaria de saber mais sobre as automações."
+               class="tf-btn tf-btn-whatsapp"
+               target="_blank"
+               rel="noopener">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
+              </svg>
+              Falar no WhatsApp
+            </a>
+          </div>
+
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>&copy; 2026 Automarks. Todos os direitos reservados.</p>
+    </div>
+  </footer>
+
+  <script>
+    // Menu mobile toggle
+    const menuToggle = document.querySelector('.menu-toggle');
+    const navMenu = document.querySelector('.nav-menu');
+    if (menuToggle) {
+      menuToggle.addEventListener('click', () => {
+        navMenu.classList.toggle('active');
+      });
+    }
+
+    // Smooth scroll
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (navMenu) navMenu.classList.remove('active');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

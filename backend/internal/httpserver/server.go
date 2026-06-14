@@ -67,6 +67,8 @@ func New(deps Deps) (*Server, error) {
 	adminPixelH.SetDNSTarget(deps.Cfg.TrackingTargetHost)
 	adminPixelTestH := handlers.NewAdminPixelTestEvent(pixels, deps.Cfg.MetaAPIVersion, deps.Cfg.MetaPartnerAgent)
 	adminGeoIPH := handlers.NewAdminGeoIP(deps.Cfg.MaxMindLicenseKey, deps.Cfg.GeoIPDBPath, deps.GeoIP)
+	adminMaintenanceH := handlers.NewAdminMaintenance(deps.Pool, deps.Cfg.SentEventsRetentionDays, deps.Cfg.EventCountersRetentionDays)
+	adminUsersH := handlers.NewAdminUsers(deps.Pool)
 	adminURLH := handlers.NewAdminURLMappings(urlMaps, deps.URLs)
 	adminSentH := handlers.NewAdminSentEvents(sentEvents)
 	adminTUH := handlers.NewAdminTrackedUsers(users)
@@ -142,6 +144,16 @@ func New(deps Deps) (*Server, error) {
 			// GeoIP
 			r.Get("/admin/geoip/status", adminGeoIPH.Status)
 			r.Post("/admin/geoip/refresh", adminGeoIPH.Refresh)
+
+			// Maintenance (retention)
+			r.Get("/admin/maintenance/status", adminMaintenanceH.Status)
+			r.Post("/admin/maintenance/prune", adminMaintenanceH.PruneNow)
+
+			// Admin users (CRUD + change password)
+			r.Get("/admin/users", adminUsersH.List)
+			r.Post("/admin/users", adminUsersH.Create)
+			r.Delete("/admin/users/{id}", adminUsersH.Delete)
+			r.Post("/admin/me/password", adminUsersH.ChangeMyPassword)
 
 			// URL mappings (black -> white)
 			r.Get("/admin/url-mappings", adminURLH.List)

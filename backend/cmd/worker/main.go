@@ -9,6 +9,7 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/config"
 	"github.com/renankeny/conversion-tracker/backend/internal/db"
+	"github.com/renankeny/conversion-tracker/backend/internal/maintenance"
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
@@ -45,6 +46,18 @@ func main() {
 		<-ctx.Done()
 		srv.Shutdown()
 	}()
+
+	// Scheduler de manutenção: roda diariamente às 03:00 (horário São Paulo)
+	// removendo registros antigos de sent_events e event_counters conforme
+	// SENT_EVENTS_RETENTION_DAYS e EVENT_COUNTERS_RETENTION_DAYS.
+	scheduler := &maintenance.Scheduler{
+		Pool:                   pool,
+		SentEventsRetention:    cfg.SentEventsRetentionDays,
+		EventCountersRetention: cfg.EventCountersRetentionDays,
+		HourSP:                 3,
+		MinuteSP:               0,
+	}
+	go scheduler.Run(ctx)
 
 	slog.Info("worker starting", "redis", cfg.RedisAddr)
 	if err := srv.Run(); err != nil {

@@ -35,6 +35,13 @@ type Config struct {
 	// admin /admin/geoip/refresh. Pega em https://www.maxmind.com/en/geolite2/signup.
 	MaxMindLicenseKey string
 
+	// SentEventsRetentionDays controla por quantos dias os registros completos
+	// em sent_events ficam no banco. Default: 7. Use 0 pra desabilitar prune.
+	SentEventsRetentionDays int
+	// EventCountersRetentionDays controla por quantos dias os agregados em
+	// event_counters ficam no banco. Default: 90. Use 0 pra desabilitar prune.
+	EventCountersRetentionDays int
+
 	// MetaPartnerAgent é recomendado pra agências/plataformas que enviam
 	// eventos em nome de anunciantes. Formato: nome-versao (ex: "trackfind-1.0.0").
 	// Vazio = não envia o campo (ok pra anunciantes diretos).
@@ -82,6 +89,8 @@ func Load() (*Config, error) {
 		GeoIPDBPath:        getenv("GEOIP_DB_PATH", ""),
 		MetaAPIVersion:     getenv("META_API_VERSION", "v25.0"),
 		MaxMindLicenseKey:  getenv("MAXMIND_LICENSE_KEY", ""),
+		SentEventsRetentionDays:    atoi(getenv("SENT_EVENTS_RETENTION_DAYS", "7")),
+		EventCountersRetentionDays: atoi(getenv("EVENT_COUNTERS_RETENTION_DAYS", "90")),
 		MetaPartnerAgent:   getenv("META_PARTNER_AGENT", ""),
 		PublicAPIURL:       getenv("PUBLIC_API_URL", "http://localhost:8080/api/v1"),
 		AppURL:             getenv("APP_URL", "http://localhost:3000"),
