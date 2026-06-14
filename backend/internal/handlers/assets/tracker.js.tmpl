@@ -193,15 +193,28 @@
     };
     for (var k2 in utmParams) if (utmParams.hasOwnProperty(k2)) payload[k2] = utmParams[k2];
 
+    // keepalive: true garante que o request vai pra rede mesmo quando o
+    // navegador está prestes a navegar (clássico em submit de form que
+    // cancelava o fetch em voo e fazia o Lead se perder).
+    var bodyStr = JSON.stringify(payload);
     return fetch(TF_API_URL + "/events/send", {
       method: "POST",
       credentials: "omit",
+      keepalive: true,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: bodyStr
     }).then(function (r) {
       if (eventType === "Init") return r.json();
       return null;
     }).catch(function (e) {
+      // Fallback: tenta sendBeacon se o fetch falhar (alguns navegadores
+      // limitam keepalive a 64KB, beacon ajuda em body grande).
+      try {
+        if (navigator && navigator.sendBeacon) {
+          var blob = new Blob([bodyStr], { type: "application/json" });
+          navigator.sendBeacon(TF_API_URL + "/events/send", blob);
+        }
+      } catch (e2) {}
       if (window.console) console.error("[TF] erro ao rastrear " + eventType + ":", e);
       return null;
     });
@@ -320,37 +333,33 @@
   }
 
   // === Form lead tracking ==============================================
-  // Dispara Lead quando um <form> que contém email OU phone é submetido.
-  // Heurística: usa o mapeamento configurado em form_mappings pra detectar
-  // se o form é um form de lead (vs busca/login).
+  // Dispara Lead quando um <form> é submetido. Por padrão anexa em TODOS
+  // os forms da página (igual ao script legado), exceto forms claramente
+  // de busca (role="search" ou contendo só campo type="search").
+  //
+  // O fetch usa keepalive:true pra sobreviver à navegação que normalmente
+  // cancelaria a request em voo.
 
   function setupFormLeadTracking() {
-    var maps = TF_CONFIG.form_mappings || {};
-    var emailKeys = maps.email || [];
-    var phoneKeys = maps.phone || [];
-
-    function any(arr, attr) {
-      for (var i = 0; i < arr.length; i++) if (attr.indexOf(arr[i]) > -1) return true;
-      return false;
-    }
-
-    function hasLeadField(form) {
-      var inputs = form.querySelectorAll("input, textarea, select");
+    function isSearchForm(form) {
+      // role=search é o sinal HTML5 oficial.
+      if ((form.getAttribute("role") || "").toLowerCase() === "search") return true;
+      // Heurística: form com APENAS um input type=search (e nada mais útil).
+      var inputs = form.querySelectorAll("input, textarea");
+      var meaningful = 0;
+      var hasSearch = false;
       for (var i = 0; i < inputs.length; i++) {
-        var nameAttr = (inputs[i].name || "").toLowerCase();
-        var typeAttr = (inputs[i].type || "").toLowerCase();
-        if (!nameAttr) continue;
-        if (typeAttr === "search") continue;
-        if (any(emailKeys, nameAttr) || any(phoneKeys, nameAttr) || typeAttr === "email" || typeAttr === "tel") {
-          return true;
-        }
+        var t = (inputs[i].type || "").toLowerCase();
+        if (t === "hidden" || t === "submit" || t === "button" || t === "image" || t === "reset") continue;
+        if (t === "search") { hasSearch = true; continue; }
+        meaningful++;
       }
-      return false;
+      return hasSearch && meaningful === 0;
     }
 
     function attach(form) {
       if (form.dataset.tfLeadAttached) return;
-      if (!hasLeadField(form)) return;
+      if (isSearchForm(form)) return;
 
       // Injeta utm_source com o userId em campos hidden / cria se não existir.
       try {
@@ -368,11 +377,22 @@
         }
       } catch (e) {}
 
+      // submit normal (form HTML padrão).
       form.addEventListener("submit", function () {
-        // O scrapeFormsToCookie + sendEvent('Lead') já roda dentro do sendEvent
-        // pra eventos especiais (specialEvents inclui 'Lead').
+        if (window.console) console.log("[TF] form submit -> Lead", form);
         sendEvent("Lead");
       });
+
+      // Captura também o click em botões internos (Elementor/CF7 às vezes
+      // rodam JS que impede o submit do form e fazem AJAX próprio — nesses
+      // casos só o click chega).
+      var btns = form.querySelectorAll('button[type="submit"], input[type="submit"], button:not([type])');
+      for (var b = 0; b < btns.length; b++) {
+        btns[b].addEventListener("click", function () {
+          if (window.console) console.log("[TF] form submit btn click -> Lead");
+          sendEvent("Lead");
+        });
+      }
 
       form.dataset.tfLeadAttached = "1";
     }
