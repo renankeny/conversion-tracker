@@ -70,5 +70,7 @@ script
 # =============================================================================
 deploy/easypanel.schema.json
 deploy/easypanel.schema.local.json
+deploy/easypanel.template.json
+deploy/credentials.txt
 script outro.js
 backend/bin/
