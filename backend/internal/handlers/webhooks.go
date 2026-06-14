@@ -68,14 +68,31 @@ type purchaseInput struct {
 	AlsoSearchByEmail bool
 }
 
-// processGenericPurchase é o fluxo único compartilhado pelos 22 webhooks:
+// processGenericPurchase é o fluxo single-item: processa UM purchaseInput,
+// chama enqueueGenericPurchase internamente e escreve a resposta HTTP.
+// Usado pelos gateways que entregam 1 venda por webhook (Hotmart, Kirvano,
+// RKCursos).
+func (h *Webhooks) processGenericPurchase(ctx context.Context, w http.ResponseWriter, in purchaseInput) {
+	body, status := h.enqueueGenericPurchase(ctx, in)
+	writeJSON(w, status, body)
+}
+
+// enqueueGenericPurchase é o fluxo único compartilhado:
 //
 //  1. Encontra o tracked user (external_id → phone (com variantes) → email opcional).
 //  2. Atualiza PII recebida do gateway no tracked_users.
 //  3. Aplica URL black→white na URL gravada do user.
 //  4. Resolve o pixel (`pixel_name` salvo no tracked user).
 //  5. Enfileira o evento (Purchase ou AddPaymentInfo) na fila Meta CAPI.
-func (h *Webhooks) processGenericPurchase(ctx context.Context, w http.ResponseWriter, in purchaseInput) {
+//
+// Retorna (body, statusCode) sem escrever no ResponseWriter — pra que
+// gateways batch (ex: Cakto com `data: [...]`) possam agregar múltiplos
+// resultados em uma única resposta.
+//
+// O statusCode é sempre 200/202 mesmo quando o lookup falha (não 4xx) —
+// gateways re-tentam em 4xx, e queremos evitar reentrega de webhook quando
+// o problema é correlacionar PII (não tem como o gateway "consertar").
+func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput) (map[string]any, int) {
 	in.EventName = orDefaultEvent(in.EventName)
 	in.Currency = orDefaultCurrency(in.Currency)
 	in.Phone = util.NormalizePhone(in.Phone)
@@ -89,14 +106,11 @@ func (h *Webhooks) processGenericPurchase(ctx context.Context, w http.ResponseWr
 			"phone", in.Phone,
 			"email", in.Email,
 		)
-		// 200 OK pra não fazer o gateway re-tentar indefinidamente — o evento
-		// de fato não pôde ser correlacionado a nenhum visitante rastreado.
-		writeJSON(w, http.StatusOK, map[string]any{
+		return map[string]any{
 			"received":     true,
 			"matched_user": false,
 			"reason":       "no tracked user",
-		})
-		return
+		}, http.StatusOK
 	}
 
 	// Atualiza dados PII recebidos do gateway no usuário rastreado.
@@ -115,17 +129,18 @@ func (h *Webhooks) processGenericPurchase(ctx context.Context, w http.ResponseWr
 			"pixel_name", user.PixelName,
 			"gateway", in.GatewayName,
 		)
-		writeError(w, http.StatusInternalServerError, "pixel not found: "+user.PixelName)
-		return
+		return map[string]any{
+			"received": true,
+			"error":    "pixel not found: " + user.PixelName,
+		}, http.StatusInternalServerError
 	}
 	if !pixel.Enabled {
-		writeJSON(w, http.StatusOK, map[string]any{
+		return map[string]any{
 			"received":     true,
 			"matched_user": true,
 			"queued":       false,
 			"reason":       "pixel disabled",
-		})
-		return
+		}, http.StatusOK
 	}
 
 	val := in.Value
@@ -159,15 +174,17 @@ func (h *Webhooks) processGenericPurchase(ctx context.Context, w http.ResponseWr
 	}
 	if err := h.queue.EnqueueSendEvent(ctx, send); err != nil {
 		slog.Error("enqueue webhook event", "err", err, "gateway", in.GatewayName, "event_id", eventID)
-		writeError(w, http.StatusInternalServerError, "queue error")
-		return
+		return map[string]any{
+			"received": true,
+			"error":    "queue error",
+		}, http.StatusInternalServerError
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
+	return map[string]any{
 		"received":     true,
 		"matched_user": true,
 		"event_id":     eventID,
 		"event_name":   in.EventName,
-	})
+	}, http.StatusAccepted
 }
 
 // findUser implementa a estratégia de lookup compartilhada por todos os gateways.
