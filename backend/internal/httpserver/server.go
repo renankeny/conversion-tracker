@@ -67,6 +67,7 @@ func New(deps Deps) (*Server, error) {
 	adminAuthH := handlers.NewAdminAuth(deps.Pool, deps.JWT)
 	adminPixelH := handlers.NewAdminPixels(pixels)
 	adminPixelH.SetDNSTarget(deps.Cfg.TrackingTargetHost)
+	adminPixelH.SetDomainSet(deps.AllowedDomains)
 	adminPixelTestH := handlers.NewAdminPixelTestEvent(pixels, deps.Cfg.MetaAPIVersion, deps.Cfg.MetaPartnerAgent)
 	adminGeoIPH := handlers.NewAdminGeoIP(deps.Cfg.MaxMindLicenseKey, deps.Cfg.GeoIPDBPath, deps.GeoIP)
 	adminMaintenanceH := handlers.NewAdminMaintenance(deps.Pool, accountRepo, deps.Cfg.SentEventsRetentionDays, deps.Cfg.EventCountersRetentionDays)

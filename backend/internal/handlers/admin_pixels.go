@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,15 +13,38 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 type AdminPixels struct {
 	repo      *repo.PixelRepo
-	dnsTarget string // host alvo esperado em CNAMEs dos clientes (ex: "track.trackfind.com.br")
+	domains   *util.DomainSet // cache CORS — invalidado em mutações
+	dnsTarget string          // host alvo esperado em CNAMEs dos clientes (ex: "track.trackfind.com.br")
 }
 
 func NewAdminPixels(r *repo.PixelRepo) *AdminPixels {
 	return &AdminPixels{repo: r}
+}
+
+// SetDomainSet injeta o cache de domínios autorizados (CORS). Quando setado,
+// é invalidado automaticamente em Create/Update/Delete pra evitar a janela
+// de até 30s do refresh periódico.
+func (h *AdminPixels) SetDomainSet(d *util.DomainSet) {
+	h.domains = d
+}
+
+// refreshDomains recarrega o cache CORS a partir do banco. Erros geram log
+// e seguem — o ticker periódico vai recuperar.
+func (h *AdminPixels) refreshDomains(ctx context.Context) {
+	if h.domains == nil {
+		return
+	}
+	list, err := h.repo.ActiveDomains(ctx)
+	if err != nil {
+		slog.Warn("refresh allowed_domains", "err", err)
+		return
+	}
+	h.domains.Set(list)
 }
 
 // SetDNSTarget configura o host alvo (registro de destino) usado para verificar
@@ -130,6 +155,7 @@ func (h *AdminPixels) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "create error: "+err.Error())
 		return
 	}
+	h.refreshDomains(r.Context())
 	writeJSON(w, http.StatusCreated, p.PublicView())
 }
 
@@ -193,6 +219,7 @@ func (h *AdminPixels) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "update error: "+err.Error())
 		return
 	}
+	h.refreshDomains(r.Context())
 	writeJSON(w, http.StatusOK, existing.PublicView())
 }
 
@@ -232,6 +259,7 @@ func (h *AdminPixels) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "delete error")
 		return
 	}
+	h.refreshDomains(r.Context())
 	w.WriteHeader(http.StatusNoContent)
 }
 
