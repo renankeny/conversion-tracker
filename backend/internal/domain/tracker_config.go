@@ -28,9 +28,14 @@ type TrackerConfig struct {
 	// AutoFormLead dispara Lead automaticamente quando um form com email ou
 	// telefone é submetido. Captura PII antes de enviar.
 	AutoFormLead bool `json:"auto_form_lead"`
-	// WhatsAppProtocol adiciona "Protocolo: <userId>" em links de wa.me e
-	// dispara um Lead no clique.
+	// WhatsAppProtocol adiciona "Protocolo: <userId>" no parâmetro `text`
+	// dos links wa.me / api.whatsapp.com — útil pra correlacionar a conversa
+	// que entra no WhatsApp com o tracked_user que originou o clique.
 	WhatsAppProtocol bool `json:"whatsapp_protocol"`
+	// WhatsAppLead dispara o evento Lead quando o usuário clica num link
+	// de WhatsApp interceptado. Independente do WhatsAppProtocol — você pode
+	// rewrites o text sem disparar Lead, ou disparar Lead sem mexer no text.
+	WhatsAppLead bool `json:"whatsapp_lead"`
 	// SendScrolls dispara Scroll_25/50/75/90 conforme o usuário rola.
 	SendScrolls bool `json:"send_scrolls"`
 	// SendTimer1Min dispara Timer_1min após 60s na página.
@@ -83,6 +88,7 @@ func DefaultTrackerConfig() TrackerConfig {
 		AutoFormScraping:    true,
 		AutoFormLead:        true,
 		WhatsAppProtocol:    true,
+		WhatsAppLead:        true,
 		FormMappings: FormMappings{
 			Email:     []string{"email", "form_fields[email]"},
 			Phone:     []string{"tel", "telefone", "phone", "form_fields[phone]"},

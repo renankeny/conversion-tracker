@@ -24,6 +24,7 @@ export interface TrackerConfig {
   auto_form_scraping: boolean
   auto_form_lead: boolean
   whatsapp_protocol: boolean
+  whatsapp_lead: boolean
   send_scrolls: boolean
   send_timer_1min: boolean
   send_view_video: boolean

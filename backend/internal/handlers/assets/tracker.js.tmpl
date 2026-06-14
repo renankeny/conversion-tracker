@@ -407,26 +407,53 @@
     obs.observe(document.body, { childList: true, subtree: true });
   }
 
-  // === WhatsApp protocol ===============================================
+  // === WhatsApp links ==================================================
+  // Dois comportamentos independentes, controlados por toggles separados:
+  //
+  //   - whatsapp_protocol: reescreve o parâmetro `text=` no link do WhatsApp
+  //     adicionando "Protocolo: <userId>" pra correlacionar a conversa que
+  //     entra no WhatsApp com o tracked_user que originou o clique.
+  //   - whatsapp_lead: dispara um evento Lead (fbq + servidor com mesmo
+  //     eventID, deduplicação automática pela Meta) quando o usuário clica.
+  //
+  // Os dois rodam no mesmo MutationObserver pra evitar duplo-scan do DOM.
 
-  function setupWhatsAppProtocol() {
+  function setupWhatsAppLinks(opts) {
+    opts = opts || { protocol: false, lead: false };
+    if (!opts.protocol && !opts.lead) return; // nada pra fazer
+
     function intercept() {
       var links = document.querySelectorAll('a[href*="wa.me"], a[href*="api.whatsapp"]');
       for (var i = 0; i < links.length; i++) {
         var link = links[i];
-        if (link.dataset.tfWaProtocol) continue;
-        try {
-          var url = new URL(link.href);
-          var msg = "Protocolo: " + userId;
-          if (url.searchParams.has("text")) {
-            url.searchParams.set("text", url.searchParams.get("text") + "\n" + msg);
-          } else url.searchParams.set("text", msg);
-          link.href = url.toString();
-          link.dataset.tfWaProtocol = "1";
-          link.addEventListener("click", function () { sendEvent("Lead"); });
-        } catch (e) {}
+        if (link.dataset.tfWaProcessed) continue;
+
+        if (opts.protocol) {
+          try {
+            var url = new URL(link.href);
+            var msg = "Protocolo: " + userId;
+            if (url.searchParams.has("text")) {
+              url.searchParams.set("text", url.searchParams.get("text") + "\n" + msg);
+            } else {
+              url.searchParams.set("text", msg);
+            }
+            link.href = url.toString();
+          } catch (e) {}
+        }
+
+        if (opts.lead) {
+          link.addEventListener("click", function () {
+            // sendEvent já dispara fbq E fetch /events/send com o mesmo
+            // eventID — Meta deduplica web+server automaticamente.
+            // keepalive:true no fetch sobrevive à navegação pra wa.me.
+            sendEvent("Lead");
+          });
+        }
+
+        link.dataset.tfWaProcessed = "1";
       }
     }
+
     intercept();
     var obs = new MutationObserver(intercept);
     obs.observe(document.body, { childList: true, subtree: true });
@@ -594,7 +621,10 @@
       setUTMs();
       setButtonsURLs();
     }
-    if (TF_CONFIG.whatsapp_protocol) setupWhatsAppProtocol();
+    setupWhatsAppLinks({
+      protocol: !!TF_CONFIG.whatsapp_protocol,
+      lead:     !!TF_CONFIG.whatsapp_lead,
+    });
     if (TF_CONFIG.auto_form_lead) setupFormLeadTracking();
     if (TF_CONFIG.send_scrolls) setupScrollTracking();
     if (TF_CONFIG.send_timer_1min) setupTimerTracking();
@@ -605,7 +635,10 @@
     if (window.console) console.warn("[TF] Init falhou, seguindo com auto-triggers:", err);
     if (TF_CONFIG.auto_page_view) waitForCookiesAndPageView();
     if (TF_CONFIG.auto_checkout_buttons) { setUTMs(); setButtonsURLs(); }
-    if (TF_CONFIG.whatsapp_protocol) setupWhatsAppProtocol();
+    setupWhatsAppLinks({
+      protocol: !!TF_CONFIG.whatsapp_protocol,
+      lead:     !!TF_CONFIG.whatsapp_lead,
+    });
     if (TF_CONFIG.auto_form_lead) setupFormLeadTracking();
     if (TF_CONFIG.send_scrolls) setupScrollTracking();
     if (TF_CONFIG.send_timer_1min) setupTimerTracking();

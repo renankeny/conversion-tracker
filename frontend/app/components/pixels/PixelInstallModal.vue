@@ -364,8 +364,14 @@ const autoEvents = computed(() => {
     {
       key: 'whatsapp_protocol',
       label: 'Protocolo WhatsApp',
-      tag: 'Lead',
+      tag: 'WhatsApp',
       enabled: !!cfg.whatsapp_protocol,
+    },
+    {
+      key: 'whatsapp_lead',
+      label: 'Lead no clique do WhatsApp',
+      tag: 'Lead',
+      enabled: !!cfg.whatsapp_lead,
     },
     {
       key: 'send_scrolls',

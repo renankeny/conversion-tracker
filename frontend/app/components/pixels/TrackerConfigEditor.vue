@@ -37,7 +37,13 @@
         <ToggleCard
           v-model="config.whatsapp_protocol"
           title="Protocolo WhatsApp"
-          description="Adiciona &quot;Protocolo: <id>&quot; em links wa.me e dispara Lead no clique"
+          description="Adiciona &quot;Protocolo: <id>&quot; no parâmetro text= dos links wa.me e api.whatsapp.com — correlaciona a conversa que entra no WhatsApp com o lead"
+          tag="WhatsApp"
+        />
+        <ToggleCard
+          v-model="config.whatsapp_lead"
+          title="Lead no clique do WhatsApp"
+          description="Dispara o evento Lead (web + servidor com mesmo eventID, deduplicado pela Meta) quando o usuário clica em um link wa.me. Independente do toggle acima."
           tag="Lead"
         />
         <ToggleCard

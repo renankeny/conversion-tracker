@@ -172,6 +172,7 @@ const defaultTrackerConfig = (): TrackerConfig => ({
   auto_form_scraping: true,
   auto_form_lead: true,
   whatsapp_protocol: true,
+  whatsapp_lead: true,
   send_scrolls: false,
   send_timer_1min: false,
   send_view_video: false,
