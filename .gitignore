@@ -72,5 +72,7 @@ deploy/easypanel.schema.json
 deploy/easypanel.schema.local.json
 deploy/easypanel.template.json
 deploy/credentials.txt
+deploy/portainer.env
+deploy/portainer-swarm-stack.ready.yml
 script outro.js
 backend/bin/
