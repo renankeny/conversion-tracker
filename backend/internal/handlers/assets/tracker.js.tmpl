@@ -82,6 +82,25 @@
     return getCookie("_gclid");
   }
 
+  // === TikTok identifiers ==============================================
+  // ttclid:  parâmetro de URL setado pelo TikTok no clique do anúncio
+  // _ttp:    cookie de pixel do TikTok (gerado pelo ttq.js quando carregado)
+  // Ambos vão como tokens não-hasheados pra TikTok Events API.
+
+  function getOrSaveTtclid() {
+    var u = new URLSearchParams(window.location.search);
+    var t = u.get("ttclid");
+    if (t) {
+      setCookie("_ttclid", t, 90);
+      return t;
+    }
+    return getCookie("_ttclid");
+  }
+
+  function getTtp() {
+    return getCookie("_ttp") || null;
+  }
+
   // === User identity ====================================================
 
   var userData = getUserDataCookie();
@@ -172,6 +191,8 @@
     }
     var freshCookie = getUserDataCookie();
     var gclid = getOrSaveGclid();
+    var ttclid = getOrSaveTtclid();
+    var ttp = getTtp();
 
     var payload = {
       eventType: eventType,
@@ -181,11 +202,14 @@
       contentId: "",
       eventId: eventId,
       URL: URLnow,
+      referrer: document.referrer || null,
       price: typeof data.value === "number" ? data.value : null,
       currency: data.currency || TF_CONFIG.product_currency || "BRL",
       fbc: data.fbc || clientUserData.fbc || getCookie("_fbc") || null,
       fbp: data.fbp || clientUserData.fbp || getCookie("_fbp") || null,
       gclid: gclid || null,
+      ttclid: ttclid || null,
+      ttp: ttp || null,
       first_name: data.first_name || freshCookie.first_name || null,
       last_name: data.last_name || freshCookie.last_name || null,
       email: data.email || freshCookie.email || null,
@@ -309,10 +333,12 @@
           } else url.searchParams.append(origin, marker);
 
           var fbc = getCookie("_fbc"), fbp = getCookie("_fbp"), sck = getCookie("_sck"), gclid = getOrSaveGclid();
+          var ttclid = getOrSaveTtclid();
           if (fbc) url.searchParams.set("fbc", fbc);
           if (fbp) url.searchParams.set("fbp", fbp);
           if (sck) url.searchParams.set("sck", sck);
           if (gclid) url.searchParams.set("gclid", gclid);
+          if (ttclid) url.searchParams.set("ttclid", ttclid);
           link.href = url.toString();
         } catch (e) {}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,12 +15,13 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/tiktok"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 // AdminPixelTestEvent dispara um evento de teste sincronamente pra Meta CAPI
-// usando o test_event_code configurado no pixel. Útil pra validar a integração
-// pelo painel sem precisar abrir o site real.
+// e/ou TikTok Events API usando os test_event_codes configurados no pixel.
+// Útil pra validar a integração pelo painel sem precisar abrir o site real.
 type AdminPixelTestEvent struct {
 	pixels         *repo.PixelRepo
 	metaAPIVersion string
@@ -42,9 +44,12 @@ type testEventInput struct {
 	LastName  string  `json:"last_name"`
 	Value     float64 `json:"value"`
 	Currency  string  `json:"currency"`
+	// Channel = "meta" (default), "tiktok" ou "all"
+	Channel string `json:"channel"`
 }
 
 type testEventResult struct {
+	Channel    string `json:"channel"` // "meta" ou "tiktok"
 	PixelID    string `json:"pixel_id"`
 	StatusCode int    `json:"status_code"`
 	Response   string `json:"response,omitempty"`
@@ -73,10 +78,6 @@ func (h *AdminPixelTestEvent) SendTestEvent(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "pixel disabled")
 		return
 	}
-	if len(p.PixelIDs) == 0 || len(p.AccessTokens) == 0 {
-		writeError(w, http.StatusBadRequest, "pixel sem pixel_ids ou access_tokens configurados")
-		return
-	}
 
 	// Body opcional: usuário pode customizar evento e PII.
 	var in testEventInput
@@ -95,13 +96,39 @@ func (h *AdminPixelTestEvent) SendTestEvent(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
+	channel := strings.ToLower(strings.TrimSpace(in.Channel))
+	if channel == "" {
+		channel = "meta"
+	}
+	wantMeta := channel == "meta" || channel == "all"
+	wantTikTok := channel == "tiktok" || channel == "all"
+
+	if wantMeta && (len(p.PixelIDs) == 0 || len(p.AccessTokens) == 0) {
+		writeError(w, http.StatusBadRequest, "pixel sem pixel_ids ou access_tokens Meta configurados")
+		return
+	}
+	if wantTikTok && !p.HasTikTok() {
+		writeError(w, http.StatusBadRequest, "pixel sem tiktok_pixel_ids ou tiktok_access_tokens configurados")
+		return
+	}
+
 	// Monta o payload com test_event_code e dados de PII normalizados.
 	eventID := "TEST_" + util.GenerateID10()
 	now := time.Now().Unix()
 
-	clientIP := r.Header.Get("X-Forwarded-For")
+	// Resolve IP do cliente. Prioridade: X-Forwarded-For (atrás de proxy)
+	// > X-Real-IP > RemoteAddr. Em todos os casos, descarta a porta (TikTok
+	// e Meta esperam só o endereco IP, sem :porta).
+	clientIP := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
 	if clientIP == "" {
-		clientIP = r.RemoteAddr
+		clientIP = strings.TrimSpace(r.Header.Get("X-Real-IP"))
+	}
+	if clientIP == "" {
+		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			clientIP = host
+		} else {
+			clientIP = r.RemoteAddr
+		}
 	}
 	clientUA := r.UserAgent()
 	if clientUA == "" {
@@ -125,6 +152,7 @@ func (h *AdminPixelTestEvent) SendTestEvent(w http.ResponseWriter, r *http.Reque
 		EventID:         eventID,
 		EventTime:       now,
 		SourceURL:       sourceURL,
+		ContentID:       p.Name, // mesmo padrao do /events/send: pixelName como content_id quando o cliente nao informa
 		ContentName:     p.Name,
 		ContentType:     "product",
 		Value:           valuePtr,
@@ -138,29 +166,48 @@ func (h *AdminPixelTestEvent) SendTestEvent(w http.ResponseWriter, r *http.Reque
 		LastName:        in.LastName,
 	}
 
-	// Envia sincronamente pra cada pixel_id usando o cliente existente.
+	// Envia sincronamente pra cada pixel_id usando os clientes correspondentes.
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	client := meta.New(h.metaAPIVersion, h.metaPartner)
-	sendResults := client.Send(ctx, p, input)
+	results := make([]testEventResult, 0, len(p.PixelIDs)+len(p.TikTokPixelIDs))
 
-	results := make([]testEventResult, 0, len(sendResults))
-	for _, r := range sendResults {
-		res := testEventResult{
-			PixelID:    r.PixelID,
-			StatusCode: r.StatusCode,
-			Response:   util.RedactSecrets(r.Body),
+	if wantMeta {
+		client := meta.New(h.metaAPIVersion, h.metaPartner)
+		for _, r := range client.Send(ctx, p, input) {
+			res := testEventResult{
+				Channel:    "meta",
+				PixelID:    r.PixelID,
+				StatusCode: r.StatusCode,
+				Response:   util.RedactSecrets(r.Body),
+			}
+			if r.Err != nil {
+				res.Error = r.Err.Error()
+			}
+			results = append(results, res)
 		}
-		if r.Err != nil {
-			res.Error = r.Err.Error()
+	}
+
+	if wantTikTok {
+		client := tiktok.New(h.metaPartner)
+		for _, r := range client.Send(ctx, p, input) {
+			res := testEventResult{
+				Channel:    "tiktok",
+				PixelID:    r.PixelID,
+				StatusCode: r.StatusCode,
+				Response:   util.RedactSecrets(r.Body),
+			}
+			if r.Err != nil {
+				res.Error = r.Err.Error()
+			}
+			results = append(results, res)
 		}
-		results = append(results, res)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"event_id":   eventID,
 		"event_name": in.EventName,
+		"channel":    channel,
 		"results":    results,
 	})
 }

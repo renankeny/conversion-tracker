@@ -64,6 +64,11 @@ type pixelInput struct {
 	Enabled       *bool                 `json:"enabled"`
 	TrackingHost  *string               `json:"tracking_host"`
 	AccountID     *int64                `json:"account_id"` // owners podem definir; members é ignorado
+
+	// TikTok Events API (opcional - quando vazio, eventos só vão pra Meta)
+	TikTokPixelIDs     []string `json:"tiktok_pixel_ids"`
+	TikTokAccessTokens []string `json:"tiktok_access_tokens"`
+	TikTokTestCodes    []string `json:"tiktok_test_codes"`
 }
 
 func (h *AdminPixels) List(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +149,10 @@ func (h *AdminPixels) Create(w http.ResponseWriter, r *http.Request) {
 		TrackerConfig: cfg,
 		Enabled:       true,
 		AccountID:     scope.EffectiveAccountID(override),
+
+		TikTokPixelIDs:     in.TikTokPixelIDs,
+		TikTokAccessTokens: in.TikTokAccessTokens,
+		TikTokTestCodes:    padOrTrim(in.TikTokTestCodes, len(in.TikTokPixelIDs)),
 	}
 	if in.Enabled != nil {
 		p.Enabled = *in.Enabled
@@ -205,6 +214,15 @@ func (h *AdminPixels) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Domains != nil {
 		existing.Domains = cleanDomains(in.Domains)
+	}
+	if in.TikTokPixelIDs != nil {
+		existing.TikTokPixelIDs = in.TikTokPixelIDs
+	}
+	if in.TikTokAccessTokens != nil {
+		existing.TikTokAccessTokens = in.TikTokAccessTokens
+	}
+	if in.TikTokTestCodes != nil {
+		existing.TikTokTestCodes = padOrTrim(in.TikTokTestCodes, len(existing.TikTokPixelIDs))
 	}
 	if in.TrackerConfig != nil {
 		existing.TrackerConfig = *in.TrackerConfig
@@ -278,6 +296,11 @@ func validatePixelInput(in pixelInput, requireAll bool) error {
 	if in.PixelIDs != nil && in.AccessTokens != nil &&
 		len(in.AccessTokens) != len(in.PixelIDs) {
 		return errors.New("access_tokens length must match pixel_ids")
+	}
+	// TikTok: se algum dos dois for informado, ambos devem ter o mesmo tamanho.
+	if in.TikTokPixelIDs != nil && in.TikTokAccessTokens != nil &&
+		len(in.TikTokAccessTokens) != len(in.TikTokPixelIDs) {
+		return errors.New("tiktok_access_tokens length must match tiktok_pixel_ids")
 	}
 	return nil
 }

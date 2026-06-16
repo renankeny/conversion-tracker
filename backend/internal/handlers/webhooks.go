@@ -171,6 +171,8 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput)
 		State:           user.State,
 		City:            user.City,
 		PostalCode:      user.PostalCode,
+		TTClid:          user.TTClid,
+		TTP:             user.TTP,
 	}
 	if err := h.queue.EnqueueSendEvent(ctx, send); err != nil {
 		slog.Error("enqueue webhook event", "err", err, "gateway", in.GatewayName, "event_id", eventID)

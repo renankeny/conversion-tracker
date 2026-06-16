@@ -18,6 +18,8 @@ type TrackedUser struct {
 	FBP             string `json:"fbp"`
 	FBC             string `json:"fbc"`
 	GCLID           string `json:"gclid"`
+	TTClid          string `json:"ttclid"`
+	TTP             string `json:"ttp"`
 	ClientIP        string `json:"client_ip"`
 	ClientUserAgent string `json:"client_user_agent"`
 

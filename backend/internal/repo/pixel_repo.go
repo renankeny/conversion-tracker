@@ -23,7 +23,9 @@ func NewPixelRepo(pool *pgxpool.Pool) *PixelRepo {
 }
 
 const pixelColumns = `id, name, label, pixel_ids, access_tokens, test_codes,
-		domains, tracker_config, enabled, tracking_host, account_id, created_at, updated_at`
+		domains, tracker_config, enabled, tracking_host, account_id,
+		tiktok_pixel_ids, tiktok_access_tokens, tiktok_test_codes,
+		created_at, updated_at`
 
 func (r *PixelRepo) FindByName(ctx context.Context, name string) (*domain.Pixel, error) {
 	q := `SELECT ` + pixelColumns + ` FROM pixels WHERE name = $1`
@@ -116,12 +118,14 @@ func (r *PixelRepo) Create(ctx context.Context, p *domain.Pixel) error {
 		p.AccountID = 1 // default account
 	}
 	const q = `INSERT INTO pixels (name, label, pixel_ids, access_tokens, test_codes,
-	                               domains, tracker_config, enabled, tracking_host, account_id)
-	           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+	                               domains, tracker_config, enabled, tracking_host, account_id,
+	                               tiktok_pixel_ids, tiktok_access_tokens, tiktok_test_codes)
+	           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 	           RETURNING id, created_at, updated_at`
 	return r.pool.QueryRow(ctx, q,
 		p.Name, p.Label, p.PixelIDs, p.AccessTokens, p.TestCodes,
 		p.Domains, cfgJSON, p.Enabled, p.TrackingHost, p.AccountID,
+		nilIfNil(p.TikTokPixelIDs), nilIfNil(p.TikTokAccessTokens), nilIfNil(p.TikTokTestCodes),
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -132,13 +136,26 @@ func (r *PixelRepo) Update(ctx context.Context, p *domain.Pixel) error {
 	}
 	const q = `UPDATE pixels
 	           SET name=$1, label=$2, pixel_ids=$3, access_tokens=$4, test_codes=$5,
-	               domains=$6, tracker_config=$7, enabled=$8, tracking_host=$9, updated_at=NOW()
-	           WHERE id=$10
+	               domains=$6, tracker_config=$7, enabled=$8, tracking_host=$9,
+	               tiktok_pixel_ids=$10, tiktok_access_tokens=$11, tiktok_test_codes=$12,
+	               updated_at=NOW()
+	           WHERE id=$13
 	           RETURNING updated_at`
 	return r.pool.QueryRow(ctx, q,
 		p.Name, p.Label, p.PixelIDs, p.AccessTokens, p.TestCodes,
-		p.Domains, cfgJSON, p.Enabled, p.TrackingHost, p.ID,
+		p.Domains, cfgJSON, p.Enabled, p.TrackingHost,
+		nilIfNil(p.TikTokPixelIDs), nilIfNil(p.TikTokAccessTokens), nilIfNil(p.TikTokTestCodes),
+		p.ID,
 	).Scan(&p.UpdatedAt)
+}
+
+// nilIfNil garante que slices nil viram []string{} (postgres TEXT[] não aceita NULL
+// quando a coluna é NOT NULL DEFAULT '{}').
+func nilIfNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func (r *PixelRepo) Delete(ctx context.Context, id int64) error {
@@ -155,7 +172,9 @@ func scanPixel(row rowScanner) (*domain.Pixel, error) {
 	var cfgJSON []byte
 	err := row.Scan(
 		&p.ID, &p.Name, &p.Label, &p.PixelIDs, &p.AccessTokens, &p.TestCodes,
-		&p.Domains, &cfgJSON, &p.Enabled, &p.TrackingHost, &p.AccountID, &p.CreatedAt, &p.UpdatedAt,
+		&p.Domains, &cfgJSON, &p.Enabled, &p.TrackingHost, &p.AccountID,
+		&p.TikTokPixelIDs, &p.TikTokAccessTokens, &p.TikTokTestCodes,
+		&p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

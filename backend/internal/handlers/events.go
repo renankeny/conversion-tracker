@@ -56,9 +56,12 @@ type sendRequest struct {
 	Price     *float64 `json:"price"`
 	Currency  string   `json:"currency"`
 	URL       string   `json:"URL"`
+	Referrer  string   `json:"referrer"`
 	FBC       string   `json:"fbc"`
 	FBP       string   `json:"fbp"`
 	GCLID     string   `json:"gclid"`
+	TTClid    string   `json:"ttclid"`
+	TTP       string   `json:"ttp"`
 
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
@@ -178,6 +181,10 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 	// Recarrega o tracked user pra usar os dados de geo persistidos (capturados no Init,
 	// quando o IP do client era o real e não de um CDN/proxy). Se não houver no banco,
 	// mantém os dados do lookup atual.
+	// Também recupera ttclid/ttp persistidos pra ir junto no envio TikTok mesmo
+	// quando o evento atual não os trouxe (mantém atribuição).
+	ttclid := req.TTClid
+	ttp := req.TTP
 	if existing, err := h.users.FindByExternalID(ctx, req.UserID); err == nil && existing != nil {
 		if existing.Country != "" {
 			country = existing.Country
@@ -190,6 +197,12 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 		}
 		if existing.PostalCode != "" {
 			postal = existing.PostalCode
+		}
+		if ttclid == "" && existing.TTClid != "" {
+			ttclid = existing.TTClid
+		}
+		if ttp == "" && existing.TTP != "" {
+			ttp = existing.TTP
 		}
 	}
 
@@ -245,6 +258,10 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 		State:           state,
 		City:            city,
 		PostalCode:      postal,
+
+		TTClid:   ttclid,
+		TTP:      ttp,
+		Referrer: req.Referrer,
 	}
 	if err := h.queue.EnqueueSendEvent(ctx, in); err != nil {
 		slog.Error("enqueue send", "err", err, "event_id", eventID)
@@ -279,6 +296,8 @@ func (h *Events) upsertTrackedUser(
 			FBP:             req.FBP,
 			FBC:             req.FBC,
 			GCLID:           req.GCLID,
+			TTClid:          req.TTClid,
+			TTP:             req.TTP,
 			ClientIP:        ip,
 			ClientUserAgent: ua,
 			Country:         country,
@@ -309,6 +328,8 @@ func (h *Events) upsertTrackedUser(
 			FBP:             req.FBP,
 			FBC:             req.FBC,
 			GCLID:           req.GCLID,
+			TTClid:          req.TTClid,
+			TTP:             req.TTP,
 			ClientIP:        ip,
 			ClientUserAgent: ua,
 			FirstName:       req.FirstName,
@@ -326,6 +347,8 @@ func (h *Events) upsertTrackedUser(
 			FBP:        req.FBP,
 			FBC:        req.FBC,
 			GCLID:      req.GCLID,
+			TTClid:     req.TTClid,
+			TTP:        req.TTP,
 		}
 		return h.users.Upsert(ctx, tu)
 

@@ -18,6 +18,15 @@
         </span>
       </div>
 
+      <div v-if="(pixel.tiktok_pixel_count ?? 0) > 0" class="card-row">
+        <span class="row-label">
+          <span class="channel-pill" data-channel="tiktok">TikTok</span>
+        </span>
+        <span class="row-value">
+          <code v-for="id in pixel.tiktok_pixel_ids" :key="`tt-${id}`" class="pixel-id">{{ id }}</code>
+        </span>
+      </div>
+
       <div class="card-row">
         <span class="row-label">Domínios</span>
         <span class="row-value">
@@ -145,6 +154,21 @@ const formatDate = (iso: string) => {
   letter-spacing: 0.05em;
   color: var(--text-3);
   font-weight: 600;
+}
+
+.channel-pill {
+  display: inline-block;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.125rem 0.4rem;
+  border-radius: 4px;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.channel-pill[data-channel="tiktok"] {
+  background: linear-gradient(135deg, #25f4ee 0%, #fe2c55 100%);
 }
 
 .row-value {

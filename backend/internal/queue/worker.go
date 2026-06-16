@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -13,6 +14,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/tiktok"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -25,6 +27,7 @@ type Deps struct {
 	Pool     *pgxpool.Pool
 	Pixels   *repo.PixelRepo
 	Meta     *meta.Client
+	TikTok   *tiktok.Client
 	Counters *repo.EventCounterRepo
 }
 
@@ -47,6 +50,46 @@ func (s *Server) Run() error { return s.srv.Run(s.mux) }
 func (s *Server) Stop()      { s.srv.Stop() }
 func (s *Server) Shutdown()  { s.srv.Shutdown() }
 
+// dispatchResult uniformiza resultados Meta e TikTok pra persistencia.
+type dispatchResult struct {
+	Channel     string // "meta" ou "tiktok"
+	PixelID     string
+	StatusCode  int
+	Body        string
+	RequestBody string
+	Err         error
+}
+
+func fromMetaResults(rs []meta.SendResult) []dispatchResult {
+	out := make([]dispatchResult, len(rs))
+	for i, r := range rs {
+		out[i] = dispatchResult{
+			Channel:     "meta",
+			PixelID:     r.PixelID,
+			StatusCode:  r.StatusCode,
+			Body:        r.Body,
+			RequestBody: r.RequestBody,
+			Err:         r.Err,
+		}
+	}
+	return out
+}
+
+func fromTikTokResults(rs []tiktok.SendResult) []dispatchResult {
+	out := make([]dispatchResult, len(rs))
+	for i, r := range rs {
+		out[i] = dispatchResult{
+			Channel:     "tiktok",
+			PixelID:     r.PixelID,
+			StatusCode:  r.StatusCode,
+			Body:        r.Body,
+			RequestBody: r.RequestBody,
+			Err:         r.Err,
+		}
+	}
+	return out
+}
+
 func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var in domain.SendEventInput
@@ -63,13 +106,35 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 			return nil
 		}
 
-		// Estratégia dual:
-		//   - Sempre incrementa o counter agregado (1 row/hora por par pixel+evento)
-		//   - Se for evento "importante" (Lead, InitiateCheckout, Purchase, ...),
-		//     ADICIONALMENTE persiste o resultado completo em sent_events.
-		results := deps.Meta.Send(ctx, pixel, in)
-		hasErr := false
+		// Despacha em paralelo pra Meta e TikTok (quando configurados).
+		// Wait pra ambos antes de processar resultados.
+		var (
+			metaResults   []meta.SendResult
+			tiktokResults []tiktok.SendResult
+			wg            sync.WaitGroup
+		)
+		if len(pixel.PixelIDs) > 0 && deps.Meta != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				metaResults = deps.Meta.Send(ctx, pixel, in)
+			}()
+		}
+		if pixel.HasTikTok() && deps.TikTok != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				tiktokResults = deps.TikTok.Send(ctx, pixel, in)
+			}()
+		}
+		wg.Wait()
 
+		results := append(
+			fromMetaResults(metaResults),
+			fromTikTokResults(tiktokResults)...,
+		)
+
+		hasErr := false
 		eventTime := time.Unix(in.EventTime, 0)
 		if in.EventTime == 0 {
 			eventTime = time.Now()
@@ -81,7 +146,8 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 			if r.Err != nil {
 				delta.Failed = 1
 				hasErr = true
-				slog.Error("meta send failed",
+				slog.Error("send failed",
+					"channel", r.Channel,
 					"pixel_id", r.PixelID,
 					"event", in.EventName,
 					"event_id", in.EventID,
@@ -89,7 +155,8 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 				)
 			} else {
 				delta.Sent = 1
-				slog.Info("meta send ok",
+				slog.Info("send ok",
+					"channel", r.Channel,
 					"pixel_id", r.PixelID,
 					"event", in.EventName,
 					"event_id", in.EventID,
@@ -97,10 +164,13 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 				)
 			}
 
-			// Counter agregado (sempre).
+			// Counter agregado: mesmo event_name pra Meta e TikTok (é o mesmo
+			// evento de negocio). O canal e diferenciado em sent_events via
+			// coluna `channel`.
 			if deps.Counters != nil {
 				if cerr := deps.Counters.Increment(ctx, pixel.AccountID, pixel.Name, in.EventName, eventTime, delta); cerr != nil {
 					slog.Warn("counter increment failed",
+						"channel", r.Channel,
 						"pixel", pixel.Name,
 						"event", in.EventName,
 						"err", cerr,
@@ -109,19 +179,18 @@ func makeSendEventHandler(deps Deps) func(context.Context, *asynq.Task) error {
 			}
 
 			// Payload completo apenas para eventos importantes ou falhas.
-			// Falhas SEMPRE são persistidas (independente do tipo) para auditoria.
 			if storeFullPayload || r.Err != nil {
 				persistResult(ctx, deps.Pool, pixel.AccountID, in, r)
 			}
 		}
 		if hasErr {
-			return fmt.Errorf("at least one pixel failed")
+			return fmt.Errorf("at least one channel/pixel failed")
 		}
 		return nil
 	}
 }
 
-func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in domain.SendEventInput, r meta.SendResult) {
+func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in domain.SendEventInput, r dispatchResult) {
 	if accountID == 0 {
 		accountID = 1
 	}
@@ -131,20 +200,21 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 		status = "failed"
 		errMsg = util.RedactSecrets(r.Err.Error())
 	}
-	// Payload é gravado como JSONB. Aplicamos RedactSecrets como defesa em
-	// profundidade — embora os tokens fiquem na URL (não no body), eventuais
-	// echoes em campos de debug são neutralizados.
 	payload := util.RedactSecrets(r.RequestBody)
 	if payload == "" {
-		payload = "null" // JSONB válido pra requests que falharam antes do marshal
+		payload = "null"
+	}
+	channel := r.Channel
+	if channel == "" {
+		channel = "meta"
 	}
 	_, _ = pool.Exec(ctx, `
 		INSERT INTO sent_events
 			(event_id, event_name, pixel_name, external_id, account_id,
-			 status, response_code, response_body, error, payload)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+			 channel, status, response_code, response_body, error, payload)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
 	`,
 		in.EventID, in.EventName, in.PixelName, in.ExternalID, accountID,
-		status, r.StatusCode, util.RedactSecrets(r.Body), errMsg, payload,
+		channel, status, r.StatusCode, util.RedactSecrets(r.Body), errMsg, payload,
 	)
 }

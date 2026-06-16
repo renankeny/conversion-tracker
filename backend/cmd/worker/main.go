@@ -13,6 +13,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/tiktok"
 )
 
 func main() {
@@ -39,6 +40,7 @@ func main() {
 		Pool:     pool,
 		Pixels:   repo.NewPixelRepo(pool),
 		Meta:     meta.New(cfg.MetaAPIVersion, cfg.MetaPartnerAgent),
+		TikTok:   tiktok.New(cfg.MetaPartnerAgent),
 		Counters: repo.NewEventCounterRepo(pool),
 	})
 

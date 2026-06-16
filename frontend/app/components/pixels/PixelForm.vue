@@ -108,6 +108,63 @@
       </div>
 
       <div class="form-section">
+        <div class="section-header">
+          <h4 class="section-title">
+            <span class="badge-tiktok">TikTok</span>
+            Pixel IDs TikTok
+            <span class="badge-optional">opcional</span>
+          </h4>
+          <BaseButton type="button" variant="ghost" size="sm" @click="addTiktokRow">
+            + Adicionar pixel
+          </BaseButton>
+        </div>
+        <p class="section-hint">
+          Eventos serão enviados em paralelo pra Meta e TikTok. Use o
+          <a href="https://ads.tiktok.com/marketing_api/docs?id=1771101303285761" target="_blank" rel="noreferrer">
+            Events API V1.3
+          </a>
+          (Pixel ID + Access Token gerados em <em>Tools → Events Manager → Web Events</em>).
+        </p>
+
+        <div v-if="form.tiktok_pixel_ids.length === 0" class="empty-tiktok">
+          <p class="empty-text">Nenhum pixel TikTok configurado. Os eventos só vão pra Meta.</p>
+          <BaseButton type="button" variant="outline" size="sm" @click="addTiktokRow">
+            Adicionar primeiro pixel TikTok
+          </BaseButton>
+        </div>
+
+        <div v-for="(_, idx) in form.tiktok_pixel_ids" :key="idx" class="pixel-row tiktok-row">
+          <div class="pixel-row-grid">
+            <BaseInput
+              v-model="form.tiktok_pixel_ids[idx]"
+              label="Pixel ID TikTok"
+              placeholder="ABCDEFGHIJKLMNOP"
+            />
+            <BaseInput
+              v-model="form.tiktok_access_tokens[idx]"
+              label="Access Token"
+              :type="showTokens ? 'text' : 'password'"
+              :placeholder="isEditing ? 'Mantém o atual se vazio' : '0a1b2c3d...'"
+              :hint="isEditing && !form.tiktok_access_tokens[idx] ? 'Em branco mantém o token atual' : ''"
+            />
+            <BaseInput
+              v-model="form.tiktok_test_codes[idx]"
+              label="Test Event Code"
+              placeholder="TEST123"
+            />
+          </div>
+          <button
+            type="button"
+            class="row-remove"
+            @click="removeTiktokRow(idx)"
+            aria-label="Remover linha"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+
+      <div class="form-section">
         <h4 class="section-title">Domínios autorizados</h4>
         <p class="section-hint">
           Sites onde o tracker roda. Separe por vírgula. Em produção (STRICT_CORS)
@@ -194,6 +251,9 @@ const form = reactive<{
   pixel_ids: string[]
   access_tokens: string[]
   test_codes: string[]
+  tiktok_pixel_ids: string[]
+  tiktok_access_tokens: string[]
+  tiktok_test_codes: string[]
   domains: string[]
   enabled: boolean
   account_id: number | null
@@ -205,6 +265,9 @@ const form = reactive<{
   pixel_ids: [''],
   access_tokens: [''],
   test_codes: [''],
+  tiktok_pixel_ids: [],
+  tiktok_access_tokens: [],
+  tiktok_test_codes: [],
   domains: [],
   enabled: true,
   account_id: null,
@@ -226,6 +289,11 @@ const fillFromPixel = (pixel: Pixel) => {
   form.pixel_ids = [...(pixel.pixel_ids || [''])]
   form.access_tokens = pixel.pixel_ids.map(() => '')
   form.test_codes = [...(pixel.test_codes || pixel.pixel_ids.map(() => ''))]
+  form.tiktok_pixel_ids = [...(pixel.tiktok_pixel_ids || [])]
+  form.tiktok_access_tokens = (pixel.tiktok_pixel_ids || []).map(() => '')
+  form.tiktok_test_codes = [
+    ...(pixel.tiktok_test_codes || (pixel.tiktok_pixel_ids || []).map(() => '')),
+  ]
   form.domains = [...(pixel.domains || [])]
   form.enabled = pixel.enabled
   form.account_id = pixel.account_id || null
@@ -252,6 +320,18 @@ const removePixelRow = (idx: number) => {
   form.pixel_ids.splice(idx, 1)
   form.access_tokens.splice(idx, 1)
   form.test_codes.splice(idx, 1)
+}
+
+const addTiktokRow = () => {
+  form.tiktok_pixel_ids.push('')
+  form.tiktok_access_tokens.push('')
+  form.tiktok_test_codes.push('')
+}
+
+const removeTiktokRow = (idx: number) => {
+  form.tiktok_pixel_ids.splice(idx, 1)
+  form.tiktok_access_tokens.splice(idx, 1)
+  form.tiktok_test_codes.splice(idx, 1)
 }
 
 const validate = (): boolean => {
@@ -310,6 +390,22 @@ const buildPayload = (): PixelInput => {
     payload.access_tokens = tokens
   } else if (!isEditing.value) {
     payload.access_tokens = tokens
+  }
+
+  // TikTok: linhas com pixel ID preenchido (token pode ficar vazio em edição
+  // pra preservar o atual). Se o array todo estiver vazio, manda vazio
+  // mesmo (permite remover credenciais TikTok).
+  const ttIndexes = form.tiktok_pixel_ids
+    .map((id, i) => (id.trim() ? i : -1))
+    .filter((i) => i !== -1)
+
+  payload.tiktok_pixel_ids = ttIndexes.map((i) => form.tiktok_pixel_ids[i].trim())
+  payload.tiktok_test_codes = ttIndexes.map((i) => (form.tiktok_test_codes[i] || '').trim())
+
+  const ttTokens = ttIndexes.map((i) => (form.tiktok_access_tokens[i] || '').trim())
+  const ttAllFilled = ttTokens.every((t) => t.length > 0)
+  if (ttIndexes.length === 0 || ttAllFilled || !isEditing.value) {
+    payload.tiktok_access_tokens = ttTokens
   }
 
   return payload
@@ -415,6 +511,38 @@ onMounted(async () => {
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--text-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.badge-tiktok {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.125rem 0.4rem;
+  border-radius: 4px;
+  color: #fff;
+  background: linear-gradient(135deg, #25f4ee 0%, #fe2c55 100%);
+  text-transform: uppercase;
+}
+
+.badge-optional {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  padding: 0.125rem 0.4rem;
+  border-radius: 4px;
+}
+
+.section-hint a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .section-hint {
@@ -429,6 +557,33 @@ onMounted(async () => {
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   margin-top: 0.5rem;
+}
+
+.pixel-row.tiktok-row {
+  border-color: rgba(254, 44, 85, 0.18);
+  background: linear-gradient(
+    180deg,
+    rgba(37, 244, 238, 0.02) 0%,
+    rgba(254, 44, 85, 0.03) 100%
+  );
+}
+
+.empty-tiktok {
+  margin-top: 0.5rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface-soft);
+  border: 1px dashed var(--border-soft);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+.empty-text {
+  font-size: 0.8125rem;
+  color: var(--text-3);
+  margin: 0;
 }
 
 .pixel-row-grid {

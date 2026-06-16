@@ -19,7 +19,7 @@ func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 }
 
 const userColumns = `id, external_id, id_wpp, pixel_name, account_id,
-		fbp, fbc, gclid,
+		fbp, fbc, gclid, ttclid, ttp,
 		client_ip, client_user_agent,
 		country, state, city, postal_code,
 		first_name, last_name, email, phone, url,
@@ -82,14 +82,15 @@ func (r *UserRepo) UpdateByID(ctx context.Context, u *domain.TrackedUser) error 
 		id_wpp = $3,
 		pixel_name = $4,
 		fbp = $5, fbc = $6, gclid = $7,
-		client_ip = $8, client_user_agent = $9,
-		country = $10, state = $11, city = $12, postal_code = $13,
-		first_name = $14, last_name = $15, email = $16, phone = $17,
-		url = $18,
-		first_utm_source = $19, first_utm_medium = $20,
-		first_utm_campaign = $21, first_utm_content = $22, first_utm_term = $23,
-		last_utm_source = $24, last_utm_medium = $25,
-		last_utm_campaign = $26, last_utm_content = $27, last_utm_term = $28,
+		ttclid = $8, ttp = $9,
+		client_ip = $10, client_user_agent = $11,
+		country = $12, state = $13, city = $14, postal_code = $15,
+		first_name = $16, last_name = $17, email = $18, phone = $19,
+		url = $20,
+		first_utm_source = $21, first_utm_medium = $22,
+		first_utm_campaign = $23, first_utm_content = $24, first_utm_term = $25,
+		last_utm_source = $26, last_utm_medium = $27,
+		last_utm_campaign = $28, last_utm_content = $29, last_utm_term = $30,
 		updated_at = NOW()
 	WHERE id = $1
 	`
@@ -97,6 +98,7 @@ func (r *UserRepo) UpdateByID(ctx context.Context, u *domain.TrackedUser) error 
 		u.ID,
 		u.ExternalID, u.IDWpp, u.PixelName,
 		u.FBP, u.FBC, u.GCLID,
+		u.TTClid, u.TTP,
 		u.ClientIP, u.ClientUserAgent,
 		u.Country, u.State, u.City, u.PostalCode,
 		u.FirstName, u.LastName, u.Email, u.Phone,
@@ -134,18 +136,20 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 	const q = `
 	INSERT INTO tracked_users (
 		external_id, id_wpp, pixel_name, account_id,
-		fbp, fbc, gclid, client_ip, client_user_agent,
+		fbp, fbc, gclid, ttclid, ttp,
+		client_ip, client_user_agent,
 		country, state, city, postal_code,
 		first_name, last_name, email, phone, url,
 		first_utm_source, first_utm_medium, first_utm_campaign, first_utm_content, first_utm_term,
 		last_utm_source,  last_utm_medium,  last_utm_campaign,  last_utm_content,  last_utm_term
 	) VALUES (
-		$1,$2,$3,$23,
+		$1,$2,$3,$25,
 		$4,$5,$6,$7,$8,
-		$9,$10,$11,$12,
-		$13,$14,$15,$16,$17,
-		$18,$19,$20,$21,$22,
-		$18,$19,$20,$21,$22
+		$9,$10,
+		$11,$12,$13,$14,
+		$15,$16,$17,$18,$19,
+		$20,$21,$22,$23,$24,
+		$20,$21,$22,$23,$24
 	)
 	ON CONFLICT (external_id) DO UPDATE SET
 		id_wpp            = CASE WHEN tracked_users.id_wpp = '' THEN EXCLUDED.id_wpp ELSE tracked_users.id_wpp END,
@@ -154,6 +158,8 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 		fbp               = COALESCE(NULLIF(EXCLUDED.fbp,  ''), tracked_users.fbp),
 		fbc               = COALESCE(NULLIF(EXCLUDED.fbc,  ''), tracked_users.fbc),
 		gclid             = COALESCE(NULLIF(EXCLUDED.gclid,''), tracked_users.gclid),
+		ttclid            = COALESCE(NULLIF(EXCLUDED.ttclid,''), tracked_users.ttclid),
+		ttp               = COALESCE(NULLIF(EXCLUDED.ttp,   ''), tracked_users.ttp),
 		client_ip         = COALESCE(NULLIF(EXCLUDED.client_ip, ''), tracked_users.client_ip),
 		client_user_agent = COALESCE(NULLIF(EXCLUDED.client_user_agent, ''), tracked_users.client_user_agent),
 		country           = COALESCE(NULLIF(EXCLUDED.country, ''), tracked_users.country),
@@ -178,7 +184,8 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 	}
 	_, err := r.pool.Exec(ctx, q,
 		u.ExternalID, u.IDWpp, u.PixelName,
-		u.FBP, u.FBC, u.GCLID, u.ClientIP, u.ClientUserAgent,
+		u.FBP, u.FBC, u.GCLID, u.TTClid, u.TTP,
+		u.ClientIP, u.ClientUserAgent,
 		u.Country, u.State, u.City, u.PostalCode,
 		u.FirstName, u.LastName, u.Email, u.Phone, u.URL,
 		u.FirstUTMSource, u.FirstUTMMedium, u.FirstUTMCampaign, u.FirstUTMContent, u.FirstUTMTerm,
@@ -191,7 +198,7 @@ func scanUser(row pgx.Row) (*domain.TrackedUser, error) {
 	var u domain.TrackedUser
 	err := row.Scan(
 		&u.ID, &u.ExternalID, &u.IDWpp, &u.PixelName, &u.AccountID,
-		&u.FBP, &u.FBC, &u.GCLID,
+		&u.FBP, &u.FBC, &u.GCLID, &u.TTClid, &u.TTP,
 		&u.ClientIP, &u.ClientUserAgent,
 		&u.Country, &u.State, &u.City, &u.PostalCode,
 		&u.FirstName, &u.LastName, &u.Email, &u.Phone, &u.URL,

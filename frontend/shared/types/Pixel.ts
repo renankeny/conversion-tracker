@@ -55,6 +55,13 @@ export interface Pixel {
   tracking_host: string
   account_id: number
   pixel_count: number
+
+  // TikTok Events API (opcional)
+  tiktok_pixel_ids: string[]
+  tiktok_access_tokens: string[]
+  tiktok_test_codes: string[]
+  tiktok_pixel_count: number
+
   created_at: string
   updated_at: string
 }
@@ -72,6 +79,11 @@ export interface PixelInput {
   // Multi-tenant: ownership da empresa que recebe o pixel.
   // Owner pode definir; member é ignorado (backend força a própria conta).
   account_id?: number
+
+  // TikTok (opcional)
+  tiktok_pixel_ids?: string[]
+  tiktok_access_tokens?: string[]
+  tiktok_test_codes?: string[]
 }
 
 export type CreatePixelInput = PixelInput
@@ -103,9 +115,12 @@ export interface TestEventInput {
   last_name?: string
   value?: number
   currency?: string
+  // 'meta' (default), 'tiktok' ou 'all'
+  channel?: 'meta' | 'tiktok' | 'all'
 }
 
 export interface TestEventPixelResult {
+  channel?: 'meta' | 'tiktok'
   pixel_id: string
   status_code: number
   response?: string
@@ -115,5 +130,6 @@ export interface TestEventPixelResult {
 export interface TestEventResponse {
   event_id: string
   event_name: string
+  channel?: 'meta' | 'tiktok' | 'all'
   results: TestEventPixelResult[]
 }

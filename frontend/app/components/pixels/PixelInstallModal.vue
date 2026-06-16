@@ -192,10 +192,40 @@
       <section class="check-section">
         <h4 class="section-title">5. Enviar evento de teste</h4>
         <p class="section-hint">
-          Dispara um evento sincronamente para a Meta CAPI usando o
-          <code>test_event_code</code> do pixel. Útil para validar a integração antes do
-          tráfego real.
+          Dispara um evento sincronamente usando os <code>test_event_code</code> configurados.
+          Escolha pra qual canal enviar (Meta, TikTok ou ambos).
         </p>
+
+        <div class="channel-tabs">
+          <button
+            type="button"
+            class="channel-tab"
+            :class="{ active: testForm.channel === 'meta' }"
+            @click="testForm.channel = 'meta'"
+          >
+            Meta
+          </button>
+          <button
+            type="button"
+            class="channel-tab"
+            :class="{ active: testForm.channel === 'tiktok' }"
+            :disabled="!hasTikTok"
+            :title="!hasTikTok ? 'Configure um pixel TikTok primeiro' : ''"
+            @click="testForm.channel = 'tiktok'"
+          >
+            TikTok
+            <span v-if="!hasTikTok" class="channel-badge">não configurado</span>
+          </button>
+          <button
+            type="button"
+            class="channel-tab"
+            :class="{ active: testForm.channel === 'all' }"
+            :disabled="!hasTikTok"
+            @click="testForm.channel = 'all'"
+          >
+            Ambos
+          </button>
+        </div>
 
         <div class="test-form">
           <BaseDropdown
@@ -234,26 +264,29 @@
 
         <div v-if="testResults.length" class="test-results">
           <div
-            v-for="result in testResults"
-            :key="result.pixel_id"
+            v-for="(result, idx) in testResults"
+            :key="`${result.channel || 'meta'}-${result.pixel_id}-${idx}`"
             class="test-result"
-            :class="{ success: result.status_code === 200, error: result.status_code !== 200 || result.error }"
+            :class="{ success: result.status_code === 200 && !result.error, error: result.status_code !== 200 || result.error }"
           >
             <div class="result-header">
+              <span class="channel-pill" :data-channel="result.channel || 'meta'">
+                {{ (result.channel || 'meta').toUpperCase() }}
+              </span>
               <code class="result-pixel">Pixel {{ result.pixel_id }}</code>
-              <BaseBadge :variant="result.status_code === 200 ? 'success' : 'danger'">
+              <BaseBadge :variant="result.status_code === 200 && !result.error ? 'success' : 'danger'">
                 HTTP {{ result.status_code || 'erro' }}
               </BaseBadge>
             </div>
             <p v-if="result.error" class="result-error">{{ result.error }}</p>
             <details v-if="result.response" class="result-body">
-              <summary>Resposta da Meta</summary>
+              <summary>Resposta</summary>
               <pre><code>{{ formatResponse(result.response) }}</code></pre>
             </details>
           </div>
           <p v-if="lastEventID" class="result-meta">
             Event ID disparado: <code>{{ lastEventID }}</code> — verifique no
-            <strong>Events Manager → Test Events</strong>.
+            <strong>Events Manager → Test Events</strong> da plataforma correspondente.
           </p>
         </div>
       </section>
@@ -440,12 +473,18 @@ const testForm = reactive<{
   email: string
   phone: string
   value: string
+  channel: 'meta' | 'tiktok' | 'all'
 }>({
   event_name: 'Lead',
   email: '',
   phone: '',
   value: '',
+  channel: 'meta',
 })
+
+const hasTikTok = computed(
+  () => !!props.pixel && (props.pixel.tiktok_pixel_count ?? 0) > 0
+)
 
 const testing = ref(false)
 const testResults = ref<TestEventPixelResult[]>([])
@@ -459,6 +498,7 @@ const onSendTestEvent = async () => {
   try {
     const input: TestEventInput = {
       event_name: testForm.event_name || 'Lead',
+      channel: testForm.channel || 'meta',
     }
     if (testForm.email.trim()) input.email = testForm.email.trim()
     if (testForm.phone.trim()) input.phone = testForm.phone.trim()
@@ -894,6 +934,77 @@ watch(
   margin-top: 1rem;
 }
 
+.channel-tabs {
+  display: flex;
+  gap: 0.375rem;
+  margin: 0.75rem 0 0.875rem;
+  padding: 0.25rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  width: fit-content;
+}
+
+.channel-tab {
+  padding: 0.4rem 0.875rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  transition: all 0.15s;
+}
+
+.channel-tab:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+.channel-tab.active {
+  background: var(--surface-2);
+  color: var(--brand);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.channel-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.channel-badge {
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.channel-pill {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0.125rem 0.4rem;
+  border-radius: 4px;
+  background: var(--surface-soft);
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+
+.channel-pill[data-channel="tiktok"] {
+  background: linear-gradient(135deg, #25f4ee 0%, #fe2c55 100%);
+  color: #fff;
+}
+
+.channel-pill[data-channel="meta"] {
+  background: rgba(24, 119, 242, 0.15);
+  color: #1877f2;
+}
+
 .test-result {
   padding: 0.875rem 1rem;
   border: 1px solid var(--border-soft);
@@ -912,9 +1023,14 @@ watch(
 .result-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.375rem;
+  flex-wrap: wrap;
+}
+
+.result-header .result-pixel {
+  flex: 1 1 auto;
+  min-width: 120px;
 }
 
 .result-pixel {

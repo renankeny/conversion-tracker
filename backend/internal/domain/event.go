@@ -93,4 +93,10 @@ type SendEventInput struct {
 	State           string `json:"state"`
 	City            string `json:"city"`
 	PostalCode      string `json:"postal_code"`
+
+	// TikTok-specific user data (não é hasheado; tokens browser do TikTok)
+	TTClid string `json:"ttclid,omitempty"` // TikTok Click ID (?ttclid=...)
+	TTP    string `json:"ttp,omitempty"`    // Cookie _ttp do tracker TikTok
+	// Referrer é usado pelo TikTok no campo page.referrer
+	Referrer string `json:"referrer,omitempty"`
 }
