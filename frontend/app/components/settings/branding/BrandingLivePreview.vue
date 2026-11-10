@@ -17,7 +17,14 @@
     <div class="preview-Showcase">
       <div class="mini-panel">
         <div class="mini-sidebar">
-          <BrandLogo size="sm" :show-tagline="true" />
+          <BrandLogo
+            size="sm"
+            :show-tagline="true"
+            :override-name="draft.platform_name"
+            :override-tagline="draft.tagline"
+            :override-logo-url="previewLogoUrl"
+            :override-mode="draft.logo_display_mode"
+          />
           <div class="mini-nav">
             <div class="mini-nav-item active">Visão Geral</div>
             <div class="mini-nav-item">Eventos CAPI</div>
@@ -48,10 +55,12 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { PlatformBranding } from '#shared/types'
+import { useThemeStore } from '~/stores/useThemeStore'
 import BrandLogo from '~/components/BrandLogo.vue'
 
-defineProps<{
+const props = defineProps<{
   draft: PlatformBranding
   saving: boolean
 }>()
@@ -59,6 +68,14 @@ defineProps<{
 const emit = defineEmits<{
   save: []
 }>()
+
+const themeStore = useThemeStore()
+const previewLogoUrl = computed(() => {
+  if (themeStore.isDark) {
+    return props.draft.logo_dark_url || props.draft.logo_light_url || ''
+  }
+  return props.draft.logo_light_url || props.draft.logo_dark_url || ''
+})
 </script>
 
 <style scoped>

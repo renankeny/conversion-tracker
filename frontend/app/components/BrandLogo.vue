@@ -56,11 +56,11 @@ const resolvedMode = computed<LogoDisplayMode>(
 )
 
 const showCustomImage = computed(() => {
-  return (resolvedMode.value === 'logo_only' || resolvedMode.value === 'logo_and_text') && !!resolvedLogoUrl.value
+  return Boolean(resolvedLogoUrl.value?.trim())
 })
 
 const showText = computed(() => {
-  if (resolvedMode.value === 'logo_only' && !!resolvedLogoUrl.value) {
+  if (resolvedMode.value === 'logo_only' && !!resolvedLogoUrl.value?.trim()) {
     return false
   }
   return true

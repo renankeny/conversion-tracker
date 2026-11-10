@@ -62,18 +62,28 @@
 </template>
 
 <script setup lang="ts">
+import { watch } from 'vue'
 import type { PlatformBranding } from '#shared/types'
 import BrandingImageField from '~/components/settings/branding/BrandingImageField.vue'
 
-defineProps<{
+const props = defineProps<{
   draft: PlatformBranding
 }>()
 
 const displayOptions = [
-  { value: 'icon_text', label: 'Ícone padrão + Nome em texto' },
-  { value: 'logo_and_text', label: 'Logo enviada + Nome em texto' },
+  { value: 'logo_and_text', label: 'Logo enviada + Nome em texto (Recomendado)' },
   { value: 'logo_only', label: 'Somente a Logo enviada' },
+  { value: 'icon_text', label: 'Ícone padrão + Nome em texto' },
 ]
+
+watch(
+  [() => props.draft.logo_dark_url, () => props.draft.logo_light_url],
+  ([dark, light]) => {
+    if ((dark || light) && props.draft.logo_display_mode === 'icon_text') {
+      props.draft.logo_display_mode = 'logo_and_text'
+    }
+  },
+)
 </script>
 
 <style scoped>
