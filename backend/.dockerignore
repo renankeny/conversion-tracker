@@ -1,0 +1,16 @@
+.git
+.env
+.env.local
+.env.*.local
+*.log
+data/
+bin/
+main
+api
+worker
+cmd/api/api
+cmd/worker/worker
+.pgx_shard_cal.bin
+coverage.out
+*.test
+*.prof

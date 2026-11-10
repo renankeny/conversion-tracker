@@ -1,0 +1,46 @@
+/* Conversion Tracker — loader (auto-injects o tracker principal).
+ * Pixel: {{.PixelName}} | Generated at: {{.GeneratedAt}}
+ */
+(function (w, d) {
+  var pixel = "{{.PixelName}}";
+  var me = d.currentScript;
+  if (!me) {
+    var ss = d.getElementsByTagName("script");
+    me = ss[ss.length - 1];
+  }
+  if (me) {
+    try {
+      var u = new URL(me.src);
+      var qp = u.searchParams.get("pixel");
+      if (qp) pixel = qp;
+    } catch (e) {}
+    if (me.dataset && me.dataset.pixel) pixel = me.dataset.pixel;
+  }
+
+  if (!pixel) {
+    if (w.console) console.error("[TF] pixel param required");
+    return;
+  }
+
+  w.__tf_loaded_map = w.__tf_loaded_map || {};
+  if (w.__tf_loaded_map[pixel]) return;
+  w.__tf_loaded_map[pixel] = true;
+  w.__tf_loaded = true;
+
+  w.tf = w.tf || function () {
+    (w.tf.q = w.tf.q || []).push(arguments);
+  };
+
+  var origin = "{{.APIURL}}".replace(/\/api\/v1\/?$/, "");
+  if (me && me.src) {
+    try {
+      var uOrigin = new URL(me.src).origin;
+      if (uOrigin && uOrigin !== "null") origin = uOrigin;
+    } catch (e) {}
+  }
+  var s = d.createElement("script");
+  s.async = 1;
+  s.src = origin + "/api/v1/tracker.js?pixel=" + encodeURIComponent(pixel);
+  var target = d.head || d.documentElement || d.getElementsByTagName("head")[0];
+  if (target) target.appendChild(s);
+})(window, document);

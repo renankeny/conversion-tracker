@@ -1,0 +1,270 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* TEMA PRINCIPAL (Dark Customizado) */
+:root {
+  /* Tipografia Centralizada — Instrument Sans (Pesos Finos & Tamanhos -1 step) */
+  --font-sans: 'Instrument Sans', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Instrument Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --fw-normal: 400;
+  --fw-medium: 400;
+  --fw-semibold: 500;
+  --fw-bold: 500;
+
+  --fs-2xs: 0.5625rem;  /* 9px  */
+  --fs-xs: 0.625rem;    /* 10px */
+  --fs-sm: 0.6875rem;   /* 11px */
+  --fs-base: 0.75rem;   /* 12px */
+  --fs-md: 0.8125rem;   /* 13px */
+  --fs-lg: 0.875rem;    /* 14px */
+  --fs-xl: 1rem;        /* 16px */
+  --fs-2xl: 1.1875rem;  /* 19px */
+  --fs-3xl: 1.5rem;     /* 24px */
+  /* Fundo e Superfícies (Estilo Pagou.ai) */
+  --surface-1: #29292E; /* Fundo geral */
+  --surface-2: #323238; /* Cards */
+  --surface-3: #323238; /* Fundo secundário */
+  --surface-deep: #202024; /* Sidebar */
+  --surface-soft: rgba(255, 255, 255, 0.05);
+  --surface-soft-2: rgba(255, 255, 255, 0.03);
+  --surface-qr: #FFFFFF;
+
+  /* Bordas */
+  --border: rgba(255, 255, 255, 0.05);
+  --border-soft: rgba(255, 255, 255, 0.03);
+  --border-faint: transparent;
+
+  /* Textos (Adaptados para o fundo escuro) */
+  --text-strong: #FFFFFF;
+  --text-1: #F8FAFC;
+  --text-2: #CBD5E1;
+  --text-3: #94A3B8;
+
+  /* Marca (Verdes) */
+  --brand: #A2F07C;
+  --brand-strong: #8EE85F;
+  --brand-light: #C2F7A8;
+  --brand-soft: rgba(162, 240, 124, 0.15);
+  --brand-soft-2: rgba(162, 240, 124, 0.10);
+  --brand-border: rgba(162, 240, 124, 0.3);
+  --brand-text: #0F172A;
+
+  /* Estados */
+  --success: var(--brand);
+  --success-soft: var(--brand-soft);
+  --danger: #EF4444;
+  --danger-soft: rgba(239, 68, 68, 0.15);
+  --warning: #F59E0B;
+  --warning-soft: rgba(245, 158, 11, 0.15);
+  --info: var(--brand);
+  --info-soft: var(--brand-soft);
+
+  /* Sombras (Flat design) */
+  --shadow-card: none;
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+  /* Aliases de compatibilidade do Design System */
+  --primary: var(--brand);
+  --primary-soft: var(--brand-soft);
+  --surface-card: var(--surface-2);
+  --surface-float: var(--surface-3);
+  --surface-bg: var(--surface-1);
+  --surface-hover: var(--surface-soft);
+  --text-soft: var(--text-2);
+  --text-muted: var(--text-3);
+  --text-weak: var(--text-3);
+  --danger-color: var(--danger);
+  --border-color: var(--border);
+  --border-hover: rgba(255, 255, 255, 0.16);
+
+  color-scheme: dark;
+}
+
+/* TEMA CLARO */
+:root[data-theme='light'] {
+  /* Fundo e Superfícies (Branco e Cinza Claro) */
+  --surface-1: #FFFFFF; /* Fundo geral */
+  --surface-2: #FFFFFF; /* Cards */
+  --surface-3: #F8FAFC; /* Fundo secundário */
+  --surface-deep: #F1F5F9;
+  --surface-soft: rgba(0, 0, 0, 0.04);
+  --surface-soft-2: rgba(0, 0, 0, 0.02);
+
+  /* Bordas */
+  --border: #E2E8F0;
+  --border-soft: rgba(15, 23, 42, 0.08);
+  --border-faint: rgba(15, 23, 42, 0.05);
+
+  /* Textos */
+  --text-strong: #0F172A;
+  --text-1: #1E293B;
+  --text-2: #475569;
+  --text-3: #64748B;
+
+  /* Marca (Verde Escuro para o Tema Claro) */
+  --brand: #0B4B4D;
+  --brand-strong: #083B3D;
+  --brand-light: #127174;
+  --brand-soft: rgba(11, 75, 77, 0.15);
+  --brand-soft-2: rgba(11, 75, 77, 0.10);
+  --brand-border: rgba(11, 75, 77, 0.4);
+  --brand-text: #FFFFFF;
+
+  /* Estados */
+  --success: var(--brand);
+  --success-soft: var(--brand-soft);
+  --danger: #EF4444;
+  --danger-soft: rgba(239, 68, 68, 0.1);
+  --warning: #F59E0B;
+  --warning-soft: rgba(245, 158, 11, 0.12);
+  --info: var(--brand);
+  --info-soft: var(--brand-soft);
+
+  /* Sombras */
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-elevated: 0 10px 32px rgba(15, 23, 42, 0.12);
+
+  /* Aliases de compatibilidade do Design System */
+  --primary: var(--brand);
+  --primary-soft: var(--brand-soft);
+  --surface-card: var(--surface-2);
+  --surface-float: var(--surface-3);
+  --surface-bg: var(--surface-1);
+  --surface-hover: var(--surface-soft);
+  --text-soft: var(--text-2);
+  --text-muted: var(--text-3);
+  --text-weak: var(--text-3);
+  --danger-color: var(--danger);
+  --border-color: var(--border);
+  --border-hover: rgba(15, 23, 42, 0.2);
+
+  color-scheme: light;
+}
+
+/* Estilos Base — Tipografia Instrument Sans Fina, Elegante e Centralizada */
+html {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: var(--fw-normal);
+}
+
+body {
+  background: var(--surface-1);
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-normal);
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.2s, color 0.2s;
+}
+
+h1, h2, .font-bold {
+  font-weight: var(--fw-bold);
+}
+
+h3, h4, h5, h6, strong, b, .font-semibold {
+  font-weight: var(--fw-semibold);
+}
+
+button, input, select, textarea, label, th, td, .font-medium, .font-normal {
+  font-family: inherit;
+  font-weight: var(--fw-normal);
+}
+
+/* Scrollbar customizada */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+}
+
+/* ============================================================
+   MOBILE RESPONSIVE UTILITIES
+   Garante que tabelas, cabeçalhos e modais fiquem bem em mobile
+   ============================================================ */
+
+@media (max-width: 767px) {
+  .table-wrap,
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Page headers: titulo e ações em coluna */
+  .page-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.75rem !important;
+  }
+
+  .page-header-actions {
+    width: 100%;
+  }
+
+  /* Modais: bottom sheet elegante em mobile */
+  .modal-content,
+  .modal-overlay > .modal {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 92vh !important;
+    max-height: 92dvh !important;
+  }
+
+  .modal-overlay {
+    padding: 0 !important;
+    align-items: flex-end !important;
+  }
+
+  /* Stats/Cards grids */
+  .stats-grid,
+  .card-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Esconde colunas secundárias em tabelas (classe utilitária) */
+  .hide-mobile { display: none !important; }
+
+  /* Formulários em coluna */
+  .form-row {
+    flex-direction: column !important;
+  }
+
+  .mapping-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Filtros de página */
+  .filters-row {
+    flex-direction: column !important;
+    gap: 0.5rem !important;
+  }
+
+  .filters-row > * {
+    width: 100% !important;
+  }
+
+  /* Padding menor em textos de cards */
+  h1 { font-size: 1.5rem !important; }
+  h2 { font-size: 1.25rem !important; }
+}

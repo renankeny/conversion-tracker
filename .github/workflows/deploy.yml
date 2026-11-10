@@ -1,0 +1,79 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  # Transforma o dono do repo para minúsculo para evitar erro no ghcr.io (ex: renankeny)
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase image prefix
+        run: |
+          echo "IMAGE_PREFIX=$(echo ${{ env.IMAGE_PREFIX }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.api
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/trackfind-api:latest
+
+      - name: Build and push Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.worker
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/trackfind-worker:latest
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/trackfind-frontend:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Portainer Webhooks
+        run: |
+          if [ -n "${{ secrets.PORTAINER_WEBHOOK_API }}" ]; then
+            curl -X POST "${{ secrets.PORTAINER_WEBHOOK_API }}"
+            echo "API webhook triggered."
+          fi
+          if [ -n "${{ secrets.PORTAINER_WEBHOOK_WORKER }}" ]; then
+            curl -X POST "${{ secrets.PORTAINER_WEBHOOK_WORKER }}"
+            echo "Worker webhook triggered."
+          fi
+          if [ -n "${{ secrets.PORTAINER_WEBHOOK_FRONTEND }}" ]; then
+            curl -X POST "${{ secrets.PORTAINER_WEBHOOK_FRONTEND }}"
+            echo "Frontend webhook triggered."
+          fi

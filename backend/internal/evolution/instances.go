@@ -1,0 +1,152 @@
+package evolution
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+)
+
+type QrData struct {
+	Qrcode string `json:"qrcode"`
+	Code   string `json:"code"`
+}
+
+func (c *Client) GetQrCode(ctx context.Context, instanceToken string) (*QrData, error) {
+	var raw struct {
+		Data struct {
+			QrcodeLower string `json:"qrcode"`
+			QrcodeUpper string `json:"Qrcode"`
+			CodeLower   string `json:"code"`
+			CodeUpper   string `json:"Code"`
+		} `json:"data"`
+	}
+	if err := c.doWithKey(ctx, c.httpClient, instanceToken, http.MethodGet, "/instance/qr", nil, &raw); err != nil {
+		return nil, err
+	}
+	qr := raw.Data.QrcodeLower
+	if qr == "" {
+		qr = raw.Data.QrcodeUpper
+	}
+	code := raw.Data.CodeLower
+	if code == "" {
+		code = raw.Data.CodeUpper
+	}
+	return &QrData{Qrcode: qr, Code: code}, nil
+}
+
+func (c *Client) PairPhone(ctx context.Context, instanceToken, phone string) (string, error) {
+	cleanPhone := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, phone)
+	if len(cleanPhone) < 10 {
+		return "", fmt.Errorf("telefone inválido para pareamento")
+	}
+	var resp struct {
+		Data struct {
+			PairingCodeUpper string `json:"PairingCode"`
+			PairingCodeLower string `json:"pairingCode"`
+		} `json:"data"`
+	}
+	body := map[string]string{"phone": cleanPhone}
+	if err := c.doWithKey(ctx, c.httpClient, instanceToken, http.MethodPost, "/instance/pair", body, &resp); err != nil {
+		return "", err
+	}
+	code := resp.Data.PairingCodeUpper
+	if code == "" {
+		code = resp.Data.PairingCodeLower
+	}
+	return code, nil
+}
+
+type StatusData struct {
+	Connected bool   `json:"connected"`
+	LoggedIn  bool   `json:"loggedIn"`
+	MyJID     string `json:"myJid"`
+	Name      string `json:"name"`
+}
+
+func (c *Client) GetStatus(ctx context.Context, instanceToken string) (*StatusData, error) {
+	var resp struct {
+		Data struct {
+			ConnectedLower bool   `json:"connected"`
+			ConnectedUpper bool   `json:"Connected"`
+			LoggedInLower  bool   `json:"loggedIn"`
+			LoggedInUpper  bool   `json:"LoggedIn"`
+			MyJID          string `json:"myJid"`
+			Name           string `json:"name"`
+		} `json:"data"`
+	}
+	if err := c.doWithKey(ctx, c.httpClient, instanceToken, http.MethodGet, "/instance/status", nil, &resp); err != nil {
+		return nil, err
+	}
+	return &StatusData{
+		Connected: resp.Data.ConnectedLower || resp.Data.ConnectedUpper,
+		LoggedIn:  resp.Data.LoggedInLower || resp.Data.LoggedInUpper,
+		MyJID:     resp.Data.MyJID,
+		Name:      resp.Data.Name,
+	}, nil
+}
+
+type InstanceInfo struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	JID           string `json:"jid"`
+	Connected     bool   `json:"connected"`
+	ProfileName   string `json:"profileName"`
+	ProfilePicURL string `json:"profilePicUrl"`
+}
+
+func (c *Client) GetInfo(ctx context.Context, idOrName string) (*InstanceInfo, error) {
+	var resp struct {
+		Data InstanceInfo `json:"data"`
+	}
+	path := "/instance/info/" + url.PathEscape(idOrName)
+	if err := c.doWithKey(ctx, c.httpClient, c.adminAPIKey, http.MethodGet, path, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+func (c *Client) ResolveInstanceUUID(ctx context.Context, instanceName string) string {
+	var listResp struct {
+		Data []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := c.doWithKey(ctx, c.httpClient, c.adminAPIKey, http.MethodGet, "/instance/all", nil, &listResp); err != nil {
+		return ""
+	}
+	for _, inst := range listResp.Data {
+		if inst.Name == instanceName {
+			return inst.ID
+		}
+	}
+	return ""
+}
+
+func (c *Client) DisconnectInstance(ctx context.Context, instanceToken string) error {
+	return c.doWithKey(ctx, c.httpClient, instanceToken, http.MethodPost, "/instance/disconnect", map[string]any{}, nil)
+}
+
+func (c *Client) LogoutInstance(ctx context.Context, instanceToken string) error {
+	return c.doWithKey(ctx, c.httpClient, instanceToken, http.MethodDelete, "/instance/logout", nil, nil)
+}
+
+// DeleteInstance remove a instância na Evolution Go usando obrigatoriamente o UUID (evolution_uuid)
+// e a GLOBAL_API_KEY (requisito do middleware AuthAdmin).
+func (c *Client) DeleteInstance(ctx context.Context, evolutionUUID, instanceName string) error {
+	uuid := strings.TrimSpace(evolutionUUID)
+	if uuid == "" && instanceName != "" {
+		uuid = c.ResolveInstanceUUID(ctx, instanceName)
+	}
+	if uuid == "" {
+		return fmt.Errorf("evolution_uuid não encontrado para instância %q", instanceName)
+	}
+	return c.doWithKey(ctx, c.httpClient, c.adminAPIKey, http.MethodDelete, "/instance/delete/"+url.PathEscape(uuid), nil, nil)
+}

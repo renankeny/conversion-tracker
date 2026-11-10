@@ -1,0 +1,1262 @@
+/* Conversion Tracker — tracker principal.
+ * Pixel: {{.PixelName}} | Generated at: {{.GeneratedAt}}
+ *
+ * API global injetada no window:
+ *   tf('send', 'Purchase', { value: 99.9, currency: 'BRL' })
+ *   tf('event', 'Lead')
+ *   tf('updateUser', { email: 'x@y.com' })
+ */
+(function () {
+  var TF_CONFIG = {{.ConfigJSON}};
+  var TF_PIXEL_NAME = {{.PixelNameJSON}};
+  var TF_META_INIT_PIXEL_ID = {{.MetaInitPixelIDJSON}};
+  var TF_META_PIXEL_IDS = {{if .MetaPixelIDsJSON}}{{.MetaPixelIDsJSON}}{{else}}[]{{end}};
+  var TF_TIKTOK_INIT_PIXEL_ID = {{.TiktokInitPixelIDJSON}};
+  var TF_TIKTOK_PIXEL_IDS = {{if .TiktokPixelIDsJSON}}{{.TiktokPixelIDsJSON}}{{else}}[]{{end}};
+  var TF_GA4_MEASUREMENT_ID = {{.GA4MeasurementIDJSON}};
+  var TF_FALLBACK_API_URL = {{.APIURLJSON}};
+
+  window.__tf_trackers = window.__tf_trackers || {};
+  if (window.__tf_trackers[TF_PIXEL_NAME]) return;
+  window.__tf_trackers[TF_PIXEL_NAME] = true;
+  window.__tf_tracker_loaded = true;
+  window.__tf_version = "2.1";
+  if (window.console) console.log("[TF] tracker v2.1 carregando para pixel:", TF_PIXEL_NAME);
+
+  if ((!TF_META_PIXEL_IDS || !TF_META_PIXEL_IDS.length) && TF_META_INIT_PIXEL_ID) {
+    TF_META_PIXEL_IDS = [TF_META_INIT_PIXEL_ID];
+  }
+  if ((!TF_TIKTOK_PIXEL_IDS || !TF_TIKTOK_PIXEL_IDS.length) && TF_TIKTOK_INIT_PIXEL_ID) {
+    TF_TIKTOK_PIXEL_IDS = [TF_TIKTOK_INIT_PIXEL_ID];
+  }
+
+  var origReplaceState = window.history && window.history.replaceState
+    ? function (state, title, url) { return window.history.replaceState.call(window.history, state, title, url); }
+    : null;
+
+  var TF_API_URL = (function () {
+    try {
+      var me = document.currentScript;
+      if (!me) {
+        var all = document.getElementsByTagName("script");
+        for (var i = all.length - 1; i >= 0; i--) {
+          var src = all[i].src || "";
+          if (src.indexOf("/api/v1/tracker.js") > -1) { me = all[i]; break; }
+        }
+      }
+      if (me && me.src) return new URL(me.src).origin + "/api/v1";
+    } catch (e) {}
+    return TF_FALLBACK_API_URL;
+  })();
+
+  // === Helpers genéricos ==============================================
+
+  var rootDomain = (function () {
+    try {
+      var hostname = window.location.hostname;
+      if (!hostname || hostname === "localhost" || /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(hostname)) {
+        return "";
+      }
+      var parts = hostname.split(".");
+      if (parts.length <= 1) return "";
+      for (var i = parts.length - 2; i >= 0; i--) {
+        var d = "." + parts.slice(i).join(".");
+        var testKey = "__tf_d_test";
+        document.cookie = testKey + "=1; domain=" + d + "; path=/;";
+        if (document.cookie.indexOf(testKey + "=1") > -1) {
+          document.cookie = testKey + "=; domain=" + d + "; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;";
+          return d;
+        }
+      }
+    } catch (e) {}
+    return "";
+  })();
+
+  function getCookie(name) {
+    var cookies = (document.cookie || "").split(";");
+    for (var i = 0; i < cookies.length; i++) {
+      var p = cookies[i].trim().split("=");
+      if (p[0] === name) {
+        var val = p.slice(1).join("=");
+        try { return decodeURIComponent(val); } catch (e) { return val; }
+      }
+    }
+    return null;
+  }
+
+  function setCookie(name, value, days) {
+    var d = new Date();
+    if (days) d.setDate(d.getDate() + days);
+    else d.setFullYear(d.getFullYear() + 100);
+    var cookieStr = name + "=" + encodeURIComponent(value) + "; expires=" + d.toUTCString() + "; path=/";
+    if (rootDomain) cookieStr += "; domain=" + rootDomain;
+    cookieStr += "; SameSite=Lax";
+    if (window.location.protocol === "https:") cookieStr += "; Secure";
+    document.cookie = cookieStr;
+  }
+
+  function getStorage(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+
+  function setStorage(key, val) {
+    try { localStorage.setItem(key, val); } catch (e) {}
+  }
+
+  function savePersistent(name, val, days) {
+    if (!val) return;
+    setCookie(name, val, days || 90);
+    setStorage(name, val);
+  }
+
+  function getPersistent(name) {
+    return getCookie(name) || getStorage(name) || null;
+  }
+
+  function stripUserMarker(val) {
+    if (!val) return "";
+    return String(val)
+      .replace(/\|(?:userId|uid)[A-Za-z0-9_-]+\|/g, "")
+      .replace(/^\|+|\|+$/g, "")
+      .trim();
+  }
+
+  function observeDOM(runFn, watchHref) {
+    var busy = false;
+    function safeRun() {
+      if (busy) return;
+      busy = true;
+      try { runFn(); } catch (e) {}
+      busy = false;
+    }
+
+    if (document.body) {
+      safeRun();
+    } else if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", safeRun, { once: true });
+    } else {
+      safeRun();
+    }
+
+    if (typeof MutationObserver !== "undefined") {
+      var attachObs = function () {
+        var root = document.body || document.documentElement;
+        if (!root) return;
+        try {
+          var cfg = { childList: true, subtree: true };
+          if (watchHref) {
+            cfg.attributes = true;
+            cfg.attributeFilter = ["href"];
+          }
+          var obs = new MutationObserver(safeRun);
+          obs.observe(root, cfg);
+        } catch (e) {}
+      };
+      if (document.body) attachObs();
+      else document.addEventListener("DOMContentLoaded", attachObs, { once: true });
+    }
+  }
+
+  function generateCustomId() {
+    var c = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    var id = "";
+    var cryptoObj = window.crypto || window.msCrypto;
+    if (cryptoObj && cryptoObj.getRandomValues) {
+      var bytes = new Uint8Array(10);
+      cryptoObj.getRandomValues(bytes);
+      for (var i = 0; i < 10; i++) id += c.charAt(bytes[i] % c.length);
+      return id;
+    }
+    for (var j = 0; j < 10; j++) id += c.charAt(Math.floor(Math.random() * c.length));
+    return id;
+  }
+
+  function getUserData() {
+    try {
+      var fromCookie = JSON.parse(getCookie("__userData") || "{}");
+      if (fromCookie && (fromCookie.userId || fromCookie.id_wpp)) return fromCookie;
+    } catch (e) {}
+    try {
+      var fromStorage = JSON.parse(getStorage("__userData") || "{}");
+      if (fromStorage && (fromStorage.userId || fromStorage.id_wpp)) return fromStorage;
+    } catch (e) {}
+    return {};
+  }
+
+  function saveUserData(obj) {
+    if (!obj || typeof obj !== "object") return;
+    try {
+      setCookie("__userData", JSON.stringify(obj), 365);
+      if (obj.userId) setCookie("tf_uid", obj.userId, 365);
+    } catch (e) {}
+    try {
+      setStorage("__userData", JSON.stringify(obj));
+      if (obj.userId) setStorage("tf_uid", obj.userId);
+    } catch (e) {}
+  }
+
+  function getUserDataCookie() { return getUserData(); }
+  function saveUserDataCookie(obj) { saveUserData(obj); }
+
+  // === Google Ads Identifiers ==========================================
+  function getGoogleParams() {
+    var qp = new URLSearchParams(window.location.search);
+    var gclid = qp.get("gclid");
+    if (gclid) {
+      savePersistent("_gclid", gclid, 90);
+    } else {
+      gclid = getPersistent("_gclid");
+      if (!gclid) {
+        var gclAw = getCookie("_gcl_aw") || getCookie("_gcl_dc");
+        if (gclAw) {
+          var parts = gclAw.split(".");
+          if (parts.length >= 3) {
+            gclid = parts.slice(2).join(".");
+            savePersistent("_gclid", gclid, 90);
+          }
+        }
+      }
+    }
+
+    var wbraid = qp.get("wbraid");
+    if (wbraid) savePersistent("_wbraid", wbraid, 90);
+    else wbraid = getPersistent("_wbraid");
+
+    var gbraid = qp.get("gbraid");
+    if (gbraid) savePersistent("_gbraid", gbraid, 90);
+    else gbraid = getPersistent("_gbraid");
+
+    return { gclid: gclid, wbraid: wbraid, gbraid: gbraid };
+  }
+
+  // === TikTok Identifiers ==============================================
+  function formatPhoneE164(raw) {
+    if (!raw) return "";
+    var s = String(raw).trim();
+    var hasPlus = s.charAt(0) === "+";
+    var digits = s.replace(/\D+/g, "");
+    if (!digits || digits.length < 8) return "";
+    if (!hasPlus) {
+      if ((digits.length === 11 || digits.length === 12) && digits.charAt(0) === "0") {
+        digits = digits.substring(1);
+      }
+      if (digits.length >= 10 && digits.length <= 11) {
+        digits = "55" + digits;
+      }
+    }
+    return "+" + digits;
+  }
+
+  function getTikTokParams() {
+    var qp = new URLSearchParams(window.location.search);
+    var ttclid = qp.get("ttclid");
+    if (ttclid) savePersistent("_ttclid", ttclid, 90);
+    else ttclid = getPersistent("_ttclid");
+    var cookieTtp = getCookie("_ttp");
+    if (cookieTtp) setStorage("_ttp", cookieTtp);
+    var ttp = cookieTtp || getStorage("_ttp") || null;
+    return { ttclid: ttclid, ttp: ttp };
+  }
+
+  // === GA4 ==============================================================
+  function ensureGaCookie() {
+    var ga = getCookie("_ga");
+    if (!ga) {
+      var clientId = Math.floor(Math.random() * 2147483647) + "." + Math.floor(Date.now() / 1000);
+      setCookie("_ga", "GA1.1." + clientId, 730);
+    }
+  }
+
+  function getGA4Cookies() {
+    ensureGaCookie();
+    var ga4ClientID = "";
+    var ga4SessionID = "";
+    try {
+      var cookies = (document.cookie || "").split(";");
+      for (var i = 0; i < cookies.length; i++) {
+        var c = cookies[i].trim();
+        if (c.indexOf("_ga=") === 0) {
+          var parts = c.substring(4).split(".");
+          if (parts.length >= 4) ga4ClientID = parts[2] + "." + parts[3];
+        } else if (c.indexOf("_ga_") === 0) {
+          var sParts = c.substring(c.indexOf("=") + 1).split(".");
+          if (sParts.length >= 3) ga4SessionID = sParts[2];
+        }
+      }
+    } catch (e) {}
+    return { ga4_client_id: ga4ClientID, ga4_session_id: ga4SessionID };
+  }
+
+  // === Meta Cookies (FBP / FBC / fbclid) ================================
+  function ensureMetaCookies() {
+    var fbp = getPersistent("_fbp");
+    if (!fbp) {
+      fbp = "fb.1." + Date.now() + "." + Math.floor(Math.random() * 9999999999);
+      savePersistent("_fbp", fbp, 90);
+    }
+    var fbclid = new URLSearchParams(window.location.search).get("fbclid");
+    var fbc = getPersistent("_fbc");
+    if (fbclid) {
+      savePersistent("_tf_fbclid", fbclid, 90);
+      fbc = "fb.1." + Date.now() + "." + fbclid;
+      savePersistent("_fbc", fbc, 90);
+    } else if (!fbc) {
+      var savedFbclid = getPersistent("_tf_fbclid");
+      if (savedFbclid) {
+        fbc = "fb.1." + Date.now() + "." + savedFbclid;
+        savePersistent("_fbc", fbc, 90);
+      }
+    }
+    return { fbp: fbp, fbc: fbc };
+  }
+
+  // === UTM Tracking & Attribution =====================================
+  function getEffectiveUTMs(metaCookies, googleParams, tikTokParams) {
+    var qp = new URLSearchParams(window.location.search);
+    var rawSrc = stripUserMarker(qp.get("utm_source"));
+    var fbclid = qp.get("fbclid") || getPersistent("_tf_fbclid") || (metaCookies && metaCookies.fbc);
+    var gclid = (googleParams && googleParams.gclid) || (googleParams && googleParams.wbraid) || (googleParams && googleParams.gbraid);
+    var ttclid = tikTokParams && tikTokParams.ttclid;
+
+    if (rawSrc === "direto" && (fbclid || gclid || ttclid)) {
+      rawSrc = "";
+    }
+
+    var current = {
+      utm_source: rawSrc || null,
+      utm_medium: stripUserMarker(qp.get("utm_medium")) || null,
+      utm_campaign: stripUserMarker(qp.get("utm_campaign")) || null,
+      utm_content: stripUserMarker(qp.get("utm_content")) || null,
+      utm_term: stripUserMarker(qp.get("utm_term")) || null
+    };
+
+    var saved = {};
+    try {
+      var raw = getPersistent("_tf_utm");
+      if (raw) saved = JSON.parse(raw) || {};
+      if (saved.utm_source) saved.utm_source = stripUserMarker(saved.utm_source) || null;
+      if (saved.utm_source === "direto" && (fbclid || gclid || ttclid)) {
+        saved.utm_source = null;
+      }
+    } catch (e) {}
+
+    if ((current.utm_source && current.utm_source !== "direto") || current.utm_campaign) {
+      saved = {
+        utm_source: current.utm_source || saved.utm_source || null,
+        utm_medium: current.utm_medium || saved.utm_medium || null,
+        utm_campaign: current.utm_campaign || saved.utm_campaign || null,
+        utm_content: current.utm_content || saved.utm_content || null,
+        utm_term: current.utm_term || saved.utm_term || null
+      };
+      savePersistent("_tf_utm", JSON.stringify(saved), 90);
+    }
+
+    var effective = {
+      utm_source: (current.utm_source && current.utm_source !== "direto" ? current.utm_source : null) || saved.utm_source || current.utm_source || null,
+      utm_medium: current.utm_medium || saved.utm_medium || null,
+      utm_campaign: current.utm_campaign || saved.utm_campaign || null,
+      utm_content: current.utm_content || saved.utm_content || null,
+      utm_term: current.utm_term || saved.utm_term || null
+    };
+
+    if (!effective.utm_source || effective.utm_source === "direto") {
+      var ref = (document.referrer || "").toLowerCase();
+      var inferredSrc = null;
+      var inferredMed = null;
+
+      if (fbclid) {
+        inferredSrc = "facebook";
+        inferredMed = "paid";
+      } else if (gclid) {
+        inferredSrc = "google";
+        inferredMed = "cpc";
+      } else if (ttclid) {
+        inferredSrc = "tiktok";
+        inferredMed = "paid";
+      } else if (ref.indexOf("instagram.com") !== -1) {
+        inferredSrc = "instagram";
+        inferredMed = "social";
+      } else if (ref.indexOf("facebook.com") !== -1) {
+        inferredSrc = "facebook";
+        inferredMed = "social";
+      } else if (ref.indexOf("google.") !== -1) {
+        inferredSrc = "google";
+        inferredMed = "organic";
+      }
+
+      if (inferredSrc) {
+        effective.utm_source = inferredSrc;
+        if (!effective.utm_medium) effective.utm_medium = inferredMed;
+        if (!saved.utm_source || saved.utm_source === "direto") {
+          savePersistent("_tf_utm", JSON.stringify(effective), 90);
+        }
+      }
+    }
+
+    return effective;
+  }
+
+  // === User identity ====================================================
+
+  var userData = getUserData();
+  var userId = userData.userId || getCookie("tf_uid") || getStorage("tf_uid");
+  if (!userId) {
+    userId = generateCustomId();
+    userData.userId = userId;
+  }
+  if (!userData.id_wpp) {
+    userData.id_wpp = generateCustomId();
+  }
+  saveUserData(userData);
+  var idWpp = userData.id_wpp;
+
+  var clientUserData = {};
+  var lastInitData = {};
+
+  var dedupedEvents = {
+    Lead: true,
+    Contact: true,
+    InitiateCheckout: true,
+    Scroll_25: true, Scroll_50: true, Scroll_75: true, Scroll_90: true,
+    Timer_1min: true,
+    ViewVideo_25: true, ViewVideo_50: true, ViewVideo_75: true, ViewVideo_90: true,
+    PlayVideo: true
+  };
+  var sentOnce = {};
+
+  window.addEventListener("pageshow", function (ev) {
+    if (ev && ev.persisted) {
+      sentOnce.InitiateCheckout = false;
+    }
+  });
+
+  var customEvents = {
+    Scroll_25: true, Scroll_50: true, Scroll_75: true, Scroll_90: true,
+    Timer_1min: true, PlayVideo: true,
+    ViewVideo_25: true, ViewVideo_50: true, ViewVideo_75: true, ViewVideo_90: true
+  };
+
+  var valueEvents = { Lead: true, InitiateCheckout: true, Purchase: true };
+
+  // === sendEvent ========================================================
+
+  function sendEvent(eventType, data) {
+    data = data || {};
+    if (dedupedEvents[eventType]) {
+      if (sentOnce[eventType]) return Promise.resolve();
+      sentOnce[eventType] = true;
+    }
+
+    var eventId = generateCustomId();
+
+    if (TF_CONFIG.auto_form_scraping && (eventType === "Lead" || eventType === "Contact" || eventType === "InitiateCheckout" || eventType === "Purchase")) {
+      scrapeFormsToCookie();
+      refreshFbqAdvancedMatching(lastInitData);
+      refreshTtqIdentify(lastInitData);
+    }
+
+    var contentId = data.content_id || data.contentId || data.contentID || TF_PIXEL_NAME;
+    var fbqCustomData = {
+      content_name: data.content_name || data.contentName || TF_PIXEL_NAME,
+      content_type: data.content_type || data.contentType || "product"
+    };
+    if (contentId) {
+      fbqCustomData.content_ids = [contentId];
+    }
+    if (valueEvents[eventType] && typeof data.value === "number" && data.value > 0) {
+      fbqCustomData.value = data.value;
+      fbqCustomData.currency = data.currency || TF_CONFIG.product_currency || "BRL";
+    }
+    if (data.order_id || data.orderId || data.orderID) {
+      fbqCustomData.order_id = data.order_id || data.orderId || data.orderID;
+    }
+
+    if (window.fbq && eventType !== "Init" && eventType !== "UpdateUserData") {
+      if (customEvents[eventType]) {
+        window.fbq("trackCustom", eventType, fbqCustomData, { eventID: eventId });
+      } else {
+        window.fbq("track", eventType, fbqCustomData, { eventID: eventId });
+      }
+    }
+
+    if (window.ttq && eventType === "PageView") {
+      try {
+        window.ttq.page({ event_id: eventId });
+      } catch (e) {}
+    } else if (window.ttq
+        && eventType !== "Init"
+        && eventType !== "UpdateUserData"
+        && !customEvents[eventType]) {
+      var ttqEvent = mapEventToTikTok(eventType);
+      if (ttqEvent) {
+        var ttqContentName = data.content_name || data.contentName || TF_PIXEL_NAME;
+        var ttqProps = {
+          content_id: contentId,
+          content_type: data.content_type || data.contentType || "product",
+          content_name: ttqContentName
+        };
+        if (valueEvents[eventType] && typeof data.value === "number" && data.value > 0) {
+          ttqProps.value = data.value;
+          ttqProps.currency = data.currency || TF_CONFIG.product_currency || "BRL";
+          ttqProps.contents = [{
+            content_id: contentId,
+            content_type: data.content_type || data.contentType || "product",
+            content_name: ttqContentName,
+            price: data.value,
+            quantity: 1
+          }];
+        } else if (ttqEvent === "Purchase") {
+          ttqProps.value = 0;
+          ttqProps.currency = data.currency || TF_CONFIG.product_currency || "BRL";
+        }
+        try {
+          window.ttq.track(ttqEvent, ttqProps, { event_id: eventId });
+        } catch (e) {
+          if (window.console) console.warn("[TF] ttq.track falhou:", e);
+        }
+      }
+    }
+
+    var URLnow = window.location.href;
+    var metaCookies = ensureMetaCookies();
+    var googleParams = getGoogleParams();
+    var tikTokParams = getTikTokParams();
+    var utmParams = getEffectiveUTMs(metaCookies, googleParams, tikTokParams);
+    var freshCookie = getUserData();
+    var ga4 = getGA4Cookies();
+
+    var payload = {
+      eventType: eventType,
+      userId: userId,
+      id_wpp: freshCookie.id_wpp || idWpp || null,
+      pixelName: TF_PIXEL_NAME,
+      contentId: contentId,
+      content_name: data.content_name || data.contentName || null,
+      content_type: data.content_type || data.contentType || "product",
+      order_id: data.order_id || data.orderId || data.orderID || null,
+      eventId: eventId,
+      URL: URLnow,
+      referrer: document.referrer || null,
+      webdriver: !!navigator.webdriver,
+      price: typeof data.value === "number" && data.value > 0 ? data.value : null,
+      currency: data.currency || TF_CONFIG.product_currency || "BRL",
+      fbc: data.fbc || clientUserData.fbc || metaCookies.fbc || null,
+      fbp: data.fbp || clientUserData.fbp || metaCookies.fbp || null,
+      gclid: googleParams.gclid || null,
+      wbraid: googleParams.wbraid || null,
+      gbraid: googleParams.gbraid || null,
+      ttclid: tikTokParams.ttclid || null,
+      ttp: data.ttp || tikTokParams.ttp || null,
+      ga4_client_id: ga4.ga4_client_id || null,
+      ga4_session_id: ga4.ga4_session_id || null,
+      first_name: data.first_name || freshCookie.first_name || null,
+      last_name: data.last_name || freshCookie.last_name || null,
+      email: data.email || freshCookie.email || null,
+      phone: data.phone || freshCookie.phone || null,
+      utm_source: utmParams.utm_source || null,
+      utm_medium: utmParams.utm_medium || null,
+      utm_campaign: utmParams.utm_campaign || null,
+      utm_content: utmParams.utm_content || null,
+      utm_term: utmParams.utm_term || null
+    };
+
+    var bodyStr = JSON.stringify(payload);
+    return fetch(TF_API_URL + "/events/collect", {
+      method: "POST",
+      credentials: "omit",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: bodyStr
+    }).then(function (r) {
+      if (eventType === "Init") return r.json();
+      return null;
+    }).catch(function (e) {
+      try {
+        if (navigator && navigator.sendBeacon && eventType !== "Init") {
+          var blob = new Blob([bodyStr], { type: "application/json" });
+          navigator.sendBeacon(TF_API_URL + "/events/collect", blob);
+        }
+      } catch (e2) {}
+      if (window.console) console.error("[TF] erro ao rastrear " + eventType + ":", e);
+      return null;
+    });
+  }
+
+  // === Form scraping ===================================================
+
+  function scrapeFormsToCookie(scopeEl) {
+    var maps = TF_CONFIG.form_mappings || {};
+    var emailKeys = maps.email || [];
+    var phoneKeys = maps.phone || [];
+    var firstKeys = maps.first_name || [];
+    var lastKeys = maps.last_name || [];
+
+    function anyKey(arr, text) {
+      if (!text) return false;
+      for (var i = 0; i < arr.length; i++) {
+        var k = (arr[i] || "").toLowerCase();
+        if (k && text.indexOf(k) > -1) return true;
+      }
+      return false;
+    }
+
+    var root = scopeEl && scopeEl.querySelectorAll ? scopeEl : document;
+    var inputs = root.querySelectorAll("input, textarea");
+    var first, last, email, phone;
+
+    for (var i = 0; i < inputs.length; i++) {
+      var inp = inputs[i];
+      var typeAttr = (inp.type || "").toLowerCase();
+      if (typeAttr === "hidden" || typeAttr === "password" || typeAttr === "submit" || typeAttr === "button") continue;
+
+      var value = (inp.value || "").trim();
+      if (!value) continue;
+
+      var descriptor = [
+        inp.name || "",
+        inp.id || "",
+        inp.getAttribute("autocomplete") || "",
+        inp.getAttribute("placeholder") || ""
+      ].join(" ").toLowerCase();
+
+      if (!email && (typeAttr === "email" || anyKey(emailKeys, descriptor))) {
+        if (value.indexOf("@") > 0) email = value.toLowerCase();
+      } else if (!phone && (typeAttr === "tel" || anyKey(phoneKeys, descriptor))) {
+        var digits = value.replace(/\D+/g, "");
+        if (digits.length >= 8) phone = digits;
+      } else if (!first && anyKey(firstKeys, descriptor)) {
+        var parts = value.toLowerCase().trim().split(/\s+/);
+        first = parts[0];
+        if (!last && parts.length > 1) last = parts[parts.length - 1];
+      } else if (!last && anyKey(lastKeys, descriptor)) {
+        last = value.toLowerCase();
+      }
+    }
+
+    var current = getUserDataCookie();
+    if (first) current.first_name = first;
+    if (last) current.last_name = last;
+    if (email) current.email = email;
+    if (phone) current.phone = phone;
+    saveUserDataCookie(current);
+    return { first_name: first, last_name: last, email: email, phone: phone };
+  }
+
+  // === UTM origin tagging ==============================================
+
+  function setUTMs() {
+    var origin = TF_CONFIG.utm_origin_param || "utm_source";
+    try {
+      var metaCookies = ensureMetaCookies();
+      var googleParams = getGoogleParams();
+      var tikTokParams = getTikTokParams();
+      var eff = getEffectiveUTMs(metaCookies, googleParams, tikTokParams);
+
+      var url = new URL(window.location.href);
+      var currentRaw = url.searchParams.get(origin);
+      var cleanCurrent = stripUserMarker(currentRaw);
+      var marker = "|userId" + userId + "|";
+
+      var sourceName = (cleanCurrent && cleanCurrent !== "direto" ? cleanCurrent : "")
+        || eff.utm_source
+        || stripUserMarker(getPersistent("_tf_utm_src"))
+        || "";
+
+      if (!sourceName) {
+        sourceName = "direto";
+        if (document.referrer) {
+          try {
+            var refUrl = new URL(document.referrer);
+            if (refUrl.hostname && refUrl.hostname !== window.location.hostname) {
+              sourceName = refUrl.hostname.replace(/^www\./, "");
+            }
+          } catch (err) {}
+        }
+      }
+
+      savePersistent("_tf_utm_src", sourceName, 30);
+      var desired = sourceName + marker;
+      if (currentRaw !== desired) {
+        url.searchParams.set(origin, desired);
+        if (origReplaceState) origReplaceState({}, "", url);
+      }
+    } catch (e) {}
+  }
+
+  // === Checkout buttons ================================================
+
+  function setButtonsURLs() {
+    var rawKey = TF_CONFIG.product_checkout || "";
+    if (!rawKey) return;
+    var checkoutKeys = rawKey.split(",").map(function (k) { return k.trim().toLowerCase(); }).filter(Boolean);
+    if (checkoutKeys.length === 0) return;
+
+    var origin = TF_CONFIG.utm_origin_param || "utm_source";
+    var prices = TF_CONFIG.product_value || [];
+    var currency = TF_CONFIG.product_currency || "BRL";
+    var marker = "|userId" + userId + "|";
+
+    function matchesCheckout(href) {
+      for (var i = 0; i < checkoutKeys.length; i++) {
+        if (href.indexOf(checkoutKeys[i]) > -1) return true;
+      }
+      return false;
+    }
+
+    function resolveButtonPrice(idx) {
+      if (!prices || !prices.length) return undefined;
+      if (prices[idx] !== undefined && typeof prices[idx] === "number" && prices[idx] > 0) {
+        return prices[idx];
+      }
+      var fallback = prices[prices.length - 1];
+      if (typeof fallback === "number" && fallback > 0) return fallback;
+      return undefined;
+    }
+
+    function rewriteAndAttach() {
+      var metaCookies = ensureMetaCookies();
+      var googleParams = getGoogleParams();
+      var tikTokParams = getTikTokParams();
+      var effective = getEffectiveUTMs(metaCookies, googleParams, tikTokParams);
+
+      var cleanSource = stripUserMarker(effective.utm_source)
+        || stripUserMarker(getPersistent("_tf_utm_src"))
+        || "direto";
+
+      var fbc = (metaCookies && metaCookies.fbc) || getPersistent("_fbc");
+      var fbp = (metaCookies && metaCookies.fbp) || getPersistent("_fbp");
+      var sck = getPersistent("_sck") || getCookie("_sck");
+      var gclid = googleParams && googleParams.gclid;
+      var wbraid = googleParams && googleParams.wbraid;
+      var gbraid = googleParams && googleParams.gbraid;
+      var ttclid = tikTokParams && tikTokParams.ttclid;
+
+      var allLinks = document.querySelectorAll("a[href]");
+      var buttons = [];
+      for (var i = 0; i < allLinks.length; i++) {
+        var href = (allLinks[i].getAttribute("href") || "").toLowerCase();
+        if (!href || href.indexOf("#") === 0 || href.indexOf("javascript:") === 0) continue;
+        if (matchesCheckout(href)) buttons.push(allLinks[i]);
+      }
+
+      for (var b = 0; b < buttons.length; b++) {
+        var link = buttons[b];
+        var idx = b;
+        try {
+          var url = new URL(link.href);
+          var sourceVal = cleanSource;
+          if (sourceVal === "direto" && url.searchParams.has("utm_source")) {
+            var existing = stripUserMarker(url.searchParams.get("utm_source"));
+            if (existing) sourceVal = existing;
+          }
+
+          if (origin === "utm_source") {
+            url.searchParams.set("utm_source", sourceVal + marker);
+          } else {
+            url.searchParams.set("utm_source", sourceVal);
+            url.searchParams.set(origin, sourceVal + marker);
+          }
+
+          if (effective.utm_medium) url.searchParams.set("utm_medium", effective.utm_medium);
+          if (effective.utm_campaign) url.searchParams.set("utm_campaign", effective.utm_campaign);
+          if (effective.utm_content) url.searchParams.set("utm_content", effective.utm_content);
+          if (effective.utm_term) url.searchParams.set("utm_term", effective.utm_term);
+
+          if (fbc) url.searchParams.set("fbc", fbc);
+          if (fbp) url.searchParams.set("fbp", fbp);
+          if (sck) url.searchParams.set("sck", sck);
+          if (gclid) url.searchParams.set("gclid", gclid);
+          if (wbraid) url.searchParams.set("wbraid", wbraid);
+          if (gbraid) url.searchParams.set("gbraid", gbraid);
+          if (ttclid) url.searchParams.set("ttclid", ttclid);
+
+          var newHref = url.toString();
+          if (link.href !== newHref) {
+            link.href = newHref;
+          }
+        } catch (e) {
+          if (window.console && window.__tf_debug) console.warn("[TF] erro ao reescrever checkout button:", e);
+        }
+
+        if (!link.dataset.tfCheckoutAttached) {
+          (function (l, buttonIdx) {
+            l.addEventListener("click", function () {
+              var val = resolveButtonPrice(buttonIdx);
+              var evData = { currency: currency };
+              if (val !== undefined) evData.value = val;
+              sendEvent("InitiateCheckout", evData);
+            }, true);
+            l.dataset.tfCheckoutAttached = "1";
+          })(link, idx);
+        }
+      }
+    }
+
+    observeDOM(rewriteAndAttach, true);
+  }
+
+  // === Form lead tracking ==============================================
+
+  function setupFormLeadTracking() {
+    function isSearchForm(form) {
+      if ((form.getAttribute("role") || "").toLowerCase() === "search") return true;
+      var inputs = form.querySelectorAll("input, textarea");
+      var meaningful = 0;
+      var hasSearch = false;
+      for (var i = 0; i < inputs.length; i++) {
+        var t = (inputs[i].type || "").toLowerCase();
+        if (t === "hidden" || t === "submit" || t === "button" || t === "image" || t === "reset") continue;
+        if (t === "search") { hasSearch = true; continue; }
+        meaningful++;
+      }
+      return hasSearch && meaningful === 0;
+    }
+
+    function formHasFilledContact(form) {
+      var scraped = scrapeFormsToCookie(form);
+      if (scraped.email || scraped.phone) return true;
+      var cookie = getUserDataCookie();
+      if (cookie.email || cookie.phone) return true;
+
+      var inputs = form.querySelectorAll("input, textarea");
+      var expectsContact = false;
+      var hasAnyFilled = false;
+      for (var i = 0; i < inputs.length; i++) {
+        var t = (inputs[i].type || "").toLowerCase();
+        if (t === "hidden" || t === "submit" || t === "button" || t === "image" || t === "reset") continue;
+        if (t === "email" || t === "tel") expectsContact = true;
+        if ((inputs[i].value || "").trim().length > 0) hasAnyFilled = true;
+      }
+      if (expectsContact) return false;
+      return hasAnyFilled;
+    }
+
+    function attach(form) {
+      if (form.dataset.tfLeadAttached) return;
+      if (isSearchForm(form)) return;
+
+      try {
+        var origin = TF_CONFIG.utm_origin_param || "utm_source";
+        var marker = "|userId" + userId + "|";
+        var effUtm = getEffectiveUTMs(ensureMetaCookies(), getGoogleParams(), getTikTokParams());
+        var sourceVal = stripUserMarker(effUtm.utm_source) || stripUserMarker(getPersistent("_tf_utm_src")) || "direto";
+        var existing = form.querySelectorAll('[name="' + origin + '"]');
+        if (existing.length > 0) {
+          for (var i = 0; i < existing.length; i++) {
+            var curVal = stripUserMarker(existing[i].value);
+            existing[i].value = (curVal || sourceVal) + marker;
+          }
+        } else {
+          var hidden = document.createElement("input");
+          hidden.type = "hidden";
+          hidden.name = origin;
+          hidden.value = sourceVal + marker;
+          form.appendChild(hidden);
+        }
+      } catch (e) {}
+
+      var lastSubmitTime = 0;
+      function onFormSubmit(source) {
+        if (typeof form.checkValidity === "function" && !form.checkValidity()) return;
+        if (!formHasFilledContact(form)) return;
+        var now = Date.now();
+        if (now - lastSubmitTime < 2500) return;
+        lastSubmitTime = now;
+        if (window.console) console.log("[TF] form " + source + " -> Lead");
+        sendEvent("Lead");
+      }
+
+      form.addEventListener("submit", function () {
+        onFormSubmit("submit");
+      });
+
+      var btns = form.querySelectorAll('button[type="submit"], input[type="submit"]');
+      for (var b = 0; b < btns.length; b++) {
+        btns[b].addEventListener("click", function () {
+          onFormSubmit("btn click");
+        });
+      }
+
+      form.dataset.tfLeadAttached = "1";
+    }
+
+    observeDOM(function () {
+      var forms = document.querySelectorAll("form");
+      for (var i = 0; i < forms.length; i++) attach(forms[i]);
+    }, false);
+  }
+
+  // === WhatsApp links ==================================================
+
+  function setupWhatsAppLinks(opts) {
+    opts = opts || { protocol: false, lead: false, leadEvent: "Lead" };
+    if (!opts.protocol && !opts.lead) return;
+
+    var selector = 'a[href*="wa.me"], a[href*="api.whatsapp"], a[href*="web.whatsapp.com"], a[href*="whatsapp://"]';
+
+    function intercept() {
+      var links = document.querySelectorAll(selector);
+      for (var i = 0; i < links.length; i++) {
+        var link = links[i];
+
+        if (opts.protocol) {
+          try {
+            var url = new URL(link.href);
+            var msg = "Protocolo: " + userId;
+            var curText = url.searchParams.get("text") || "";
+            if (curText.indexOf(msg) === -1) {
+              url.searchParams.set("text", curText ? curText + "\n" + msg : msg);
+              link.href = url.toString();
+            }
+          } catch (e) {}
+        }
+
+        if (opts.lead && !link.dataset.tfWaLeadAttached) {
+          link.addEventListener("click", function () {
+            sendEvent(opts.leadEvent || "Lead");
+          }, true);
+          link.dataset.tfWaLeadAttached = "1";
+        }
+      }
+    }
+
+    observeDOM(intercept, true);
+  }
+
+  // === Scroll / timer / video tracking =================================
+
+  function setupScrollTracking() {
+    function check() {
+      var scrollEl = document.documentElement || document.body;
+      if (!scrollEl || !scrollEl.scrollHeight) return;
+      var pos = window.scrollY + window.innerHeight;
+      var pct = (pos / scrollEl.scrollHeight) * 100;
+      [25, 50, 75, 90].forEach(function (p) {
+        if (pct >= p) sendEvent("Scroll_" + p);
+      });
+    }
+    window.addEventListener("scroll", check, { passive: true });
+  }
+
+  function setupTimerTracking() {
+    setTimeout(function () { sendEvent("Timer_1min"); }, 60000);
+  }
+
+  function setupVideoTracking() {
+    var observed = [];
+    observeDOM(function () {
+      var vids = document.querySelectorAll("video");
+      for (var i = 0; i < vids.length; i++) {
+        var v = vids[i];
+        if (observed.indexOf(v) > -1) continue;
+        observed.push(v);
+        (function (video) {
+          var fired = {};
+          video.addEventListener("play", function () { sendEvent("PlayVideo"); });
+          video.addEventListener("timeupdate", function () {
+            if (!video.duration) return;
+            var pct = (video.currentTime / video.duration) * 100;
+            [25, 50, 75, 90].forEach(function (p) {
+              if (!fired[p] && pct >= p) {
+                fired[p] = true;
+                sendEvent("ViewVideo_" + p);
+              }
+            });
+          });
+        })(v);
+      }
+    }, false);
+  }
+
+  // === Page rules ======================================================
+
+  var firedRuleKeys = {};
+
+  function applyPageRules() {
+    var rules = TF_CONFIG.page_rules || [];
+    if (!rules.length) return;
+    var url = window.location.href.toLowerCase();
+    var pathKey = window.location.pathname + window.location.search + window.location.hash;
+    var defaultVal = TF_CONFIG.product_value && TF_CONFIG.product_value.length > 0 ? TF_CONFIG.product_value[0] : undefined;
+
+    for (var i = 0; i < rules.length; i++) {
+      var rule = rules[i];
+      if (!rule || !rule.page || !rule.event) continue;
+      var p = (rule.page || "").toLowerCase();
+      var rk = pathKey + "::" + p + "::" + rule.event;
+      if (firedRuleKeys[rk]) continue;
+
+      if (url.indexOf(p) > -1) {
+        firedRuleKeys[rk] = true;
+        var data = { currency: rule.currency || TF_CONFIG.product_currency || "BRL" };
+        if (typeof rule.value === "number" && rule.value > 0) {
+          data.value = rule.value;
+        } else if ((rule.event === "InitiateCheckout" || rule.event === "Purchase") && typeof defaultVal === "number" && defaultVal > 0) {
+          data.value = defaultVal;
+        }
+        sendEvent(rule.event, data);
+      }
+    }
+  }
+
+  // === fbq / ttq / gtag bootstrap ======================================
+
+  function buildAdvancedMatching(initData) {
+    initData = initData || {};
+    var ud = {};
+    if (initData.city) ud.ct = initData.city;
+    if (initData.state) ud.st = initData.state;
+    if (initData.postal_code) ud.zp = initData.postal_code;
+    if (initData.country) ud.country = initData.country;
+    if (initData.client_ip_address) ud.client_ip_address = initData.client_ip_address;
+    if (initData.client_user_agent) ud.client_user_agent = initData.client_user_agent;
+    var fbc = initData.fbc || getPersistent("_fbc");
+    var fbp = initData.fbp || getPersistent("_fbp");
+    if (fbc) ud.fbc = fbc;
+    if (fbp) ud.fbp = fbp;
+    if (userId) ud.external_id = userId;
+    var fresh = getUserDataCookie();
+    if (fresh.first_name) ud.fn = fresh.first_name;
+    if (fresh.last_name) ud.ln = fresh.last_name;
+    if (fresh.email) ud.em = fresh.email;
+    if (fresh.phone) ud.ph = fresh.phone;
+    return ud;
+  }
+
+  function bootstrapFbq() {
+    if (!TF_META_PIXEL_IDS || !TF_META_PIXEL_IDS.length) return;
+    !function (f, b, e, v, n, t, s) {
+      if (f.fbq) return;
+      n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
+      if (!f._fbq) f._fbq = n;
+      n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = [];
+      t = b.createElement(e); t.async = !0;
+      t.src = v;
+      s = b.getElementsByTagName(e)[0];
+      if (s && s.parentNode) s.parentNode.insertBefore(t, s);
+      else (b.head || b.documentElement).appendChild(t);
+    }(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+
+    clientUserData = buildAdvancedMatching({});
+    for (var i = 0; i < TF_META_PIXEL_IDS.length; i++) {
+      window.fbq("init", TF_META_PIXEL_IDS[i], clientUserData);
+    }
+  }
+
+  function refreshFbqAdvancedMatching(initData) {
+    if (!TF_META_PIXEL_IDS || !TF_META_PIXEL_IDS.length || !window.fbq) return;
+    var ud = buildAdvancedMatching(initData || lastInitData);
+    clientUserData = ud;
+    for (var i = 0; i < TF_META_PIXEL_IDS.length; i++) {
+      window.fbq("init", TF_META_PIXEL_IDS[i], ud);
+    }
+  }
+
+  function mapEventToTikTok(eventType) {
+    switch (eventType) {
+      case "ViewContent":          return "ViewContent";
+      case "AddToCart":            return "AddToCart";
+      case "AddToWishlist":        return "AddToWishlist";
+      case "InitiateCheckout":     return "InitiateCheckout";
+      case "AddPaymentInfo":       return "AddPaymentInfo";
+      case "AddShippingInfo":      return "AddShippingInfo";
+      case "CompleteRegistration": return "CompleteRegistration";
+      case "Contact":              return "Contact";
+      case "Purchase":             return "Purchase";
+      case "Lead":                 return "Lead";
+      default:                     return null;
+    }
+  }
+
+  function bootstrapGa4() {
+    if (!TF_GA4_MEASUREMENT_ID) return;
+    var s = document.createElement("script");
+    s.async = true;
+    s.src = "https://www.googletagmanager.com/gtag/js?id=" + TF_GA4_MEASUREMENT_ID;
+    var first = document.getElementsByTagName("script")[0];
+    if (first && first.parentNode) first.parentNode.insertBefore(s, first);
+    else (document.head || document.documentElement).appendChild(s);
+
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { window.dataLayer.push(arguments); }
+    if (!window.gtag) window.gtag = gtag;
+
+    window.gtag("js", new Date());
+    window.gtag("config", TF_GA4_MEASUREMENT_ID, { send_page_view: false });
+  }
+
+  function bootstrapTtq() {
+    if (!TF_TIKTOK_PIXEL_IDS || !TF_TIKTOK_PIXEL_IDS.length) return;
+    !function (w, d, t) {
+      w.TiktokAnalyticsObject = t;
+      var ttq = w[t] = w[t] || [];
+      ttq.methods = ["page", "track", "identify", "instances", "debug", "on", "off", "once", "ready", "alias", "group", "enableCookie", "disableCookie", "holdConsent", "revokeConsent", "grantConsent"];
+      ttq.setAndDefer = function (t, e) {
+        t[e] = function () { t.push([e].concat(Array.prototype.slice.call(arguments, 0))); };
+      };
+      for (var i = 0; i < ttq.methods.length; i++) ttq.setAndDefer(ttq, ttq.methods[i]);
+      ttq.instance = function (t) {
+        for (var e = ttq._i[t] || [], n = 0; n < ttq.methods.length; n++) ttq.setAndDefer(e, ttq.methods[n]);
+        return e;
+      };
+      ttq.load = function (e, n) {
+        var r = "https://analytics.tiktok.com/i18n/pixel/events.js";
+        ttq._i = ttq._i || {};
+        ttq._i[e] = [];
+        ttq._i[e]._u = r;
+        ttq._t = ttq._t || {};
+        ttq._t[e] = +new Date();
+        ttq._o = ttq._o || {};
+        ttq._o[e] = n || {};
+        var script = document.createElement("script");
+        script.type = "text/javascript";
+        script.async = !0;
+        script.src = r + "?sdkid=" + e + "&lib=" + t;
+        var s = document.getElementsByTagName("script")[0];
+        if (s && s.parentNode) s.parentNode.insertBefore(script, s);
+        else (d.head || d.documentElement).appendChild(script);
+      };
+      for (var p = 0; p < TF_TIKTOK_PIXEL_IDS.length; p++) {
+        ttq.load(TF_TIKTOK_PIXEL_IDS[p]);
+      }
+    }(window, document, "ttq");
+
+    refreshTtqIdentify({});
+    watchTtpCookie(!!getCookie("_ttp"));
+  }
+
+  function watchTtpCookie(alreadyHadTtp) {
+    if (alreadyHadTtp || !TF_TIKTOK_PIXEL_IDS || !TF_TIKTOK_PIXEL_IDS.length) return;
+    var elapsed = 0;
+    var iv = setInterval(function () {
+      elapsed += 300;
+      var ttp = getCookie("_ttp");
+      if (ttp) {
+        clearInterval(iv);
+        setStorage("_ttp", ttp);
+        sendEvent("UpdateUserData", { ttp: ttp });
+      } else if (elapsed >= 6000) {
+        clearInterval(iv);
+      }
+    }, 300);
+  }
+
+  function refreshTtqIdentify(initData) {
+    if (!TF_TIKTOK_PIXEL_IDS || !TF_TIKTOK_PIXEL_IDS.length || !window.ttq) return;
+    var fresh = getUserDataCookie();
+    var identity = {};
+    if (fresh.email) identity.email = String(fresh.email).trim().toLowerCase();
+    var e164Phone = formatPhoneE164(fresh.phone);
+    if (e164Phone) identity.phone_number = e164Phone;
+    if (userId) identity.external_id = String(userId).trim().toLowerCase();
+    try {
+      window.ttq.identify(identity);
+      if (typeof window.ttq.instance === "function") {
+        for (var i = 0; i < TF_TIKTOK_PIXEL_IDS.length; i++) {
+          window.ttq.instance(TF_TIKTOK_PIXEL_IDS[i]).identify(identity);
+        }
+      }
+    } catch (e) {}
+  }
+
+  // === SPA Navigation Support ==========================================
+
+  var lastTrackedPath = window.location.pathname + window.location.search;
+
+  function onSpaRouteChange() {
+    var curPath = window.location.pathname + window.location.search;
+    if (curPath === lastTrackedPath) return;
+    lastTrackedPath = curPath;
+
+    sentOnce.InitiateCheckout = false;
+    sentOnce.Scroll_25 = false;
+    sentOnce.Scroll_50 = false;
+    sentOnce.Scroll_75 = false;
+    sentOnce.Scroll_90 = false;
+
+    if (TF_CONFIG.auto_checkout_buttons) setUTMs();
+    if (TF_CONFIG.auto_page_view) {
+      sendEvent("PageView").then(applyPageRules);
+    } else {
+      applyPageRules();
+    }
+  }
+
+  function setupSpaListeners() {
+    try {
+      if (window.history && window.history.pushState) {
+        var origPush = window.history.pushState;
+        window.history.pushState = function () {
+          var ret = origPush.apply(this, arguments);
+          setTimeout(onSpaRouteChange, 0);
+          return ret;
+        };
+      }
+      window.addEventListener("popstate", function () {
+        setTimeout(onSpaRouteChange, 0);
+      });
+    } catch (e) {}
+  }
+
+  // === Boot ============================================================
+
+  var bootMeta = ensureMetaCookies();
+  ensureGaCookie();
+  if (bootMeta.fbc) clientUserData.fbc = bootMeta.fbc;
+  if (bootMeta.fbp) clientUserData.fbp = bootMeta.fbp;
+
+  bootstrapFbq();
+  bootstrapTtq();
+  bootstrapGa4();
+
+  if (TF_CONFIG.auto_checkout_buttons) {
+    setUTMs();
+    setButtonsURLs();
+  }
+  setupWhatsAppLinks({
+    protocol:  !!TF_CONFIG.whatsapp_protocol,
+    lead:      !!TF_CONFIG.whatsapp_lead,
+    leadEvent: TF_CONFIG.whatsapp_lead_event || "Lead"
+  });
+  if (TF_CONFIG.auto_form_lead) setupFormLeadTracking();
+  if (TF_CONFIG.send_scrolls) setupScrollTracking();
+  if (TF_CONFIG.send_timer_1min) setupTimerTracking();
+  if (TF_CONFIG.send_view_video) setupVideoTracking();
+  setupSpaListeners();
+
+  // Dispara PageView + PageRules imediatamente (sem travar esperando RTT de Init)
+  if (TF_CONFIG.auto_page_view) {
+    sendEvent("PageView").then(applyPageRules);
+  } else {
+    applyPageRules();
+  }
+
+  // Hidrata GeoIP e atualiza Advanced Matching em paralelo
+  sendEvent("Init").then(function (initData) {
+    if (initData) lastInitData = initData;
+    refreshFbqAdvancedMatching(lastInitData);
+    refreshTtqIdentify(lastInitData);
+  }).catch(function () {});
+
+  // === API global ======================================================
+
+  var pending = (window.tf && window.tf.q) || [];
+  window.tf = function () {
+    var args = Array.prototype.slice.call(arguments);
+    var cmd = args.shift();
+    if (cmd === "send" || cmd === "event") {
+      sendEvent(args[0], args[1] || {});
+    } else if (cmd === "updateUser") {
+      var patch = args[0] || {};
+      var current = getUserDataCookie();
+      ["first_name", "last_name", "email", "phone"].forEach(function (k) {
+        if (patch[k]) current[k] = patch[k];
+      });
+      saveUserDataCookie(current);
+      refreshFbqAdvancedMatching(lastInitData);
+      refreshTtqIdentify(lastInitData);
+      sendEvent("UpdateUserData", patch);
+    }
+  };
+  for (var i = 0; i < pending.length; i++) window.tf.apply(null, pending[i]);
+})();

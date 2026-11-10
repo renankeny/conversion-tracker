@@ -1,0 +1,112 @@
+# =============================================================================
+# Variáveis de ambiente e segredos locais
+# =============================================================================
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.production.example
+
+# =============================================================================
+# Diretrizes de Agentes de IA e Documentação Markdown (não versionados)
+# =============================================================================
+.agents/
+.claude/
+.kiro/
+.cursor/
+.cursorrules
+.gemini/
+AGENTS.md
+CLAUDE.md
+*.md
+**/*.md
+/docs/
+
+# =============================================================================
+# Projetos separados no workspace (não fazem parte deste repositório)
+# =============================================================================
+/assinatura/
+/whatsapp/
+/referencia/
+/LP/
+/examples/
+/scratch/
+
+# =============================================================================
+# Sistema operacional & IDEs
+# =============================================================================
+.DS_Store
+**/.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+**/.vscode/
+*.swp
+
+# =============================================================================
+# Backend Go, caches locais e scripts de depuração
+# =============================================================================
+backend/api
+backend/worker
+backend/main
+backend/cmd/api/api
+backend/cmd/worker/worker
+backend/bin/
+backend/data/
+backend/.pgx_shard_cal.bin
+**/.pgx_shard_cal.bin
+backend/check_evolution_webhook.sh
+backend/test_webhook_protocol.sh
+backend/internal/test_pixels/
+backend/cmd/cakto-test/
+*.exe
+*.test
+*.out
+coverage.out
+*.prof
+*.mmdb
+*.mmdb.bak
+*.db
+*.sqlite
+
+# =============================================================================
+# Frontend Nuxt e dependências de teste na raiz
+# =============================================================================
+/node_modules/
+/package.json
+/package-lock.json
+frontend/.nuxt/
+frontend/.output/
+frontend/.data/
+frontend/.cache/
+frontend/node_modules/
+frontend/dist/
+
+# =============================================================================
+# Logs, pacotes, certificados, chaves privadas e infra privada
+# =============================================================================
+*.log
+logs/
+*.tar.gz
+*.zip
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+api_response.js
+api_response2.js
+datalayers
+script
+script outro.js
+deploy/vps-trackeado/
+deploy/easypanel.schema.json
+deploy/easypanel.schema.local.json
+deploy/easypanel.template.json
+deploy/credentials.txt
+deploy/portainer.env
+deploy/portainer-swarm-stack.yml
+deploy/portainer-swarm-stack.ready.yml
+deploy/generate-portainer-env.sh
+deploy/*.ready.yml
