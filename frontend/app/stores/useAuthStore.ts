@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { AdminUser, LoginRequest, LoginResponse } from '#shared/types'
-import { sanitizeUserForStorage, setBrowserCookie } from '~/utils/cookies'
+import { sanitizeUserForStorage, setBrowserCookie, getBrowserCookie } from '~/utils/cookies'
 import { useTenantStore } from '~/stores/useTenantStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
 import { usePixelStore } from '~/stores/usePixelStore'
@@ -38,8 +38,28 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   function hydrate(initialToken?: string | null, initialUser?: AdminUser | null): void {
-    token.value = initialToken || null
-    user.value = sanitizeUserForStorage(initialUser)
+    let resolvedToken = initialToken || null
+    let resolvedUser = initialUser || null
+
+    if (!resolvedToken && import.meta.client) {
+      resolvedToken = getBrowserCookie('auth_token')
+      if (!resolvedToken) {
+        try {
+          const local = localStorage.getItem('auth_token')
+          if (local && local.trim()) resolvedToken = local.trim()
+        } catch {}
+      }
+    }
+
+    if (!resolvedUser && import.meta.client) {
+      try {
+        const localUser = localStorage.getItem('auth_user')
+        if (localUser) resolvedUser = JSON.parse(localUser)
+      } catch {}
+    }
+
+    token.value = resolvedToken
+    user.value = sanitizeUserForStorage(resolvedUser)
     hydrated.value = true
   }
 
@@ -47,6 +67,12 @@ export const useAuthStore = defineStore('auth', () => {
     const clean = sanitizeUserForStorage(nextUser)
     user.value = clean
     setBrowserCookie('auth_user', clean ? JSON.stringify(clean) : null, maxAge)
+    if (import.meta.client) {
+      try {
+        if (clean) localStorage.setItem('auth_user', JSON.stringify(clean))
+        else localStorage.removeItem('auth_user')
+      } catch {}
+    }
   }
 
   function clearSession(): void {
@@ -55,15 +81,19 @@ export const useAuthStore = defineStore('auth', () => {
     setBrowserCookie('auth_token', null)
     setBrowserCookie('auth_user', null)
     setBrowserCookie('active_account_id', null)
+    if (import.meta.client) {
+      try {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_user')
+        localStorage.removeItem('trackfind_selected_pixel')
+      } catch {}
+    }
     useLiveEventsStore().disconnect()
     useTenantStore().reset()
     usePixelStore().invalidate()
     useGoogleAdsStore().invalidate()
     useCustomWebhooksStore().invalidate()
     useSystemAlertsStore().invalidate()
-    if (import.meta.client) {
-      localStorage.removeItem('trackfind_selected_pixel')
-    }
   }
 
   async function login(credentials: LoginRequest): Promise<LoginResponse> {
@@ -81,6 +111,10 @@ export const useAuthStore = defineStore('auth', () => {
     setBrowserCookie('auth_user', cleanUser ? JSON.stringify(cleanUser) : null, maxAge)
 
     if (import.meta.client) {
+      try {
+        localStorage.setItem('auth_token', response.access_token)
+        if (cleanUser) localStorage.setItem('auth_user', JSON.stringify(cleanUser))
+      } catch {}
       if (credentials.remember_me) {
         localStorage.setItem('remember_me', 'true')
         localStorage.setItem('remember_email', credentials.email)
@@ -115,8 +149,10 @@ export const useAuthStore = defineStore('auth', () => {
       const me = await api.get<AdminUser>('/admin/me')
       setUser(me)
       return true
-    } catch {
-      clearSession()
+    } catch (err: any) {
+      if (err?.statusCode === 401) {
+        clearSession()
+      }
       return false
     }
   }

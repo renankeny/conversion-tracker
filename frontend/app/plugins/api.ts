@@ -5,7 +5,7 @@ import { useAuthStore } from '~/stores/useAuthStore'
 import { useDashboardStore, type PeriodValue } from '~/stores/useDashboardStore'
 import { useTenantStore } from '~/stores/useTenantStore'
 import { useThemeStore } from '~/stores/useThemeStore'
-import { setBrowserCookie } from '~/utils/cookies'
+import { setBrowserCookie, getBrowserCookie } from '~/utils/cookies'
 
 function buildNormalizedError(status: number | undefined, data: any, fallback: string): Error & { statusCode?: number; data?: any } {
   const message =
@@ -66,6 +66,32 @@ export default defineNuxtPlugin({
       legacyThemeCookie.value = val
     })
 
+    function getResolvedBearerToken(): string | null {
+      if (authStore.token && authStore.token.trim()) {
+        return authStore.token.trim()
+      }
+      if (authTokenCookie.value && authTokenCookie.value.trim()) {
+        return authTokenCookie.value.trim()
+      }
+      if (import.meta.client) {
+        try {
+          const local = localStorage.getItem('auth_token')
+          if (local && local.trim()) {
+            authStore.token = local.trim()
+            return local.trim()
+          }
+        } catch {}
+        try {
+          const cookieVal = getBrowserCookie('auth_token')
+          if (cookieVal && cookieVal.trim()) {
+            authStore.token = cookieVal.trim()
+            return cookieVal.trim()
+          }
+        } catch {}
+      }
+      return null
+    }
+
     const publicApi = $fetch.create({
       baseURL: apiBase,
       credentials: 'omit',
@@ -98,7 +124,7 @@ export default defineNuxtPlugin({
         }
 
         if (!isPublicRoute) {
-          const bearerToken = authStore.token || authTokenCookie.value
+          const bearerToken = getResolvedBearerToken()
           if (bearerToken && !headers.has('Authorization')) {
             headers.set('Authorization', `Bearer ${bearerToken}`)
           }
@@ -121,11 +147,19 @@ export default defineNuxtPlugin({
           !urlStr.includes('/admin/login') &&
           !urlStr.includes('/admin/logout')
         ) {
-          authStore.clearSession()
-          if (import.meta.client) {
-            const path = window.location.pathname
-            if (!path.startsWith('/login') && !path.startsWith('/setup') && !path.startsWith('/cliente')) {
-              void navigateTo('/login', { replace: true })
+          const isMissingHeaderErr =
+            typeof data === 'string'
+              ? data.includes('missing bearer token')
+              : (data?.error?.includes('missing bearer token') || false)
+          const fallbackToken = getResolvedBearerToken()
+
+          if (!isMissingHeaderErr || !fallbackToken) {
+            authStore.clearSession()
+            if (import.meta.client) {
+              const path = window.location.pathname
+              if (!path.startsWith('/login') && !path.startsWith('/setup') && !path.startsWith('/cliente')) {
+                void navigateTo('/login', { replace: true })
+              }
             }
           }
         }

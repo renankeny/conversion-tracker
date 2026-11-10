@@ -84,6 +84,11 @@ export const useSetup = () => {
     authStore.setUser(response.user, maxAge)
     tenantStore.setActiveAccountId(accId, maxAge)
     setBrowserCookie('auth_token', response.access_token, maxAge)
+    if (import.meta.client) {
+      try {
+        localStorage.setItem('auth_token', response.access_token)
+      } catch {}
+    }
 
     if (response.branding) {
       branding.value = response.branding

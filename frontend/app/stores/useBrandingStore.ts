@@ -1,12 +1,17 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { PlatformBranding } from '#shared/types'
-import { applyPaletteToDocument, DEFAULT_BRANDING } from '~/utils/colorPalette'
+import { applyPaletteToDocument, DEFAULT_BRANDING, normalizeHexColor } from '~/utils/colorPalette'
 import { useThemeStore } from '~/stores/useThemeStore'
 
 const STORAGE_KEY = 'wl_branding_cache_v2'
 
 export function clonePlatformBranding(src: PlatformBranding): PlatformBranding {
+  const darkFallback = DEFAULT_BRANDING.theme_config.dark
+  const lightFallback = DEFAULT_BRANDING.theme_config.light
+  const darkSrc = src.theme_config?.dark || {}
+  const lightSrc = src.theme_config?.light || {}
+
   return {
     platform_name: src.platform_name === 'TrackFind' ? 'Sua Plataforma' : (src.platform_name || 'Sua Plataforma'),
     tagline: src.tagline || DEFAULT_BRANDING.tagline,
@@ -17,8 +22,18 @@ export function clonePlatformBranding(src: PlatformBranding): PlatformBranding {
     favicon_url: src.favicon_url || '',
     theme_config: {
       preset: src.theme_config?.preset || DEFAULT_BRANDING.theme_config.preset,
-      dark: { ...DEFAULT_BRANDING.theme_config.dark, ...(src.theme_config?.dark || {}) },
-      light: { ...DEFAULT_BRANDING.theme_config.light, ...(src.theme_config?.light || {}) },
+      dark: {
+        brand: normalizeHexColor(darkSrc.brand || darkFallback.brand, darkFallback.brand),
+        surface_1: normalizeHexColor(darkSrc.surface_1 || darkFallback.surface_1, darkFallback.surface_1),
+        surface_2: normalizeHexColor(darkSrc.surface_2 || darkFallback.surface_2, darkFallback.surface_2),
+        surface_deep: normalizeHexColor(darkSrc.surface_deep || darkFallback.surface_deep, darkFallback.surface_deep),
+      },
+      light: {
+        brand: normalizeHexColor(lightSrc.brand || lightFallback.brand, lightFallback.brand),
+        surface_1: normalizeHexColor(lightSrc.surface_1 || lightFallback.surface_1, lightFallback.surface_1),
+        surface_2: normalizeHexColor(lightSrc.surface_2 || lightFallback.surface_2, lightFallback.surface_2),
+        surface_deep: normalizeHexColor(lightSrc.surface_deep || lightFallback.surface_deep, lightFallback.surface_deep),
+      },
     },
   }
 }

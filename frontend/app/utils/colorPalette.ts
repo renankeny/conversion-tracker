@@ -60,6 +60,26 @@ export const DEFAULT_BRANDING: PlatformBranding = {
   },
 }
 
+export function normalizeHexColor(raw: string, fallback = '#1C87C1'): string {
+  let clean = (raw || '').trim().toUpperCase()
+  if (!clean) return fallback
+  if (!clean.startsWith('#')) clean = `#${clean}`
+  if (/^#[0-9A-F]{3}$/.test(clean)) {
+    clean = `#${clean[1]}${clean[1]}${clean[2]}${clean[2]}${clean[3]}${clean[3]}`
+  }
+  return /^#[0-9A-F]{6}$/.test(clean) ? clean : fallback
+}
+
+export function isValidHexColor(raw: string): boolean {
+  let clean = (raw || '').trim().toUpperCase()
+  if (!clean) return false
+  if (!clean.startsWith('#')) clean = `#${clean}`
+  if (/^#[0-9A-F]{3}$/.test(clean)) {
+    clean = `#${clean[1]}${clean[1]}${clean[2]}${clean[2]}${clean[3]}${clean[3]}`
+  }
+  return /^#[0-9A-F]{6}$/.test(clean)
+}
+
 export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const clean = (hex || '').replace('#', '').trim()
   if (!/^[0-9A-Fa-f]{6}$/.test(clean)) return null

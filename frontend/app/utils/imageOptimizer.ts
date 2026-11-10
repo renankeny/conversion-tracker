@@ -12,8 +12,9 @@ export async function optimizeBrandingImage(
     throw new Error('O arquivo selecionado excede 2MB. Escolha uma imagem menor.')
   }
 
-  // SVGs ou ícones .ico pequenos já estão otimizados
-  if (file.type === 'image/svg+xml' || (kind === 'favicon' && file.size <= 32 * 1024)) {
+  // Ícones .ico nativos pequenos para favicon já são aceitos diretamente pelo backend
+  const isIco = file.type === 'image/x-icon' || file.type === 'image/vnd.microsoft.icon' || file.name.endsWith('.ico')
+  if (kind === 'favicon' && isIco && file.size <= 32 * 1024) {
     return readFileAsDataURL(file)
   }
 

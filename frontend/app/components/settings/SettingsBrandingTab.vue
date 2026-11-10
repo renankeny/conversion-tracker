@@ -17,7 +17,7 @@
 
 <script setup lang="ts">
 import type { PlatformBranding } from '#shared/types'
-import { DEFAULT_BRANDING } from '~/utils/colorPalette'
+import { DEFAULT_BRANDING, isValidHexColor, normalizeHexColor } from '~/utils/colorPalette'
 import BrandingLivePreview from '~/components/settings/branding/BrandingLivePreview.vue'
 import BrandingIdentityCard from '~/components/settings/branding/BrandingIdentityCard.vue'
 import BrandingColorsCard from '~/components/settings/branding/BrandingColorsCard.vue'
@@ -36,8 +36,18 @@ const cloneBranding = (src: PlatformBranding): PlatformBranding => ({
   favicon_url: src.favicon_url,
   theme_config: {
     preset: src.theme_config?.preset || DEFAULT_BRANDING.theme_config.preset,
-    dark: { ...DEFAULT_BRANDING.theme_config.dark, ...(src.theme_config?.dark || {}) },
-    light: { ...DEFAULT_BRANDING.theme_config.light, ...(src.theme_config?.light || {}) },
+    dark: {
+      brand: normalizeHexColor(src.theme_config?.dark?.brand || DEFAULT_BRANDING.theme_config.dark.brand),
+      surface_1: normalizeHexColor(src.theme_config?.dark?.surface_1 || DEFAULT_BRANDING.theme_config.dark.surface_1),
+      surface_2: normalizeHexColor(src.theme_config?.dark?.surface_2 || DEFAULT_BRANDING.theme_config.dark.surface_2),
+      surface_deep: normalizeHexColor(src.theme_config?.dark?.surface_deep || DEFAULT_BRANDING.theme_config.dark.surface_deep),
+    },
+    light: {
+      brand: normalizeHexColor(src.theme_config?.light?.brand || DEFAULT_BRANDING.theme_config.light.brand),
+      surface_1: normalizeHexColor(src.theme_config?.light?.surface_1 || DEFAULT_BRANDING.theme_config.light.surface_1),
+      surface_2: normalizeHexColor(src.theme_config?.light?.surface_2 || DEFAULT_BRANDING.theme_config.light.surface_2),
+      surface_deep: normalizeHexColor(src.theme_config?.light?.surface_deep || DEFAULT_BRANDING.theme_config.light.surface_deep),
+    },
   },
 })
 
@@ -67,6 +77,21 @@ const onSave = async () => {
     toast.error('Campo obrigatório', 'Informe o nome da plataforma')
     return
   }
+
+  // Validação explícita de cores antes de enviar
+  const palettes = [
+    { name: 'Tema Escuro', p: draft.theme_config.dark },
+    { name: 'Tema Claro', p: draft.theme_config.light },
+  ]
+  for (const { name, p } of palettes) {
+    for (const [k, v] of Object.entries(p)) {
+      if (v && !isValidHexColor(String(v))) {
+        toast.error('Cor inválida', `${name}: a cor "${k}" deve estar no formato #RRGGBB (ex: #1C87C1)`)
+        return
+      }
+    }
+  }
+
   saving.value = true
   try {
     await saveBranding(cloneBranding(draft))
