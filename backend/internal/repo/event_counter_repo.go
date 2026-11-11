@@ -112,17 +112,8 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 			idx++
 		}
 
-		switch f.TrafficSource {
-		case "meta_lp":
-			q += " AND (u.last_utm_source ILIKE '%facebook%' OR u.last_utm_source ILIKE '%instagram%' OR u.last_utm_source ILIKE '%meta%')"
-			q += " AND (e.payload->'data'->0->>'action_source' IS DISTINCT FROM 'business_messaging')"
-		case "meta_wpp":
-			q += " AND (u.last_utm_source ILIKE '%facebook%' OR u.last_utm_source ILIKE '%instagram%' OR u.last_utm_source ILIKE '%meta%')"
-			q += " AND (e.payload->'data'->0->>'action_source' = 'business_messaging' OR e.payload->'data'->0->>'messaging_channel' = 'whatsapp')"
-		case "google":
-			q += " AND (u.gclid <> '' OR u.last_utm_source ILIKE '%google%')"
-		case "tiktok":
-			q += " AND (u.ttclid <> '' OR u.last_utm_source ILIKE '%tiktok%')"
+		if srcCond := trafficSourceUserCond(f.TrafficSource, "u."); srcCond != "" {
+			q += " AND " + srcCond
 		}
 
 		q += " GROUP BY e.event_name ORDER BY total DESC"
@@ -134,14 +125,27 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 		defer rows.Close()
 
 		var out []SummaryRow
+		hasPageView := false
 		for rows.Next() {
 			var row SummaryRow
 			if err := rows.Scan(&row.EventName, &row.CountTotal, &row.CountSent, &row.CountFailed); err != nil {
 				return nil, err
 			}
+			if row.EventName == "PageView" {
+				hasPageView = true
+			}
 			out = append(out, row)
 		}
-		return out, rows.Err()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		// PageView não fica em sent_events; preenchemos a partir de tracked_users quando filtrado por fonte
+		if !hasPageView && (f.EventName == "" || f.EventName == "PageView") {
+			if pv := r.countVisitorsBySource(ctx, f); pv > 0 {
+				out = append([]SummaryRow{{EventName: "PageView", CountTotal: pv, CountSent: pv}}, out...)
+			}
+		}
+		return out, nil
 	}
 
 	q1 := `

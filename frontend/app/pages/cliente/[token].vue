@@ -63,14 +63,13 @@ import PeriodSelector from '~/components/dashboard/PeriodSelector.vue'
 import EventDetailsModal from '~/components/events/EventDetailsModal.vue'
 import { computeSaoPauloRange, type PeriodValue } from '~/stores/useDashboardStore'
 import {
-  FAILED_CARD_ID, FAILED_CARD_LABEL, ALL_CARD_IDS, CATALOG_IDS,
-  DEFAULT_FUNNEL_EVENTS, FAILED_CARD_ICON, catalogById,
-  REVENUE_CARD_ID, REVENUE_CARD_ICON, REVENUE_CARD_LABEL,
+  ALL_CARD_IDS, DEFAULT_ENABLED_CARDS, CATALOG_IDS,
+  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue,
   type EventCatalogEntry,
 } from '~/utils/dashboardEventCatalog'
 import type {
   CounterSummaryResponse, CounterSeriesResponse, CounterSummaryRow,
-  DashboardConfig, GroupedEvent,
+  DashboardConfig, GroupedEvent, SourceBreakdown,
 } from '#shared/types'
 
 definePageMeta({ layout: 'default' })
@@ -102,6 +101,7 @@ const seriesData = ref<CounterSeriesResponse | null>(null)
 const recentPurchases = ref<GroupedEvent[]>([])
 const geoData = ref<any[]>([])
 const totalRevenue = ref(0)
+const sourceBreakdown = ref<SourceBreakdown | null>(null)
 
 const purchaseModalOpen = ref(false)
 const purchaseSelected = ref<GroupedEvent | null>(null)
@@ -126,20 +126,13 @@ const eventLabel = (id: string, fallback: string): string => dashboardConfig.val
 
 const visibleCards = computed(() => {
   const order = dashboardConfig.value?.card_order?.length ? dashboardConfig.value.card_order : ALL_CARD_IDS
-  const enabled = dashboardConfig.value?.enabled_cards?.length ? dashboardConfig.value.enabled_cards : ALL_CARD_IDS
-  const cards: Array<{ id: string; label: string; icon: Component; variant: EventCatalogEntry['variant']; value: number; format?: 'number' | 'currency' }> = []
+  const enabled = dashboardConfig.value?.enabled_cards?.length ? dashboardConfig.value.enabled_cards : DEFAULT_ENABLED_CARDS
+  const cards: Array<{ id: string; label: string; icon: Component; variant: EventCatalogEntry['variant']; value: number; format?: 'number' | 'currency' | 'roas' }> = []
+  const ctx = { sumOf, failedTotal: failedTotal.value, totalRevenue: totalRevenue.value, sourceBreakdown: sourceBreakdown.value }
   for (const id of order) {
     if (!enabled.includes(id)) continue
-    if (id === FAILED_CARD_ID) {
-      cards.push({ id, label: eventLabel(id, FAILED_CARD_LABEL), icon: FAILED_CARD_ICON, variant: 'danger', value: failedTotal.value })
-      continue
-    }
-    if (id === REVENUE_CARD_ID) {
-      cards.push({ id, label: eventLabel(id, REVENUE_CARD_LABEL), icon: REVENUE_CARD_ICON, variant: 'success', value: totalRevenue.value, format: 'currency' })
-      continue
-    }
     const e = catalogById.get(id)
-    if (e) cards.push({ id, label: eventLabel(id, e.label), icon: e.icon, variant: e.variant, value: sumOf(id) })
+    if (e) cards.push({ id, label: eventLabel(id, e.label), icon: e.icon, variant: e.variant, value: computeCardMetricValue(id, ctx), format: e.format })
   }
   return cards
 })
@@ -195,6 +188,7 @@ const fetchAll = async () => {
     seriesData.value = series
     recentPurchases.value = purchases.data || []
     totalRevenue.value = revenue.total_revenue ?? 0
+    sourceBreakdown.value = revenue.source_breakdown || null
     geoData.value = [...(geo || []).map((g: any) => ({ ...g, event_name: 'PageView' })), ...(geoPurchases || [])]
     loadError.value = null
   } catch (err: any) {

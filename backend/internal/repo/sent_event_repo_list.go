@@ -27,6 +27,7 @@ type ListFilter struct {
 	// IncludeUserContext preenche GroupedEvent.FirstUTMSource/LastUTMSource
 	// (usado pela página de Eventos). Fica opt-in porque exige uma query extra.
 	IncludeUserContext bool
+	TrafficSource      string
 }
 
 // ListGrouped retorna a lista agregada por (event_id, pixel_name): uma
@@ -74,6 +75,9 @@ func (r *SentEventRepo) ListGrouped(ctx context.Context, f ListFilter) ([]Groupe
 	}
 	if !f.To.IsZero() {
 		add("created_at < $N", f.To)
+	}
+	if srcCond := trafficSourceUserCond(f.TrafficSource, "u."); srcCond != "" {
+		conds = append(conds, "EXISTS (SELECT 1 FROM tracked_users u WHERE u.external_id = sent_events.external_id AND u.account_id = sent_events.account_id AND "+srcCond+")")
 	}
 	conds = append(conds, excludeHighVolumeEvents)
 	where := "WHERE " + strings.Join(conds, " AND ")

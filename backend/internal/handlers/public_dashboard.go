@@ -98,9 +98,10 @@ func (h *PublicDashboard) Summary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from, to := parsePublicRange(r)
+	src := r.URL.Query().Get("traffic_source")
 	h.writeCached(w, r, "summary", p, func(ctx context.Context) (any, error) {
 		rows, err := h.counters.SummaryByEvent(ctx, repo.SummaryFilters{
-			From: &from, To: &to, PixelName: p.Name, AccountID: p.AccountID,
+			From: &from, To: &to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		})
 		if err != nil {
 			return nil, err
@@ -118,9 +119,10 @@ func (h *PublicDashboard) Series(w http.ResponseWriter, r *http.Request) {
 	}
 	from, to := parsePublicRange(r)
 	daily := r.URL.Query().Get("granularity") == "day"
+	src := r.URL.Query().Get("traffic_source")
 	h.writeCached(w, r, "series", p, func(ctx context.Context) (any, error) {
 		pts, err := h.counters.TimeSeries(ctx, repo.SummaryFilters{
-			From: &from, To: &to, PixelName: p.Name, AccountID: p.AccountID,
+			From: &from, To: &to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		}, daily)
 		if err != nil {
 			return nil, err
@@ -137,9 +139,10 @@ func (h *PublicDashboard) Geo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from, to := parsePublicRange(r)
+	src := r.URL.Query().Get("traffic_source")
 	h.writeCached(w, r, "geo", p, func(ctx context.Context) (any, error) {
 		return h.stats.GeoDistribution(ctx, repo.StatsFilter{
-			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID,
+			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		})
 	})
 }
@@ -153,9 +156,10 @@ func (h *PublicDashboard) GeoByEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	from, to := parsePublicRange(r)
 	eventName := r.URL.Query().Get("event")
+	src := r.URL.Query().Get("traffic_source")
 	h.writeCached(w, r, "geo_event", p, func(ctx context.Context) (any, error) {
 		return h.stats.GeoDistributionByEvent(ctx, repo.StatsFilter{
-			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID,
+			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		}, eventName)
 	})
 }
@@ -168,10 +172,11 @@ func (h *PublicDashboard) Purchases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from, to := parsePublicRange(r)
+	src := r.URL.Query().Get("traffic_source")
 	h.writeCached(w, r, "purchases", p, func(ctx context.Context) (any, error) {
 		list, total, err := h.sent.ListGrouped(ctx, repo.ListFilter{
 			AccountID: p.AccountID, PixelName: p.Name, EventNames: []string{"Purchase"},
-			From: from, To: to, Limit: 50, IncludeLTV: true,
+			From: from, To: to, Limit: 50, IncludeLTV: true, TrafficSource: src,
 		})
 		if err != nil {
 			return nil, err
@@ -188,14 +193,19 @@ func (h *PublicDashboard) Revenue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	from, to := parsePublicRange(r)
+	src := r.URL.Query().Get("traffic_source")
 	h.writeCached(w, r, "revenue", p, func(ctx context.Context) (any, error) {
 		overview, err := h.stats.Overview(ctx, repo.StatsFilter{
-			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID,
+			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		})
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"total_revenue": overview.TotalRevenue}, nil
+		return map[string]any{
+			"total_revenue":    overview.TotalRevenue,
+			"traffic_quality":  overview.TrafficQuality,
+			"source_breakdown": overview.SourceBreakdown,
+		}, nil
 	})
 }
 

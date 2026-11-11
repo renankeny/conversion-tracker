@@ -154,8 +154,11 @@ func New(deps Deps) (*Server, error) {
 	adminUsersH := handlers.NewAdminUsers(deps.Pool)
 	adminUsersH.SetSessions(sessions)
 	adminDashMetaH := handlers.NewAdminDashboardMeta(pixels)
+	adminDashMetaH.SetStatsRepo(stats)
 	adminDashMetaH.SetQueryCache(queryCache)
 	adminDashMetaH.SetMetaOAuth(metaAccountRepo, metaOAuthClient)
+	adminDashGoogleH := handlers.NewAdminDashboardGoogle(pixels, googleAdsAccountRepo, googleAdsClient)
+	adminDashGoogleH.SetQueryCache(queryCache)
 	adminPixelTestH := handlers.NewAdminPixelTestEvent(pixels, deps.Cfg.MetaAPIVersion, deps.Cfg.MetaPartnerAgent, deps.Cfg.TikTokPartnerName)
 	adminPixelTestH.SetMetaOAuth(metaAccountRepo, metaOAuthClient)
 
@@ -197,9 +200,10 @@ func New(deps Deps) (*Server, error) {
 		adminTrackedUsers:   adminTrackedUsers,
 		adminStats:          handlers.NewAdminStats(stats),
 		adminCounters:       handlers.NewAdminCounters(counters),
-		adminAPIKeys:        handlers.NewAdminAPIKeys(apiKeys),
-		adminDashboardMeta:  adminDashMetaH,
-		apiEvents:           apiEventsH,
+		adminAPIKeys:         handlers.NewAdminAPIKeys(apiKeys),
+		adminDashboardMeta:   adminDashMetaH,
+		adminDashboardGoogle: adminDashGoogleH,
+		apiEvents:            apiEventsH,
 		wsEvents:            wsEventsH,
 		apiKeysRepo:         apiKeys,
 		sessions:            sessions,

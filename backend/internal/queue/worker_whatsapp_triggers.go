@@ -137,7 +137,7 @@ func evaluateAttendantTriggers(
 			GA4ClientID:      u.GA4ClientID,
 			GA4SessionID:     u.GA4SessionID,
 			Value:            valPtr,
-			Currency:         "BRL",
+			Currency:         domain.NormalizeWhatsAppCurrency(inst.Currency),
 		})
 	}
 }

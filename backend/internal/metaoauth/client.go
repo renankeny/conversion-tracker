@@ -121,14 +121,18 @@ func (c *Client) GetAdMetadata(ctx context.Context, acc *domain.MetaAccount, adI
 }
 
 func (c *Client) FetchLiveSpend(ctx context.Context, acc *domain.MetaAccount, adAccountID, timeRange string) (float64, error) {
+	res, err := c.FetchLiveInsights(ctx, acc, adAccountID, timeRange)
+	return res.Spend, err
+}
+
+func (c *Client) FetchLiveInsights(ctx context.Context, acc *domain.MetaAccount, adAccountID, timeRange string) (meta.LiveInsightsSummary, error) {
 	if adAccountID == "" {
 		adAccountID = acc.AdAccountID
 	}
-	var out struct {
-		Spend float64 `json:"spend"`
-	}
+	var out meta.LiveInsightsSummary
 	err := c.callProxy(ctx, "live_spend", acc.VaultTokenEncrypted, adAccountID, "", timeRange, nil, &out)
-	return out.Spend, err
+	out.Connected = err == nil
+	return out, err
 }
 
 func (c *Client) FetchCreativeRanking(ctx context.Context, acc *domain.MetaAccount, adAccountID, timeRange string) ([]meta.CreativeInsight, error) {

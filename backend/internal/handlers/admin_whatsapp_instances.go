@@ -103,6 +103,7 @@ type instanceUpsertInput struct {
 	PixelID            int64  `json:"pixel_id"`
 	Provider           string `json:"provider"`
 	ExternalAPIURL     string `json:"external_api_url"`
+	Currency           string `json:"currency"`
 	InstanceToken      string `json:"instance_token"`
 	PurchaseTrigger    string `json:"purchase_trigger"`
 	LeadTrigger        string `json:"lead_trigger"`
@@ -191,6 +192,7 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 		ServerID:           srvID,
 		Provider:           provider,
 		ExternalAPIURL:     strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/"),
+		Currency:           domain.NormalizeWhatsAppCurrency(in.Currency),
 		Name:               strings.TrimSpace(in.Name),
 		InstanceName:       evoName,
 		EvolutionUUID:      evoUUID,

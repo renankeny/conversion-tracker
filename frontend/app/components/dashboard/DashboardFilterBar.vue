@@ -33,7 +33,11 @@
     </div>
 
     <div class="header-controls">
-      <PixelDropdown v-model="selectedPixel" />
+      <PixelDropdown v-model="selectedPixel" :allow-all="false" />
+      <BaseDropdown
+        v-model="dashboardStore.trafficSource"
+        :options="sourceOptions"
+      />
       <PeriodSelector
         v-model="dashboardStore.period"
         v-model:customFrom="dashboardStore.customFrom"
@@ -68,6 +72,12 @@ const selectedPixel = computed({
   get: () => dashboardStore.selectedPixel,
   set: (v: string) => { dashboardStore.selectedPixel = v },
 })
+
+const sourceOptions = [
+  { value: 'all', label: 'Todas as fontes' },
+  { value: 'meta', label: 'Meta Ads' },
+  { value: 'google', label: 'Google Ads' },
+]
 
 const shareLinkLoading = ref(false)
 const linkVisible = ref(false)

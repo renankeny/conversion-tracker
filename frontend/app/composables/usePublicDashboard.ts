@@ -3,6 +3,7 @@ import type {
   CounterSummaryResponse,
   DashboardConfig,
   GroupedEventsResponse,
+  SourceBreakdown,
 } from '#shared/types'
 
 interface PublicDashboardFilters {
@@ -39,7 +40,7 @@ export const usePublicDashboard = (token: string) => {
     api.publicGet<GroupedEventsResponse>(`${base}/purchases?from=${encodeURIComponent(f.from)}&to=${encodeURIComponent(f.to)}`)
 
   const revenue = (f: PublicDashboardFilters) =>
-    api.publicGet<{ total_revenue: number }>(`${base}/revenue?from=${encodeURIComponent(f.from)}&to=${encodeURIComponent(f.to)}`)
+    api.publicGet<{ total_revenue: number; source_breakdown?: SourceBreakdown }>(`${base}/revenue?from=${encodeURIComponent(f.from)}&to=${encodeURIComponent(f.to)}`)
 
   return { meta, summary, series, geo, geoByEvent, purchases, revenue }
 }

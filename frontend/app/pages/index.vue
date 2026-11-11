@@ -10,9 +10,9 @@
     <!-- Banner de Diagnósticos e Alertas de Saúde -->
     <HealthAlertsBanner />
 
-    <!-- Cards de Eventos -->
+    <!-- Cards de Métricas & Eventos Customizáveis -->
     <div class="section-header">
-      <h3 class="section-title">Eventos</h3>
+      <h3 class="section-title">Métricas & Eventos</h3>
       <BaseButton variant="ghost" size="sm" :disabled="!selectedPixelObj" @click="cardsEditorOpen = true">
         Editar cards
       </BaseButton>
@@ -27,6 +27,23 @@
         :format="card.format"
         :variant="card.variant"
         :icon="card.icon"
+      />
+    </div>
+
+    <!-- Sessão de Rankings abaixo dos Cards: Top 3 Criativos Meta Ads & Top 5 Palavras-Chave Google Ads -->
+    <div class="section-header">
+      <h3 class="section-title">Top Criativos & Palavras-Chave</h3>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <MetaCreativeRankingCard
+        v-if="dashboardStore.trafficSource !== 'google'"
+        :creatives="metaCreatives"
+        :loading="adsLoading"
+      />
+      <GoogleKeywordRankingCard
+        v-if="dashboardStore.trafficSource !== 'meta'"
+        :keywords="googleKeywords"
+        :loading="adsLoading"
       />
     </div>
 
@@ -59,8 +76,8 @@
 
     <EventPickerModal
       v-model="cardsEditorOpen"
-      title="Escolher cards"
-      description="Selecione, ordene (setas) e renomeie os cards deste pixel."
+      title="Escolher cards da Dashboard"
+      description="Selecione, ordene (setas) e renomeie os cards de Eventos, Meta Ads, Google Ads e ROAS."
       :events="cardPickerOptions"
       :selected="enabledCardIds"
       :order="cardOrder"
@@ -87,6 +104,8 @@
 import DashboardFilterBar from '~/components/dashboard/DashboardFilterBar.vue'
 import HealthAlertsBanner from '~/components/dashboard/HealthAlertsBanner.vue'
 import TrafficQualityCard from '~/components/dashboard/TrafficQualityCard.vue'
+import MetaCreativeRankingCard from '~/components/dashboard/MetaCreativeRankingCard.vue'
+import GoogleKeywordRankingCard from '~/components/dashboard/GoogleKeywordRankingCard.vue'
 import KpiCard from '~/components/dashboard/KpiCard.vue'
 import EventsChart from '~/components/dashboard/EventsChart.vue'
 import ConversionFunnel from '~/components/dashboard/ConversionFunnel.vue'
@@ -104,8 +123,8 @@ const { formatTitle } = useBranding()
 useHead({ title: computed(() => formatTitle('Dashboard')) })
 
 const {
-  dashboardStore, loading, summaryData, seriesData, trafficQuality, filteredSeriesPoints,
-  recentPurchases, geoData, purchaseModalOpen, purchaseSelected, onPurchaseSelect,
+  dashboardStore, loading, adsLoading, summaryData, seriesData, trafficQuality, filteredSeriesPoints,
+  metaCreatives, googleKeywords, recentPurchases, geoData, purchaseModalOpen, purchaseSelected, onPurchaseSelect,
   headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, selectedPixelObj,
   cardsEditorOpen, savingCardsPrefs, enabledCardIds, cardOrder, cardPickerOptions, visibleCards, onSaveCards,
   funnelEditorOpen, savingFunnelPrefs, enabledFunnelEvents, funnelOrder, funnelPickerOptions, funnelSteps, onSaveFunnelEvents,

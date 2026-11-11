@@ -17,6 +17,36 @@ export interface DashboardStats {
   tracked_users: number
   total_revenue?: number
   traffic_quality?: TrafficQualityStats
+  source_breakdown?: SourceBreakdown
+}
+
+export interface SourceMetrics {
+  visitors: number
+  leads: number
+  purchases: number
+  revenue: number
+}
+
+export interface SourceBreakdown {
+  meta: SourceMetrics
+  google: SourceMetrics
+}
+
+export interface AdPlatformLiveInsights {
+  spend: number
+  clicks: number
+  impressions: number
+  connected: boolean
+}
+
+export interface GoogleKeywordInsight {
+  keyword: string
+  match_type: string
+  campaign_name: string
+  clicks: number
+  impressions: number
+  spend: number
+  cpc: number
 }
 
 export interface TrafficQualityStats {

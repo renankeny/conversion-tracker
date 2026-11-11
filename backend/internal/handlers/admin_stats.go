@@ -60,7 +60,7 @@ func (h *AdminStats) Overview(w http.ResponseWriter, r *http.Request) {
 // Geo GET /admin/stats/geo?from=&to=&pixel=
 func (h *AdminStats) Geo(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := repo.StatsFilter{PixelName: q.Get("pixel")}
+	f := repo.StatsFilter{PixelName: q.Get("pixel"), TrafficSource: q.Get("traffic_source")}
 
 	scope := TenantFromContext(r.Context())
 	f.AccountID = scope.AccountID
@@ -95,7 +95,7 @@ func (h *AdminStats) Geo(w http.ResponseWriter, r *http.Request) {
 // GeoByEvent GET /admin/stats/geo-by-event?from=&to=&pixel=&event=
 func (h *AdminStats) GeoByEvent(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := repo.StatsFilter{PixelName: q.Get("pixel")}
+	f := repo.StatsFilter{PixelName: q.Get("pixel"), TrafficSource: q.Get("traffic_source")}
 	eventName := q.Get("event") // PageView, Purchase, etc
 
 	scope := TenantFromContext(r.Context())

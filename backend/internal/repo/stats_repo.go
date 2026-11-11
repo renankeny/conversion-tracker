@@ -46,8 +46,9 @@ type Overview struct {
 	PerDay         []DailyBucket       `json:"per_day"`         // série temporal
 	TotalEvents    int64               `json:"total_events"`    // soma de tudo
 	TotalRevenue   float64             `json:"total_revenue"`   // soma de purchase_value onde event='Purchase' e status='sent'
-	TrackedUsers   int64               `json:"tracked_users"`   // total de tracked_users (sem filtro de janela; com filtro de pixel)
-	TrafficQuality TrafficQualityStats `json:"traffic_quality"` // auditoria de bots vs humanos
+	TrackedUsers    int64               `json:"tracked_users"`    // total de tracked_users (sem filtro de janela; com filtro de pixel)
+	TrafficQuality  TrafficQualityStats `json:"traffic_quality"`  // auditoria de bots vs humanos
+	SourceBreakdown SourceBreakdown     `json:"source_breakdown"` // métricas rastreadas separadas por Meta Ads e Google Ads
 }
 
 // DailyBucket é uma linha da série temporal por dia.
@@ -101,20 +102,9 @@ func (s *StatsRepo) Overview(ctx context.Context, f StatsFilter) (*Overview, err
 
 	fromTable := "sent_events e"
 	joinClause := ""
-	if f.TrafficSource != "" && f.TrafficSource != "all" {
-		joinClause = " JOIN tracked_users u ON e.external_id = u.external_id"
-		switch f.TrafficSource {
-		case "meta_lp":
-			conds = append(conds, "(u.last_utm_source ILIKE '%facebook%' OR u.last_utm_source ILIKE '%instagram%' OR u.last_utm_source ILIKE '%meta%')")
-			conds = append(conds, "(e.payload->'data'->0->>'action_source' IS DISTINCT FROM 'business_messaging')")
-		case "meta_wpp":
-			conds = append(conds, "(u.last_utm_source ILIKE '%facebook%' OR u.last_utm_source ILIKE '%instagram%' OR u.last_utm_source ILIKE '%meta%')")
-			conds = append(conds, "(e.payload->'data'->0->>'action_source' = 'business_messaging' OR e.payload->'data'->0->>'messaging_channel' = 'whatsapp')")
-		case "google":
-			conds = append(conds, "(u.gclid <> '' OR u.last_utm_source ILIKE '%google%')")
-		case "tiktok":
-			conds = append(conds, "(u.ttclid <> '' OR u.last_utm_source ILIKE '%tiktok%')")
-		}
+	if srcCond := trafficSourceUserCond(f.TrafficSource, "u."); srcCond != "" {
+		joinClause = " JOIN tracked_users u ON e.external_id = u.external_id AND e.account_id = u.account_id"
+		conds = append(conds, srcCond)
 	}
 
 	where := ""
@@ -209,6 +199,7 @@ func (s *StatsRepo) Overview(ctx context.Context, f StatsFilter) (*Overview, err
 	if err := s.populateTrackedUsersAndQuality(ctx, f, out); err != nil {
 		return nil, err
 	}
+	_ = s.populateSourceBreakdown(ctx, f, out)
 
 	return out, nil
 }

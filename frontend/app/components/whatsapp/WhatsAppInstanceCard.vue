@@ -41,8 +41,8 @@
         </div>
 
         <div class="meta-row">
-          <span class="meta-label">Pixel vinculado</span>
-          <span class="meta-val">{{ instance.pixel_name || `#${instance.pixel_id}` }}</span>
+          <span class="meta-label">Pixel & Moeda</span>
+          <span class="meta-val">{{ instance.pixel_name || `#${instance.pixel_id}` }} · {{ instance.currency || 'BRL' }}</span>
         </div>
 
         <div class="meta-row">

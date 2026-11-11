@@ -52,8 +52,9 @@ type routeHandlers struct {
 	adminStats          *handlers.AdminStats
 	adminCounters       *handlers.AdminCounters
 	adminAPIKeys        *handlers.AdminAPIKeys
-	adminDashboardMeta  *handlers.AdminDashboardMeta
-	apiEvents           *handlers.APIEvents
+	adminDashboardMeta   *handlers.AdminDashboardMeta
+	adminDashboardGoogle *handlers.AdminDashboardGoogle
+	apiEvents            *handlers.APIEvents
 	wsEvents            *handlers.WSEvents
 	apiKeysRepo         *repo.APIKeyRepo
 	sessions            *cache.SessionStore

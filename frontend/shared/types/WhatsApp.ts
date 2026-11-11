@@ -43,6 +43,7 @@ export interface WhatsAppInstance {
   server_id: number
   provider: WhatsAppProvider
   external_api_url: string
+  currency: string
   has_instance_token: boolean
   webhook_url?: string
   name: string
@@ -69,6 +70,7 @@ export interface WhatsAppInstanceInput {
   pixel_id: number
   provider?: WhatsAppProvider
   external_api_url?: string
+  currency?: string
   instance_token?: string
   purchase_trigger?: string
   lead_trigger?: string

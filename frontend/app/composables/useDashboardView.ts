@@ -1,15 +1,14 @@
 import type { Component } from 'vue'
-import { AlertTriangle } from 'lucide-vue-next'
 import { useDashboardStore } from '~/stores/useDashboardStore'
 import { useTenantStore } from '~/stores/useTenantStore'
 import {
-  EVENT_CATALOG, FAILED_CARD_ID, FAILED_CARD_LABEL, ALL_CARD_IDS, CATALOG_IDS,
-  DEFAULT_FUNNEL_EVENTS, catalogById, REVENUE_CARD_ID, REVENUE_CARD_ICON, REVENUE_CARD_LABEL,
+  EVENT_CATALOG, FULL_CARD_CATALOG, ALL_CARD_IDS, DEFAULT_ENABLED_CARDS, CATALOG_IDS,
+  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, type EventCatalogEntry,
 } from '~/utils/dashboardEventCatalog'
-import type { EventCatalogEntry } from '~/utils/dashboardEventCatalog'
 import type {
   CounterSummaryResponse, CounterSeriesResponse, CounterSummaryRow,
-  DashboardConfig, GroupedEvent, TrafficQualityStats,
+  DashboardConfig, GroupedEvent, TrafficQualityStats, SourceBreakdown,
+  AdPlatformLiveInsights, MetaCreativeInsight, GoogleKeywordInsight,
 } from '#shared/types'
 
 export const useDashboardView = () => {
@@ -31,6 +30,12 @@ export const useDashboardView = () => {
   const summaryData = ref<CounterSummaryResponse | null>(null)
   const seriesData = ref<CounterSeriesResponse | null>(null)
   const trafficQuality = ref<TrafficQualityStats | undefined>()
+  const sourceBreakdown = ref<SourceBreakdown | null>(null)
+  const metaInsights = ref<AdPlatformLiveInsights | null>(null)
+  const googleInsights = ref<AdPlatformLiveInsights | null>(null)
+  const metaCreatives = ref<MetaCreativeInsight[]>([])
+  const googleKeywords = ref<GoogleKeywordInsight[]>([])
+  const adsLoading = ref(false)
   const eventsFilterMap = ref<Record<string, string[]>>({})
   const recentPurchases = ref<GroupedEvent[]>([])
   const geoData = ref<any[]>([])
@@ -71,7 +76,7 @@ export const useDashboardView = () => {
 
   const cardsEditorOpen = ref(false)
   const savingCardsPrefs = ref(false)
-  const enabledCardIds = ref<string[]>([...ALL_CARD_IDS])
+  const enabledCardIds = ref<string[]>([...DEFAULT_ENABLED_CARDS])
   const cardOrder = ref<string[]>([...ALL_CARD_IDS])
   const funnelEditorOpen = ref(false)
   const savingFunnelPrefs = ref(false)
@@ -82,8 +87,10 @@ export const useDashboardView = () => {
   const eventLabel = (id: string, fallback: string): string => eventLabelOverrides.value[id] || fallback
 
   const applyDashboardConfig = (cfg?: DashboardConfig) => {
-    enabledCardIds.value = cfg?.enabled_cards?.length ? cfg.enabled_cards : [...ALL_CARD_IDS]
-    cardOrder.value = cfg?.card_order?.length ? cfg.card_order : [...ALL_CARD_IDS]
+    enabledCardIds.value = cfg?.enabled_cards?.length ? cfg.enabled_cards : [...DEFAULT_ENABLED_CARDS]
+    const savedOrder = cfg?.card_order?.length ? cfg.card_order : [...ALL_CARD_IDS]
+    const missing = ALL_CARD_IDS.filter((id) => !savedOrder.includes(id))
+    cardOrder.value = [...savedOrder, ...missing]
     enabledFunnelEvents.value = cfg?.enabled_funnel_events?.length ? cfg.enabled_funnel_events : [...DEFAULT_FUNNEL_EVENTS]
     funnelOrder.value = cfg?.funnel_order?.length ? cfg.funnel_order : [...CATALOG_IDS]
     eventLabelOverrides.value = cfg?.event_labels || {}
@@ -91,26 +98,20 @@ export const useDashboardView = () => {
 
   watch(selectedPixelObj, (p) => applyDashboardConfig(p?.dashboard_config), { immediate: true })
 
-  const cardPickerOptions = computed(() => [
-    ...EVENT_CATALOG.map((e) => ({ id: e.id, label: eventLabel(e.id, e.label) })),
-    { id: FAILED_CARD_ID, label: eventLabel(FAILED_CARD_ID, FAILED_CARD_LABEL) },
-    { id: REVENUE_CARD_ID, label: eventLabel(REVENUE_CARD_ID, REVENUE_CARD_LABEL) },
-  ])
+  const cardPickerOptions = computed(() =>
+    FULL_CARD_CATALOG.map((e) => ({ id: e.id, label: eventLabel(e.id, e.label), category: e.category })),
+  )
 
   const visibleCards = computed(() => {
-    const cards: Array<{ id: string; label: string; icon: Component; variant: EventCatalogEntry['variant']; value: number; format?: 'number' | 'currency' }> = []
+    const cards: Array<{ id: string; label: string; icon: Component; variant: EventCatalogEntry['variant']; value: number; format?: 'number' | 'currency' | 'roas' }> = []
+    const ctx = {
+      sumOf, failedTotal: kpis.value.failed, totalRevenue: totalRevenue.value,
+      metaInsights: metaInsights.value, googleInsights: googleInsights.value, sourceBreakdown: sourceBreakdown.value,
+    }
     for (const id of cardOrder.value) {
       if (!enabledCardIds.value.includes(id)) continue
-      if (id === FAILED_CARD_ID) {
-        cards.push({ id, label: eventLabel(id, FAILED_CARD_LABEL), icon: AlertTriangle, variant: 'danger', value: kpis.value.failed })
-        continue
-      }
-      if (id === REVENUE_CARD_ID) {
-        cards.push({ id, label: eventLabel(id, REVENUE_CARD_LABEL), icon: REVENUE_CARD_ICON, variant: 'primary', value: totalRevenue.value, format: 'currency' })
-        continue
-      }
       const e = catalogById.get(id)
-      if (e) cards.push({ id, label: eventLabel(id, e.label), icon: e.icon, variant: e.variant, value: sumOf(id) })
+      if (e) cards.push({ id, label: eventLabel(id, e.label), icon: e.icon, variant: e.variant, value: computeCardMetricValue(id, ctx), format: e.format })
     }
     return cards
   })
@@ -158,37 +159,57 @@ export const useDashboardView = () => {
     finally { savingFunnelPrefs.value = false }
   }
 
+  const ensurePixelSelected = () => {
+    if (!pixelStore.pixels.length) return
+    if (!selectedPixel.value || !pixelStore.pixels.some((p) => p.name === selectedPixel.value)) {
+      selectedPixel.value = pixelStore.pixels[0]?.name || ''
+    }
+  }
+
   const fetchAll = async () => {
+    ensurePixelSelected()
     loading.value = true
+    adsLoading.value = true
     try {
       const { from, to } = dashboardStore.getDateRange()
       const granularity = dashboardStore.granularityFor
+      const px = selectedPixel.value
+      const ts = dashboardStore.trafficSource
       const [summary, series, purchases, geo, geoPurchases, revenue] = await Promise.all([
-        dashboard.summary({ from, to, pixel: selectedPixel.value }),
-        dashboard.series({ from, to, granularity, pixel: selectedPixel.value }),
-        dashboard.recentPurchases({ from, to, limit: 50, pixel: selectedPixel.value }),
-        dashboard.geoStats({ from, to, pixel: selectedPixel.value }),
-        dashboard.geoStatsByEvent({ from, to, event: 'Purchase', pixel: selectedPixel.value }),
-        dashboard.revenue({ from, to, pixel: selectedPixel.value }),
+        dashboard.summary({ from, to, pixel: px, traffic_source: ts }),
+        dashboard.series({ from, to, granularity, pixel: px, traffic_source: ts }),
+        dashboard.recentPurchases({ from, to, limit: 50, pixel: px, traffic_source: ts }),
+        dashboard.geoStats({ from, to, pixel: px, traffic_source: ts }),
+        dashboard.geoStatsByEvent({ from, to, event: 'Purchase', pixel: px, traffic_source: ts }),
+        dashboard.revenue({ from, to, pixel: px, traffic_source: ts }),
       ])
       summaryData.value = summary; seriesData.value = series; recentPurchases.value = purchases.data || []
       totalRevenue.value = revenue.total_revenue ?? 0; trafficQuality.value = revenue.traffic_quality
-      const mappedGeo = (geo || []).map((g: any) => ({ ...g, event_name: 'PageView' }))
-      geoData.value = [...mappedGeo, ...(geoPurchases || [])]
+      sourceBreakdown.value = revenue.source_breakdown || null
+      geoData.value = [...(geo || []).map((g: any) => ({ ...g, event_name: 'PageView' })), ...(geoPurchases || [])]
+
+      if (px) {
+        const [mLive, mRank, gLive, gRank] = await Promise.all([
+          dashboard.metaLiveInsights({ pixel_name: px, from, to }).catch(() => null),
+          dashboard.metaCreativeRanking({ pixel_name: px, from, to }).catch(() => null),
+          dashboard.googleLiveInsights({ pixel_name: px, from, to }).catch(() => null),
+          dashboard.googleKeywordRanking({ pixel_name: px, from, to }).catch(() => null),
+        ])
+        metaInsights.value = mLive; metaCreatives.value = (Array.isArray(mRank) ? mRank : []).slice(0, 3)
+        googleInsights.value = gLive; googleKeywords.value = (Array.isArray(gRank) ? gRank : []).slice(0, 5)
+      }
     } catch (error: any) {
       toast.error('Erro', error.message || 'Não foi possível carregar a dashboard')
-    } finally { loading.value = false }
+    } finally { loading.value = false; adsLoading.value = false }
   }
 
   const loadEventsFilter = async () => {
-    try {
-      const res = await accountsApi.getEventsFilter()
-      eventsFilterMap.value = res.events_filter || {}
-    } catch { eventsFilterMap.value = {} }
+    try { eventsFilterMap.value = (await accountsApi.getEventsFilter()).events_filter || {} }
+    catch { eventsFilterMap.value = {} }
   }
 
   const refresh = () => fetchAll()
-  watch([() => dashboardStore.period, () => dashboardStore.customFrom, () => dashboardStore.customTo, selectedPixel], () => {
+  watch([() => dashboardStore.period, () => dashboardStore.customFrom, () => dashboardStore.customTo, () => dashboardStore.trafficSource, selectedPixel], () => {
     if (!initialized.value) return
     if (dashboardStore.period !== 'custom' || (dashboardStore.customFrom && dashboardStore.customTo)) refresh()
   })
@@ -196,47 +217,21 @@ export const useDashboardView = () => {
   watch(() => tenantStore.switchVersion, async () => {
     initialized.value = false
     await Promise.all([pixelStore.fetch(), loadEventsFilter()])
+    ensurePixelSelected()
     initialized.value = true
     await fetchAll()
   })
 
-  watch(() => liveStore.lastEventSeq, () => {
-    const ev = liveStore.events[0]
-    if (!ev || !dashboardStore.periodIncludesToday) return
-    if (selectedPixel.value && ev.pixel_name !== selectedPixel.value) return
-    if (summaryData.value) {
-      let row = summaryData.value.events.find((e) => e.event_name === ev.event_name)
-      if (!row) { row = { event_name: ev.event_name, count_total: 0, count_sent: 0, count_failed: 0 }; summaryData.value.events.push(row) }
-      row.count_total++; if (ev.status === 'sent') row.count_sent++; else row.count_failed++
-    }
-    if (ev.event_name === 'Purchase') {
-      if (ev.value) totalRevenue.value += ev.value
-      recentPurchases.value.unshift({
-        event_id: ev.event_id, event_name: ev.event_name, pixel_name: ev.pixel_name,
-        external_id: ev.external_id, purchase_value: ev.value || 0, created_at: ev.ts,
-        channels: (ev.channels || 'meta').split(',').map((c) => ({
-          id: 0, channel: c as any, status: ev.status, response_code: ev.status === 'sent' ? 200 : 400, has_error: ev.status === 'failed',
-        })),
-      } as GroupedEvent)
-      if (recentPurchases.value.length > 50) recentPurchases.value.pop()
-    }
-    if (geoData.value) {
-      geoData.value.push({ country: ev.country || 'BR', state: ev.state || '', city: ev.city || '', count: 1, event_name: ev.event_name, ts: ev.ts })
-    }
-  })
-
   onMounted(async () => {
     await Promise.all([pixelStore.fetch().catch(() => {}), loadEventsFilter()])
-    if (selectedPixel.value && pixelStore.pixels.length && !pixelStore.pixels.some((p) => p.name === selectedPixel.value)) {
-      selectedPixel.value = ''
-    }
+    ensurePixelSelected()
     initialized.value = true
     await fetchAll()
   })
 
   return {
-    dashboardStore, loading, summaryData, seriesData, trafficQuality, filteredSeriesPoints,
-    recentPurchases, geoData, purchaseModalOpen, purchaseSelected, onPurchaseSelect,
+    dashboardStore, loading, adsLoading, summaryData, seriesData, trafficQuality, filteredSeriesPoints,
+    metaCreatives, googleKeywords, recentPurchases, geoData, purchaseModalOpen, purchaseSelected, onPurchaseSelect,
     headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, selectedPixelObj,
     cardsEditorOpen, savingCardsPrefs, enabledCardIds, cardOrder, cardPickerOptions, visibleCards, onSaveCards,
     funnelEditorOpen, savingFunnelPrefs, enabledFunnelEvents, funnelOrder, funnelPickerOptions, funnelSteps, onSaveFunnelEvents,

@@ -50,6 +50,9 @@ func (h *AdminWhatsAppInstances) Update(w http.ResponseWriter, r *http.Request) 
 	if strings.TrimSpace(in.Name) != "" {
 		inst.Name = strings.TrimSpace(in.Name)
 	}
+	if strings.TrimSpace(in.Currency) != "" {
+		inst.Currency = domain.NormalizeWhatsAppCurrency(in.Currency)
+	}
 	if inst.IsExternalUazapi() {
 		if in.Provider == domain.WhatsAppProviderAPIPremium || in.Provider == domain.WhatsAppProviderUazapi {
 			inst.Provider = in.Provider

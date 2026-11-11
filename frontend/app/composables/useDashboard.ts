@@ -1,9 +1,12 @@
 import type {
+  AdPlatformLiveInsights,
   CounterFilters,
   CounterSeriesResponse,
   CounterSummaryResponse,
   EventFilters,
+  GoogleKeywordInsight,
   GroupedEventsResponse,
+  SourceBreakdown,
   TrafficQualityStats,
 } from '#shared/types'
 
@@ -32,9 +35,13 @@ export const useDashboard = () => {
   }
 
   const revenue = (filters: CounterFilters = {}) => {
-    return api.get<{ total_revenue: number; total_events: number; tracked_users: number; traffic_quality?: TrafficQualityStats }>(
-      '/admin/stats' + buildQuery(filters)
-    )
+    return api.get<{
+      total_revenue: number
+      total_events: number
+      tracked_users: number
+      traffic_quality?: TrafficQualityStats
+      source_breakdown?: SourceBreakdown
+    }>('/admin/stats' + buildQuery(filters))
   }
 
   const geoStatsByEvent = (filters: CounterFilters & { event?: string } = {}) => {
@@ -42,11 +49,19 @@ export const useDashboard = () => {
   }
 
   const metaLiveInsights = (filters: { pixel_name: string; from: string; to: string }) => {
-    return api.get<{ spend: number }>('/admin/dashboard/meta/live-insights' + buildQuery(filters))
+    return api.get<AdPlatformLiveInsights>('/admin/dashboard/meta/live-insights' + buildQuery(filters))
   }
 
   const metaCreativeRanking = (filters: { pixel_name: string; from: string; to: string }) => {
     return api.get<MetaCreativeInsight[]>('/admin/dashboard/meta/creative-ranking' + buildQuery(filters))
+  }
+
+  const googleLiveInsights = (filters: { pixel_name: string; from: string; to: string }) => {
+    return api.get<AdPlatformLiveInsights>('/admin/dashboard/google/live-insights' + buildQuery(filters))
+  }
+
+  const googleKeywordRanking = (filters: { pixel_name: string; from: string; to: string }) => {
+    return api.get<GoogleKeywordInsight[]>('/admin/dashboard/google/keyword-ranking' + buildQuery(filters))
   }
 
   return {
@@ -58,6 +73,8 @@ export const useDashboard = () => {
     revenue,
     metaLiveInsights,
     metaCreativeRanking,
+    googleLiveInsights,
+    googleKeywordRanking,
   }
 }
 
@@ -66,6 +83,9 @@ export interface MetaCreativeInsight {
   ad_name: string
   spend: string
   clicks: string
+  leads?: number
+  purchases?: number
+  placement?: string
   image_url?: string
   thumbnail_url?: string
 }

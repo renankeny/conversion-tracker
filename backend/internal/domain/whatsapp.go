@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	WhatsAppOriginMetaCTWA       = "meta_ads_ctwa"
@@ -33,6 +36,27 @@ func NormalizeWhatsAppProvider(p string) string {
 	}
 }
 
+var validMetaCurrencies = map[string]bool{
+	"AED": true, "ARS": true, "AUD": true, "BDT": true, "BOB": true, "BRL": true,
+	"CAD": true, "CHF": true, "CLP": true, "CNY": true, "COP": true, "CRC": true,
+	"CZK": true, "DKK": true, "DOP": true, "DZD": true, "EGP": true, "EUR": true,
+	"GBP": true, "GTQ": true, "HKD": true, "HNL": true, "HUF": true, "IDR": true,
+	"ILS": true, "INR": true, "ISK": true, "JPY": true, "KES": true, "KRW": true,
+	"LKR": true, "MAD": true, "MOP": true, "MXN": true, "MYR": true, "NGN": true,
+	"NIO": true, "NOK": true, "NZD": true, "PEN": true, "PHP": true, "PKR": true,
+	"PLN": true, "PYG": true, "QAR": true, "RON": true, "RUB": true, "SAR": true,
+	"SEK": true, "SGD": true, "THB": true, "TRY": true, "TWD": true, "UAH": true,
+	"USD": true, "UYU": true, "VES": true, "VND": true, "ZAR": true,
+}
+
+func NormalizeWhatsAppCurrency(c string) string {
+	code := strings.ToUpper(strings.TrimSpace(c))
+	if validMetaCurrencies[code] {
+		return code
+	}
+	return "BRL"
+}
+
 // WhatsAppServer representa o servidor Evolution Go configurado por uma conta/cliente.
 type WhatsAppServer struct {
 	ID        int64     `json:"id"`
@@ -55,6 +79,7 @@ type WhatsAppInstance struct {
 	ServerID           int64     `json:"server_id"`
 	Provider           string    `json:"provider"`
 	ExternalAPIURL     string    `json:"external_api_url"`
+	Currency           string    `json:"currency"`
 	HasInstanceToken   bool      `json:"has_instance_token"`
 	WebhookURL         string    `json:"webhook_url,omitempty"`
 	Name               string    `json:"name"`

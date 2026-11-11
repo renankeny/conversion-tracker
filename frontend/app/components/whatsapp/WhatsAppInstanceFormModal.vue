@@ -23,13 +23,19 @@
         />
       </div>
 
-      <BaseDropdown
-        v-model="form.pixel_id"
-        label="Pixel vinculado (Meta CAPI / Google Ads / TikTok)"
-        placeholder="Selecione um Pixel..."
-        :options="pixelOptions"
-        hint="Conversões de CTWA, gatilhos e CRM desta conexão serão enviadas para este Pixel."
-      />
+      <div class="grid-2">
+        <BaseDropdown
+          v-model="form.pixel_id"
+          label="Pixel vinculado (Meta CAPI / Google Ads / TikTok)"
+          placeholder="Selecione um Pixel..."
+          :options="pixelOptions"
+        />
+        <BaseDropdown
+          v-model="form.currency"
+          label="Moeda da Operação (Meta / Ads)"
+          :options="META_CURRENCY_OPTIONS"
+        />
+      </div>
 
       <div v-if="isExternalProvider" class="provider-box">
         <div class="box-head">
@@ -99,6 +105,7 @@
 
 <script setup lang="ts">
 import type { Pixel, WhatsAppInstance, WhatsAppInstanceInput, WhatsAppProvider } from '#shared/types'
+import { META_CURRENCY_OPTIONS } from '~/utils/metaCurrencies'
 
 const props = defineProps<{
   modelValue: boolean
@@ -122,6 +129,7 @@ const form = reactive({
   name: '',
   provider: 'evolution_go' as WhatsAppProvider,
   pixel_id: 0 as number,
+  currency: 'BRL',
   auto_create_crm_lead: true,
   default_crm_stage_id: 0 as number,
   lead_trigger: '',
@@ -167,6 +175,7 @@ watch(
       form.name = inst.name
       form.provider = inst.provider || 'evolution_go'
       form.pixel_id = inst.pixel_id
+      form.currency = inst.currency || 'BRL'
       form.auto_create_crm_lead = inst.auto_create_crm_lead
       form.default_crm_stage_id = inst.default_crm_stage_id || 0
       form.lead_trigger = inst.lead_trigger || ''
@@ -178,6 +187,7 @@ watch(
       form.name = ''
       form.provider = props.hasEvolutionServer === false ? 'api_premium' : 'evolution_go'
       form.pixel_id = props.pixels[0]?.id || 0
+      form.currency = 'BRL'
       form.auto_create_crm_lead = true
       form.default_crm_stage_id = 0
       form.lead_trigger = ''
@@ -198,6 +208,7 @@ const onSubmit = () => {
     name: form.name.trim(),
     provider: form.provider,
     pixel_id: Number(form.pixel_id),
+    currency: form.currency || 'BRL',
     auto_create_crm_lead: form.auto_create_crm_lead,
     default_crm_stage_id: form.default_crm_stage_id > 0 ? Number(form.default_crm_stage_id) : null,
     lead_trigger: form.lead_trigger.trim(),

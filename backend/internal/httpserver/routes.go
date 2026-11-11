@@ -231,6 +231,8 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 			r.Post("/admin/google-ads-accounts/{id}/test-event", h.adminGoogleAds.SendTestEvent)
 			r.Get("/admin/dashboard/meta/live-insights", h.adminDashboardMeta.LiveInsights)
 			r.Get("/admin/dashboard/meta/creative-ranking", h.adminDashboardMeta.CreativeRanking)
+			r.Get("/admin/dashboard/google/live-insights", h.adminDashboardGoogle.LiveInsights)
+			r.Get("/admin/dashboard/google/keyword-ranking", h.adminDashboardGoogle.KeywordRanking)
 			registerWhatsAppLongAdminRoutes(r, h)
 		})
 	})

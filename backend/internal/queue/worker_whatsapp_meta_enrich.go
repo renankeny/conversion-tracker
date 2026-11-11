@@ -160,6 +160,7 @@ func enrichAndDispatchCTWALead(
 		TTP:              u.TTP,
 		GA4ClientID:      u.GA4ClientID,
 		GA4SessionID:     u.GA4SessionID,
+		Currency:         domain.NormalizeWhatsAppCurrency(inst.Currency),
 	})
 }
 

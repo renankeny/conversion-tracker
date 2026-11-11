@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { setBrowserCookie } from '~/utils/cookies'
 
 export type PeriodValue = 'today' | 'yesterday' | '7d' | '30d' | '60d' | '90d' | 'custom'
+export type DashboardTrafficSource = 'all' | 'meta' | 'google'
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 const SAO_PAULO_OFFSET = '-03:00'
@@ -83,6 +84,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const customFrom = ref('')
   const customTo = ref('')
   const selectedPixel = ref('')
+  const trafficSource = ref<DashboardTrafficSource>('all')
   const hydrated = ref(false)
 
   function hydrate(init: {
@@ -132,6 +134,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     customFrom,
     customTo,
     selectedPixel,
+    trafficSource,
     hydrated,
     hydrate,
     setSelectedPixel,

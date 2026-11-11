@@ -28,15 +28,8 @@ func (s *StatsRepo) populateTrackedUsersAndQuality(ctx context.Context, f StatsF
 		tuConds = append(tuConds, "(last_seen_at < "+tuAdd(f.To)+" OR created_at < "+tuAdd(f.To)+")")
 	}
 
-	switch f.TrafficSource {
-	case "meta_lp":
-		tuConds = append(tuConds, "(last_utm_source ILIKE '%facebook%' OR last_utm_source ILIKE '%instagram%' OR last_utm_source ILIKE '%meta%')", "(wa_chat_id = '' OR wa_chat_id IS NULL)")
-	case "meta_wpp":
-		tuConds = append(tuConds, "(last_utm_source ILIKE '%facebook%' OR last_utm_source ILIKE '%instagram%' OR last_utm_source ILIKE '%meta%')", "(wa_chat_id <> '' AND wa_chat_id IS NOT NULL)")
-	case "google":
-		tuConds = append(tuConds, "(gclid <> '' OR last_utm_source ILIKE '%google%')")
-	case "tiktok":
-		tuConds = append(tuConds, "(ttclid <> '' OR last_utm_source ILIKE '%tiktok%')")
+	if srcCond := trafficSourceUserCond(f.TrafficSource, ""); srcCond != "" {
+		tuConds = append(tuConds, srcCond)
 	}
 
 	tuWhere := ""
@@ -114,6 +107,13 @@ func buildGeoConds(f StatsFilter, prefix string, extraEventName string) ([]strin
 	}
 	if extraEventName != "" {
 		conds = append(conds, prefix+"event_name = "+add(extraEventName))
+	}
+	if srcCond := trafficSourceUserCond(f.TrafficSource, "u."); srcCond != "" {
+		if prefix == "" {
+			conds = append(conds, trafficSourceUserCond(f.TrafficSource, ""))
+		} else {
+			conds = append(conds, srcCond)
+		}
 	}
 	return conds, args
 }

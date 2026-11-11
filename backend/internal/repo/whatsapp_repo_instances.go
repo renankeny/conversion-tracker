@@ -13,7 +13,7 @@ import (
 
 const selectInstanceColumns = `
 	i.id, i.account_id, i.pixel_id, COALESCE(p.name, ''), COALESCE(i.server_id, 0),
-	COALESCE(i.provider, 'evolution_go'), COALESCE(i.external_api_url, ''),
+	COALESCE(i.provider, 'evolution_go'), COALESCE(i.external_api_url, ''), COALESCE(i.currency, 'BRL'),
 	i.name, i.instance_name, i.evolution_uuid, i.instance_token_encrypted, i.webhook_secret,
 	i.owner_jid, i.profile_name, i.profile_pic_url,
 	i.share_token, i.connection_status,
@@ -27,7 +27,7 @@ func scanWhatsAppInstance(scanner pgx.Row, i *domain.WhatsAppInstance) error {
 	var encInstToken, encServerKey string
 	err := scanner.Scan(
 		&i.ID, &i.AccountID, &i.PixelID, &i.PixelName, &i.ServerID,
-		&i.Provider, &i.ExternalAPIURL,
+		&i.Provider, &i.ExternalAPIURL, &i.Currency,
 		&i.Name, &i.InstanceName, &i.EvolutionUUID, &encInstToken, &i.WebhookSecret,
 		&i.OwnerJID, &i.ProfileName, &i.ProfilePicURL,
 		&i.ShareToken, &i.ConnectionStatus,
@@ -40,6 +40,7 @@ func scanWhatsAppInstance(scanner pgx.Row, i *domain.WhatsAppInstance) error {
 		return err
 	}
 	i.Provider = domain.NormalizeWhatsAppProvider(i.Provider)
+	i.Currency = domain.NormalizeWhatsAppCurrency(i.Currency)
 	if encServerKey != "" {
 		i.ServerAPIKey = util.Decrypt(encServerKey)
 	}
@@ -59,22 +60,23 @@ func (r *WhatsAppRepo) CreateInstance(ctx context.Context, inst *domain.WhatsApp
 		inst.HasInstanceToken = true
 	}
 	inst.Provider = domain.NormalizeWhatsAppProvider(inst.Provider)
+	inst.Currency = domain.NormalizeWhatsAppCurrency(inst.Currency)
 	var srvID *int64
 	if inst.ServerID > 0 {
 		srvID = &inst.ServerID
 	}
 	return r.db.QueryRow(ctx, `
 		INSERT INTO whatsapp_instances (
-			account_id, pixel_id, server_id, provider, external_api_url,
+			account_id, pixel_id, server_id, provider, external_api_url, currency,
 			name, instance_name, evolution_uuid, instance_token_encrypted, webhook_secret,
 			share_token, connection_status,
 			purchase_trigger, lead_trigger, custom_event_name, custom_event_trigger,
 			auto_create_crm_lead, default_crm_stage_id, enabled
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		RETURNING id, created_at, updated_at
 	`,
-		inst.AccountID, inst.PixelID, srvID, inst.Provider, strings.TrimSpace(inst.ExternalAPIURL),
+		inst.AccountID, inst.PixelID, srvID, inst.Provider, strings.TrimSpace(inst.ExternalAPIURL), inst.Currency,
 		inst.Name, inst.InstanceName, inst.EvolutionUUID, encTok, inst.WebhookSecret,
 		inst.ShareToken, inst.ConnectionStatus,
 		inst.PurchaseTrigger, inst.LeadTrigger, inst.CustomEventName, inst.CustomEventTrigger,
@@ -84,6 +86,7 @@ func (r *WhatsAppRepo) CreateInstance(ctx context.Context, inst *domain.WhatsApp
 
 func (r *WhatsAppRepo) UpdateInstance(ctx context.Context, inst *domain.WhatsAppInstance) error {
 	inst.Provider = domain.NormalizeWhatsAppProvider(inst.Provider)
+	inst.Currency = domain.NormalizeWhatsAppCurrency(inst.Currency)
 	encTok := ""
 	if strings.TrimSpace(inst.InstanceToken) != "" {
 		encTok = util.Encrypt(strings.TrimSpace(inst.InstanceToken))
@@ -91,15 +94,15 @@ func (r *WhatsAppRepo) UpdateInstance(ctx context.Context, inst *domain.WhatsApp
 	}
 	_, err := r.db.Exec(ctx, `
 		UPDATE whatsapp_instances
-		SET name = $1, pixel_id = $2, provider = $3, external_api_url = $4,
-		    instance_token_encrypted = CASE WHEN $5 <> '' THEN $5 ELSE instance_token_encrypted END,
-		    purchase_trigger = $6, lead_trigger = $7,
-		    custom_event_name = $8, custom_event_trigger = $9,
-		    auto_create_crm_lead = $10, default_crm_stage_id = $11,
-		    enabled = $12, updated_at = NOW()
-		WHERE id = $13 AND account_id = $14
+		SET name = $1, pixel_id = $2, provider = $3, external_api_url = $4, currency = $5,
+		    instance_token_encrypted = CASE WHEN $6 <> '' THEN $6 ELSE instance_token_encrypted END,
+		    purchase_trigger = $7, lead_trigger = $8,
+		    custom_event_name = $9, custom_event_trigger = $10,
+		    auto_create_crm_lead = $11, default_crm_stage_id = $12,
+		    enabled = $13, updated_at = NOW()
+		WHERE id = $14 AND account_id = $15
 	`,
-		inst.Name, inst.PixelID, inst.Provider, strings.TrimSpace(inst.ExternalAPIURL), encTok,
+		inst.Name, inst.PixelID, inst.Provider, strings.TrimSpace(inst.ExternalAPIURL), inst.Currency, encTok,
 		inst.PurchaseTrigger, inst.LeadTrigger,
 		inst.CustomEventName, inst.CustomEventTrigger,
 		inst.AutoCreateCRMLead, inst.DefaultCRMStageID,

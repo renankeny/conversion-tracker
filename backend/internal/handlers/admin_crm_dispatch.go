@@ -149,6 +149,15 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 		}
 	}
 
+	currency := "BRL"
+	if h.whatsapp != nil {
+		var pxID int64
+		if resolvedPixel != nil {
+			pxID = resolvedPixel.ID
+		}
+		currency = h.whatsapp.ResolveCurrencyForLead(ctx, accountID, tu.ID, pxID)
+	}
+
 	in := domain.SendEventInput{
 		PixelName:             pixelName,
 		EventName:             stage.TriggerEvent,
@@ -181,7 +190,7 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 		City:                  tu.City,
 		PostalCode:            tu.PostalCode,
 		Value:                 valuePtr,
-		Currency:              "BRL",
+		Currency:              currency,
 		OverrideGadsAccountID: stage.GoogleAdsAccountID,
 		OverrideGadsActionID:  stage.GoogleAdsActionID,
 	}

@@ -18,6 +18,7 @@ import (
 
 type AdminDashboardMeta struct {
 	pixelRepo *repo.PixelRepo
+	statsRepo *repo.StatsRepo
 	metaAccs  *repo.MetaAccountRepo
 	metaOAuth *metaoauth.Client
 	qcache    *cache.QueryCache
@@ -25,6 +26,10 @@ type AdminDashboardMeta struct {
 
 func NewAdminDashboardMeta(pr *repo.PixelRepo) *AdminDashboardMeta {
 	return &AdminDashboardMeta{pixelRepo: pr}
+}
+
+func (h *AdminDashboardMeta) SetStatsRepo(sr *repo.StatsRepo) {
+	h.statsRepo = sr
 }
 
 func (h *AdminDashboardMeta) SetQueryCache(qc *cache.QueryCache) {
@@ -37,6 +42,8 @@ func (h *AdminDashboardMeta) SetMetaOAuth(metaAccs *repo.MetaAccountRepo, metaOA
 }
 
 type resolvedMetaSource struct {
+	pixelName   string
+	accountID   int64
 	adAccountID string
 	legacyToken string
 	oauthAcc    *domain.MetaAccount
@@ -70,13 +77,20 @@ func (h *AdminDashboardMeta) resolveMetaSource(r *http.Request) (*resolvedMetaSo
 				adAccID = strings.TrimSpace(acc.AdAccountID)
 			}
 			if adAccID != "" {
-				return &resolvedMetaSource{adAccountID: adAccID, oauthAcc: acc}, nil
+				return &resolvedMetaSource{
+					pixelName:   p.Name,
+					accountID:   p.AccountID,
+					adAccountID: adAccID,
+					oauthAcc:    acc,
+				}, nil
 			}
 		}
 	}
 
 	if p.MetaPermanentToken != "" && p.MetaAdAccountID != "" {
 		return &resolvedMetaSource{
+			pixelName:   p.Name,
+			accountID:   p.AccountID,
 			adAccountID: p.MetaAdAccountID,
 			legacyToken: p.MetaPermanentToken,
 		}, nil
@@ -121,7 +135,7 @@ func parseDateInLocation(raw string, loc *time.Location) (string, time.Time, boo
 func (h *AdminDashboardMeta) LiveInsights(w http.ResponseWriter, r *http.Request) {
 	src, err := h.resolveMetaSource(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeJSON(w, http.StatusOK, meta.LiveInsightsSummary{Connected: false})
 		return
 	}
 	timeRange := getTimeRange(r)
@@ -129,24 +143,25 @@ func (h *AdminDashboardMeta) LiveInsights(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "missing from and to dates")
 		return
 	}
-	key := cache.HashQueryKey("meta:spend", src.adAccountID, timeRange)
+	key := cache.HashQueryKey("meta:insights:v2", src.adAccountID, timeRange)
 	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
 		var (
-			spend float64
-			ferr  error
+			summary meta.LiveInsightsSummary
+			ferr    error
 		)
 		if src.oauthAcc != nil {
-			spend, ferr = h.metaOAuth.FetchLiveSpend(ctx, src.oauthAcc, src.adAccountID, timeRange)
+			summary, ferr = h.metaOAuth.FetchLiveInsights(ctx, src.oauthAcc, src.adAccountID, timeRange)
 		} else {
-			spend, ferr = meta.FetchLiveSpend(ctx, src.adAccountID, src.legacyToken, timeRange)
+			summary, ferr = meta.FetchLiveInsights(ctx, src.adAccountID, src.legacyToken, timeRange)
 		}
 		if ferr != nil {
 			return nil, ferr
 		}
-		return json.Marshal(map[string]any{"spend": spend})
+		summary.Connected = true
+		return json.Marshal(summary)
 	})
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "meta api error: "+err.Error())
+		writeJSON(w, http.StatusOK, meta.LiveInsightsSummary{Connected: false})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -156,7 +171,7 @@ func (h *AdminDashboardMeta) LiveInsights(w http.ResponseWriter, r *http.Request
 func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Request) {
 	src, err := h.resolveMetaSource(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeJSON(w, http.StatusOK, []meta.CreativeInsight{})
 		return
 	}
 	timeRange := getTimeRange(r)
@@ -164,7 +179,10 @@ func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "missing from and to dates")
 		return
 	}
-	key := cache.HashQueryKey("meta:creatives", src.adAccountID, timeRange)
+	fromTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("from")))
+	toTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("to")))
+
+	key := cache.HashQueryKey("meta:creatives:v2", src.pixelName, src.adAccountID, timeRange)
 	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
 		var (
 			ranking []meta.CreativeInsight
@@ -178,10 +196,24 @@ func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Requ
 		if ferr != nil {
 			return nil, ferr
 		}
+		if len(ranking) > 3 {
+			ranking = ranking[:3]
+		}
+		if h.statsRepo != nil && len(ranking) > 0 {
+			h.statsRepo.EnrichCreativesWithTrackedConversions(ctx, repo.StatsFilter{
+				AccountID: src.accountID,
+				PixelName: src.pixelName,
+				From:      fromTime,
+				To:        toTime,
+			}, ranking)
+		}
+		if ranking == nil {
+			ranking = []meta.CreativeInsight{}
+		}
 		return json.Marshal(ranking)
 	})
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "meta api error: "+err.Error())
+		writeJSON(w, http.StatusOK, []meta.CreativeInsight{})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

@@ -23,7 +23,7 @@ interface Props {
   hint?: string
   icon: Component
   variant?: 'primary' | 'success' | 'warning' | 'danger' | 'info'
-  format?: 'number' | 'currency' | 'percent'
+  format?: 'number' | 'currency' | 'percent' | 'roas'
   currency?: string
 }
 
@@ -35,6 +35,9 @@ const props = withDefaults(defineProps<Props>(), {
 
 const formatted = computed(() => {
   if (typeof props.value === 'string') return props.value
+  if (props.format === 'roas') {
+    return `${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(props.value)}x`
+  }
   if (props.format === 'currency') {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',

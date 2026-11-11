@@ -61,17 +61,8 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 			idx++
 		}
 
-		switch f.TrafficSource {
-		case "meta_lp":
-			q += " AND (u.last_utm_source ILIKE '%facebook%' OR u.last_utm_source ILIKE '%instagram%' OR u.last_utm_source ILIKE '%meta%')"
-			q += " AND (e.payload->'data'->0->>'action_source' IS DISTINCT FROM 'business_messaging')"
-		case "meta_wpp":
-			q += " AND (u.last_utm_source ILIKE '%facebook%' OR u.last_utm_source ILIKE '%instagram%' OR u.last_utm_source ILIKE '%meta%')"
-			q += " AND (e.payload->'data'->0->>'action_source' = 'business_messaging' OR e.payload->'data'->0->>'messaging_channel' = 'whatsapp')"
-		case "google":
-			q += " AND (u.gclid <> '' OR u.last_utm_source ILIKE '%google%')"
-		case "tiktok":
-			q += " AND (u.ttclid <> '' OR u.last_utm_source ILIKE '%tiktok%')"
+		if srcCond := trafficSourceUserCond(f.TrafficSource, "u."); srcCond != "" {
+			q += " AND " + srcCond
 		}
 
 		q += " GROUP BY bucket, e.event_name ORDER BY bucket ASC"
@@ -170,4 +161,31 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+func (r *EventCounterRepo) countVisitorsBySource(ctx context.Context, f SummaryFilters) int64 {
+	srcCond := trafficSourceUserCond(f.TrafficSource, "u.")
+	if srcCond == "" {
+		return 0
+	}
+	q := "SELECT COUNT(*) FROM tracked_users u WHERE " + srcCond
+	args := []any{}
+	idx := 1
+	if f.PixelName != "" {
+		q += " AND u.pixel_name = $" + strconv.Itoa(idx)
+		args = append(args, f.PixelName)
+		idx++
+	}
+	if f.AccountID != 0 {
+		q += " AND u.account_id = $" + strconv.Itoa(idx)
+		args = append(args, f.AccountID)
+		idx++
+	}
+	if f.From != nil && f.To != nil {
+		q += " AND ((u.last_seen_at >= $" + strconv.Itoa(idx) + " AND u.last_seen_at < $" + strconv.Itoa(idx+1) + ") OR (u.created_at >= $" + strconv.Itoa(idx) + " AND u.created_at < $" + strconv.Itoa(idx+1) + "))"
+		args = append(args, f.From.UTC(), f.To.UTC())
+	}
+	var cnt int64
+	_ = r.pool.QueryRow(ctx, q, args...).Scan(&cnt)
+	return cnt
 }

@@ -92,6 +92,26 @@ func (r *WhatsAppRepo) FindPageIDByCtwaClid(ctx context.Context, accountID int64
 	return pageID
 }
 
+func (r *WhatsAppRepo) ResolveCurrencyForLead(ctx context.Context, accountID, trackedUserID, pixelID int64) string {
+	var curr string
+	if trackedUserID > 0 {
+		_ = r.db.QueryRow(ctx, `
+			SELECT i.currency FROM whatsapp_chats c
+			JOIN whatsapp_instances i ON c.instance_id = i.id
+			WHERE i.account_id = $1 AND c.tracked_user_id = $2
+			ORDER BY c.last_message_time DESC LIMIT 1
+		`, accountID, trackedUserID).Scan(&curr)
+	}
+	if curr == "" && pixelID > 0 {
+		_ = r.db.QueryRow(ctx, `
+			SELECT currency FROM whatsapp_instances
+			WHERE account_id = $1 AND pixel_id = $2 AND enabled = TRUE
+			ORDER BY id ASC LIMIT 1
+		`, accountID, pixelID).Scan(&curr)
+	}
+	return domain.NormalizeWhatsAppCurrency(curr)
+}
+
 type ChatConversionContext struct {
 	PixelName          string
 	MetaPermanentToken string
