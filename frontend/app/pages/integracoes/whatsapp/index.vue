@@ -4,12 +4,11 @@
       <div>
         <h1 class="page-title">WhatsApp & Campanhas CTWA</h1>
         <p class="page-subtitle">
-          Conecte sua Evolution Go para rastrear anúncios Click-to-WhatsApp, links com protocolo do site/bio e acompanhar conversas dos leads no CRM (mídias retidas por 14 dias).
+          Conecte seu WhatsApp via QR Code (Evolution Go), API Premium ou Uazapi para rastrear anúncios Click-to-WhatsApp, protocolos de site/bio e gatilhos automáticos de venda.
         </p>
       </div>
       <BaseButton
         variant="primary"
-        :disabled="!server?.has_api_key"
         @click="openCreate"
       >
         Nova conexão WhatsApp
@@ -29,11 +28,9 @@
     <div v-else-if="!instances.length" class="state-box">
       <h2 class="empty-title">Nenhum aparelho WhatsApp conectado</h2>
       <p class="empty-desc">
-        {{ server?.has_api_key
-          ? 'Crie sua primeira conexão para parear o WhatsApp via QR Code ou código numérico.'
-          : 'Configure e salve a URL e Global API Key da Evolution Go no cartão acima para liberar a criação de conexões.' }}
+        Crie uma conexão via API Premium, Uazapi (Webhook) ou Conexão Direta via QR Code.
       </p>
-      <BaseButton v-if="server?.has_api_key" variant="primary" @click="openCreate">
+      <BaseButton variant="primary" @click="openCreate">
         Criar primeira conexão
       </BaseButton>
     </div>
@@ -59,6 +56,7 @@
       :pixels="pixels"
       :stages="crmStages"
       :saving="savingInstance"
+      :has-evolution-server="Boolean(server?.has_api_key)"
       @submit="onSaveInstance"
     />
 
@@ -206,7 +204,9 @@ let offLiveStatus: (() => void) | null = null
 onMounted(() => {
   void loadData()
   offLiveStatus = liveStore.onCustomEvent('whatsapp_status', (d: any) => {
-    if (d?.instance_id) waStore.updateInstanceStatus(d.instance_id, d.status, d.owner_jid, d.profile_name)
+    if (d?.instance_id) {
+      waStore.updateInstanceStatus(d.instance_id, d.status, d.owner_jid, d.profile_name, d.profile_pic_url)
+    }
   })
 })
 onUnmounted(() => offLiveStatus?.())
@@ -218,7 +218,7 @@ onUnmounted(() => offLiveStatus?.())
 .page-header > div:first-child { flex: 1; min-width: 260px; }
 .page-title { font-family: var(--font-heading); font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin: 0 0 0.25rem; }
 .page-subtitle { color: var(--text-2); font-size: var(--fs-lg); max-width: 740px; line-height: 1.5; margin: 0; }
-.inst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 1rem; }
+.inst-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 1.25rem; }
 .state-box {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 3.5rem 1.5rem; background: var(--surface-2); border: 1px dashed var(--border);

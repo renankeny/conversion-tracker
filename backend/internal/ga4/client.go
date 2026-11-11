@@ -169,7 +169,7 @@ func mapEventName(eventName string) string {
 	// --- Recomendados oficiais do GA4 ---
 	case domain.EventPurchase:
 		return "purchase"
-	case domain.EventLead:
+	case domain.EventLead, domain.EventLeadSubmitted:
 		return "generate_lead"
 	case domain.EventPageView:
 		return "page_view"
@@ -196,8 +196,6 @@ func mapEventName(eventName string) string {
 	// só sem os relatórios prontos que o GA4 dá pros recomendados) ---
 	case domain.EventContact:
 		return "contact"
-	case domain.EventLeadSubmitted:
-		return "lead_submitted"
 	case "Subscribe":
 		return "subscribe"
 	case "FindLocation":

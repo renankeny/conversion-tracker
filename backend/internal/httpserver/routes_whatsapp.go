@@ -12,6 +12,7 @@ func registerWhatsAppPublicRoutes(r chi.Router, h routeHandlers) {
 		r.Use(middleware.Timeout(25 * time.Second))
 		r.Get("/public/whatsapp/{token}/status", h.publicWhatsApp.ConnectStatus)
 		r.Post("/public/whatsapp/{token}/connect", h.publicWhatsApp.InitConnect)
+		r.Post("/public/whatsapp/{token}/pair", h.publicWhatsApp.PairPhone)
 	})
 }
 

@@ -105,10 +105,10 @@ const primaryLinks = computed(() => {
 
 const integrationLinks = [
   { to: '/integracoes/pixels', label: 'Pixels' },
-  { to: '/integracoes/whatsapp', label: 'WhatsApp (CTWA)' },
+  { to: '/integracoes/whatsapp', label: 'WhatsApp' },
   { to: '/integracoes/meta-ads', label: 'Meta Ads' },
   { to: '/integracoes/google-ads', label: 'Google Ads' },
-  { to: '/integracoes/plataformas', label: 'Plataformas' },
+  { to: '/integracoes/plataformas', label: 'Checkouts (infoprodutos)' },
   { to: '/integracoes/custom', label: 'Checkouts Personalizados' },
   { to: '/integracoes/ecommerce/confirmacao-vendas', label: 'Confirmação de Vendas' },
 ]

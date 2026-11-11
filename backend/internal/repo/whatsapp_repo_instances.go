@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -11,21 +12,23 @@ import (
 )
 
 const selectInstanceColumns = `
-	i.id, i.account_id, i.pixel_id, COALESCE(p.name, ''), i.server_id, i.name, i.instance_name,
-	i.evolution_uuid, i.instance_token_encrypted, i.webhook_secret,
+	i.id, i.account_id, i.pixel_id, COALESCE(p.name, ''), COALESCE(i.server_id, 0),
+	COALESCE(i.provider, 'evolution_go'), COALESCE(i.external_api_url, ''),
+	i.name, i.instance_name, i.evolution_uuid, i.instance_token_encrypted, i.webhook_secret,
 	i.owner_jid, i.profile_name, i.profile_pic_url,
 	i.share_token, i.connection_status,
 	i.purchase_trigger, i.lead_trigger, i.custom_event_name, i.custom_event_trigger,
 	i.auto_create_crm_lead, i.default_crm_stage_id, i.enabled,
 	i.created_at, i.updated_at,
-	s.url, s.api_key
+	COALESCE(s.url, ''), COALESCE(s.api_key, '')
 `
 
 func scanWhatsAppInstance(scanner pgx.Row, i *domain.WhatsAppInstance) error {
 	var encInstToken, encServerKey string
 	err := scanner.Scan(
-		&i.ID, &i.AccountID, &i.PixelID, &i.PixelName, &i.ServerID, &i.Name, &i.InstanceName,
-		&i.EvolutionUUID, &encInstToken, &i.WebhookSecret,
+		&i.ID, &i.AccountID, &i.PixelID, &i.PixelName, &i.ServerID,
+		&i.Provider, &i.ExternalAPIURL,
+		&i.Name, &i.InstanceName, &i.EvolutionUUID, &encInstToken, &i.WebhookSecret,
 		&i.OwnerJID, &i.ProfileName, &i.ProfilePicURL,
 		&i.ShareToken, &i.ConnectionStatus,
 		&i.PurchaseTrigger, &i.LeadTrigger, &i.CustomEventName, &i.CustomEventTrigger,
@@ -36,30 +39,43 @@ func scanWhatsAppInstance(scanner pgx.Row, i *domain.WhatsAppInstance) error {
 	if err != nil {
 		return err
 	}
-	i.ServerAPIKey = util.Decrypt(encServerKey)
+	i.Provider = domain.NormalizeWhatsAppProvider(i.Provider)
+	if encServerKey != "" {
+		i.ServerAPIKey = util.Decrypt(encServerKey)
+	}
 	if encInstToken != "" {
 		i.InstanceToken = util.Decrypt(encInstToken)
-	} else {
+		i.HasInstanceToken = strings.TrimSpace(i.InstanceToken) != ""
+	} else if !i.IsExternalUazapi() {
 		i.InstanceToken = i.InstanceName
 	}
 	return nil
 }
 
 func (r *WhatsAppRepo) CreateInstance(ctx context.Context, inst *domain.WhatsAppInstance) error {
-	encTok := util.Encrypt(inst.InstanceToken)
+	encTok := ""
+	if strings.TrimSpace(inst.InstanceToken) != "" {
+		encTok = util.Encrypt(strings.TrimSpace(inst.InstanceToken))
+		inst.HasInstanceToken = true
+	}
+	inst.Provider = domain.NormalizeWhatsAppProvider(inst.Provider)
+	var srvID *int64
+	if inst.ServerID > 0 {
+		srvID = &inst.ServerID
+	}
 	return r.db.QueryRow(ctx, `
 		INSERT INTO whatsapp_instances (
-			account_id, pixel_id, server_id, name, instance_name,
-			evolution_uuid, instance_token_encrypted, webhook_secret,
+			account_id, pixel_id, server_id, provider, external_api_url,
+			name, instance_name, evolution_uuid, instance_token_encrypted, webhook_secret,
 			share_token, connection_status,
 			purchase_trigger, lead_trigger, custom_event_name, custom_event_trigger,
 			auto_create_crm_lead, default_crm_stage_id, enabled
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 		RETURNING id, created_at, updated_at
 	`,
-		inst.AccountID, inst.PixelID, inst.ServerID, inst.Name, inst.InstanceName,
-		inst.EvolutionUUID, encTok, inst.WebhookSecret,
+		inst.AccountID, inst.PixelID, srvID, inst.Provider, strings.TrimSpace(inst.ExternalAPIURL),
+		inst.Name, inst.InstanceName, inst.EvolutionUUID, encTok, inst.WebhookSecret,
 		inst.ShareToken, inst.ConnectionStatus,
 		inst.PurchaseTrigger, inst.LeadTrigger, inst.CustomEventName, inst.CustomEventTrigger,
 		inst.AutoCreateCRMLead, inst.DefaultCRMStageID, inst.Enabled,
@@ -67,15 +83,24 @@ func (r *WhatsAppRepo) CreateInstance(ctx context.Context, inst *domain.WhatsApp
 }
 
 func (r *WhatsAppRepo) UpdateInstance(ctx context.Context, inst *domain.WhatsAppInstance) error {
+	inst.Provider = domain.NormalizeWhatsAppProvider(inst.Provider)
+	encTok := ""
+	if strings.TrimSpace(inst.InstanceToken) != "" {
+		encTok = util.Encrypt(strings.TrimSpace(inst.InstanceToken))
+		inst.HasInstanceToken = true
+	}
 	_, err := r.db.Exec(ctx, `
 		UPDATE whatsapp_instances
-		SET name = $1, pixel_id = $2, purchase_trigger = $3, lead_trigger = $4,
-		    custom_event_name = $5, custom_event_trigger = $6,
-		    auto_create_crm_lead = $7, default_crm_stage_id = $8,
-		    enabled = $9, updated_at = NOW()
-		WHERE id = $10 AND account_id = $11
+		SET name = $1, pixel_id = $2, provider = $3, external_api_url = $4,
+		    instance_token_encrypted = CASE WHEN $5 <> '' THEN $5 ELSE instance_token_encrypted END,
+		    purchase_trigger = $6, lead_trigger = $7,
+		    custom_event_name = $8, custom_event_trigger = $9,
+		    auto_create_crm_lead = $10, default_crm_stage_id = $11,
+		    enabled = $12, updated_at = NOW()
+		WHERE id = $13 AND account_id = $14
 	`,
-		inst.Name, inst.PixelID, inst.PurchaseTrigger, inst.LeadTrigger,
+		inst.Name, inst.PixelID, inst.Provider, strings.TrimSpace(inst.ExternalAPIURL), encTok,
+		inst.PurchaseTrigger, inst.LeadTrigger,
 		inst.CustomEventName, inst.CustomEventTrigger,
 		inst.AutoCreateCRMLead, inst.DefaultCRMStageID,
 		inst.Enabled, inst.ID, inst.AccountID,
@@ -87,7 +112,7 @@ func (r *WhatsAppRepo) ListInstances(ctx context.Context, accountID int64) ([]do
 	rows, err := r.db.Query(ctx, `
 		SELECT `+selectInstanceColumns+`
 		FROM whatsapp_instances i
-		JOIN whatsapp_servers s ON i.server_id = s.id
+		LEFT JOIN whatsapp_servers s ON i.server_id = s.id
 		LEFT JOIN pixels p ON i.pixel_id = p.id
 		WHERE i.account_id = $1
 		ORDER BY i.id DESC
@@ -119,7 +144,7 @@ func (r *WhatsAppRepo) getInstanceWhere(ctx context.Context, whereSQL string, ar
 	row := r.db.QueryRow(ctx, `
 		SELECT `+selectInstanceColumns+`
 		FROM whatsapp_instances i
-		JOIN whatsapp_servers s ON i.server_id = s.id
+		LEFT JOIN whatsapp_servers s ON i.server_id = s.id
 		LEFT JOIN pixels p ON i.pixel_id = p.id
 		WHERE `+whereSQL, args...)
 	if err := scanWhatsAppInstance(row, &i); err != nil {
@@ -164,6 +189,20 @@ func (r *WhatsAppRepo) UpdateInstanceStatus(ctx context.Context, instanceID int6
 	return err
 }
 
+func (r *WhatsAppRepo) ResetInstanceSession(ctx context.Context, instanceID int64, status string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE whatsapp_instances
+		SET connection_status = $1, owner_jid = '', profile_name = '', profile_pic_url = '', updated_at = NOW()
+		WHERE id = $2
+	`, status, instanceID)
+	return err
+}
+
+func (r *WhatsAppRepo) EnsureInstanceShareToken(ctx context.Context, instanceID int64, shareToken string) error {
+	_, err := r.db.Exec(ctx, "UPDATE whatsapp_instances SET share_token = $1, updated_at = NOW() WHERE id = $2 AND (share_token IS NULL OR share_token = '')", shareToken, instanceID)
+	return err
+}
+
 func (r *WhatsAppRepo) UpdateInstanceOwnerAndProfile(ctx context.Context, instanceID int64, status, ownerJID, profileName, profilePicURL string) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE whatsapp_instances
@@ -174,5 +213,20 @@ func (r *WhatsAppRepo) UpdateInstanceOwnerAndProfile(ctx context.Context, instan
 		    updated_at        = NOW()
 		WHERE id = $5
 	`, status, ownerJID, profileName, profilePicURL, instanceID)
+	return err
+}
+
+func (r *WhatsAppRepo) UpdateInstanceExternalCredentials(ctx context.Context, instanceID int64, externalURL, rawToken string) error {
+	encTok := ""
+	if strings.TrimSpace(rawToken) != "" {
+		encTok = util.Encrypt(strings.TrimSpace(rawToken))
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE whatsapp_instances
+		SET external_api_url         = COALESCE(NULLIF(external_api_url, ''), NULLIF($1, ''), external_api_url),
+		    instance_token_encrypted = COALESCE(NULLIF(instance_token_encrypted, ''), NULLIF($2, ''), instance_token_encrypted),
+		    updated_at               = NOW()
+		WHERE id = $3
+	`, strings.TrimRight(strings.TrimSpace(externalURL), "/"), encTok, instanceID)
 	return err
 }

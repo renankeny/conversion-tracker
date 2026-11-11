@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
 
@@ -143,97 +142,4 @@ func extensionForMime(mimeType, msgType string) string {
 	default:
 		return ".bin"
 	}
-}
-
-func evaluateAttendantTriggers(
-	ctx context.Context,
-	deps Deps,
-	inst *domain.WhatsAppInstance,
-	u *domain.TrackedUser,
-	chatID int64,
-	phone, waMessageID, content string,
-) {
-	if content == "" || deps.Enqueuer == nil {
-		return
-	}
-	isPurchase := matchPhraseTrigger(inst.PurchaseTrigger, content)
-	isLead := matchPhraseTrigger(inst.LeadTrigger, content)
-	isCustom := inst.CustomEventName != "" && matchPhraseTrigger(inst.CustomEventTrigger, content)
-	if !isPurchase && !isLead && !isCustom {
-		return
-	}
-
-	pixel, err := deps.Pixels.FindByID(ctx, inst.PixelID)
-	if err != nil || pixel == nil || !pixel.Enabled {
-		return
-	}
-
-	var eventName string
-	var valPtr *float64
-	switch {
-	case isPurchase:
-		eventName = domain.EventPurchase
-		if m := rxMoneyExplicit.FindAllString(content, -1); len(m) > 0 {
-			if v := util.ParseMoneyAny(m[len(m)-1]); v > 0 {
-				valPtr = &v
-			}
-		}
-	case isLead:
-		eventName = domain.EventLeadSubmitted
-	case isCustom:
-		eventName = inst.CustomEventName
-	}
-
-	eventID := waMessageID + ":" + eventName
-	if exists, _ := deps.SentEvents.ExistsSent(ctx, eventID, pixel.Name); exists {
-		return
-	}
-
-	chat, _ := deps.WhatsApp.GetChatByID(ctx, inst.AccountID, chatID)
-	ctwaClid := u.CtwaClid
-	pageID := ""
-	if chat != nil {
-		ctwaClid = util.FirstNonEmpty(chat.CtwaClid, ctwaClid)
-		pageID = chat.PageID
-	}
-
-	actionSource := "website"
-	msgChannel := ""
-	if ctwaClid != "" {
-		actionSource = "business_messaging"
-		msgChannel = "whatsapp"
-	}
-
-	_ = deps.Enqueuer.EnqueueSendEvent(ctx, domain.SendEventInput{
-		PixelName:        pixel.Name,
-		EventName:        eventName,
-		EventID:          eventID,
-		EventTime:        time.Now().Unix(),
-		ActionSource:     actionSource,
-		MessagingChannel: msgChannel,
-		CtwaClid:         ctwaClid,
-		PageID:           pageID,
-		ExternalID:       u.ExternalID,
-		Phone:            util.FirstNonEmpty(phone, u.Phone),
-		FirstName:        u.FirstName,
-		LastName:         u.LastName,
-		FBP:              u.FBP,
-		FBC:              u.FBC,
-		GCLID:            u.GCLID,
-		WBraid:           u.WBraid,
-		GBraid:           u.GBraid,
-		Value:            valPtr,
-		Currency:         "BRL",
-	})
-}
-
-func matchPhraseTrigger(trigger, text string) bool {
-	trigger = strings.TrimSpace(trigger)
-	if trigger == "" || text == "" {
-		return false
-	}
-	if rx, err := regexp.Compile("(?i)" + trigger); err == nil {
-		return rx.MatchString(text)
-	}
-	return strings.Contains(strings.ToLower(text), strings.ToLower(trigger))
 }

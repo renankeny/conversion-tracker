@@ -124,3 +124,72 @@ func (r *CRMRepo) DeleteLead(ctx context.Context, id, accountID int64) error {
 	return nil
 }
 
+// SyncLeadFromEventTrigger sincroniza automaticamente a etapa e o valor do card no CRM
+// quando um gatilho de conversão (ex: Purchase, Lead) é acionado via WhatsApp.
+func (r *CRMRepo) SyncLeadFromEventTrigger(
+	ctx context.Context,
+	accountID, trackedUserID int64,
+	eventName string,
+	value *float64,
+) (int64, bool) {
+	if accountID <= 0 || trackedUserID <= 0 {
+		return 0, false
+	}
+
+	var leadID int64
+	groupID, _ := r.groupIDOf(ctx, trackedUserID)
+	if groupID != nil && *groupID > 0 {
+		_ = r.pool.QueryRow(ctx, `
+			SELECT id FROM crm_leads
+			WHERE account_id = $1 AND (group_id = $2 OR tracked_user_id = $3)
+			ORDER BY updated_at DESC LIMIT 1
+		`, accountID, *groupID, trackedUserID).Scan(&leadID)
+	} else {
+		_ = r.pool.QueryRow(ctx, `
+			SELECT id FROM crm_leads
+			WHERE account_id = $1 AND tracked_user_id = $2
+			LIMIT 1
+		`, accountID, trackedUserID).Scan(&leadID)
+	}
+	if leadID == 0 {
+		return 0, false
+	}
+
+	var targetStageID int64
+	evNorm := strings.TrimSpace(eventName)
+	if strings.EqualFold(evNorm, "Lead") || strings.EqualFold(evNorm, "LeadSubmitted") {
+		_ = r.pool.QueryRow(ctx, `
+			SELECT id FROM crm_stages
+			WHERE account_id = $1 AND LOWER(trigger_event) IN ('lead', 'leadsubmitted')
+			ORDER BY order_index ASC, id ASC LIMIT 1
+		`, accountID).Scan(&targetStageID)
+	} else if evNorm != "" {
+		_ = r.pool.QueryRow(ctx, `
+			SELECT id FROM crm_stages
+			WHERE account_id = $1 AND LOWER(trigger_event) = LOWER($2)
+			ORDER BY order_index ASC, id ASC LIMIT 1
+		`, accountID, evNorm).Scan(&targetStageID)
+	}
+
+	val := 0.0
+	if value != nil && *value > 0 {
+		val = *value
+	}
+	if targetStageID == 0 && val <= 0 {
+		return leadID, false
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE crm_leads
+		SET stage_id   = CASE WHEN $3 > 0 THEN $3 ELSE stage_id END,
+		    value      = CASE WHEN $4 > 0 THEN $4 ELSE value END,
+		    updated_at = NOW()
+		WHERE id = $1 AND account_id = $2
+	`, leadID, accountID, targetStageID, val)
+	if err != nil || tag.RowsAffected() == 0 {
+		return leadID, false
+	}
+	return leadID, true
+}
+
+

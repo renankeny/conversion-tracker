@@ -229,7 +229,7 @@ onMounted(async () => {
 .page-header > div:first-child { flex: 1; min-width: 280px; }
 .page-title { font-family: var(--font-heading); font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.25rem; }
 .page-subtitle { color: var(--text-2); font-size: var(--fs-lg); max-width: 720px; line-height: 1.5; }
-.ga-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 1rem; }
+.ga-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 1.25rem; }
 .loading-state, .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 2rem; background: var(--surface-2); border: 1px dashed var(--border); border-radius: 12px; gap: 0.75rem; text-align: center; }
 .empty-title { font-family: var(--font-heading); font-size: var(--fs-2xl); font-weight: var(--fw-semibold); color: var(--text-strong); }
 .empty-description { color: var(--text-2); max-width: 460px; margin-bottom: 0.5rem; line-height: 1.5; }

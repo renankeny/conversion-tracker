@@ -78,12 +78,13 @@ func (a GoogleAdsAccount) HasActionForAnyEvent() bool {
 // Checkout" e outra "Lead Engajado" simultaneamente).
 func (a GoogleAdsAccount) FindActionsForEvent(eventType string) []*GoogleAdsConversionAction {
 	out := make([]*GoogleAdsConversionAction, 0)
+	isLeadAlias := eventType == EventLead || eventType == EventLeadSubmitted
 	for i := range a.ConversionActions {
 		ca := &a.ConversionActions[i]
 		if !ca.Enabled || ca.ConversionActionID == "" {
 			continue
 		}
-		if ca.EventType == eventType {
+		if ca.EventType == eventType || (isLeadAlias && (ca.EventType == EventLead || ca.EventType == EventLeadSubmitted)) {
 			out = append(out, ca)
 		}
 	}

@@ -16,7 +16,22 @@ const (
 	MediaStatusExpired     = "expired"
 	MediaStatusFailed      = "failed"
 	MediaStatusSkippedSize = "skipped_size"
+
+	WhatsAppProviderEvolutionGo = "evolution_go"
+	WhatsAppProviderAPIPremium  = "api_premium"
+	WhatsAppProviderUazapi      = "uazapi"
 )
+
+func NormalizeWhatsAppProvider(p string) string {
+	switch p {
+	case WhatsAppProviderAPIPremium:
+		return WhatsAppProviderAPIPremium
+	case WhatsAppProviderUazapi:
+		return WhatsAppProviderUazapi
+	default:
+		return WhatsAppProviderEvolutionGo
+	}
+}
 
 // WhatsAppServer representa o servidor Evolution Go configurado por uma conta/cliente.
 type WhatsAppServer struct {
@@ -31,13 +46,17 @@ type WhatsAppServer struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// WhatsAppInstance representa uma instância/número conectado na Evolution Go.
+// WhatsAppInstance representa uma instância/número conectado (Evolution Go, API Premium ou Uazapi).
 type WhatsAppInstance struct {
 	ID                 int64     `json:"id"`
 	AccountID          int64     `json:"account_id"`
 	PixelID            int64     `json:"pixel_id"`
 	PixelName          string    `json:"pixel_name,omitempty"`
 	ServerID           int64     `json:"server_id"`
+	Provider           string    `json:"provider"`
+	ExternalAPIURL     string    `json:"external_api_url"`
+	HasInstanceToken   bool      `json:"has_instance_token"`
+	WebhookURL         string    `json:"webhook_url,omitempty"`
 	Name               string    `json:"name"`
 	InstanceName       string    `json:"instance_name"`
 	EvolutionUUID      string    `json:"evolution_uuid"`
@@ -60,6 +79,10 @@ type WhatsAppInstance struct {
 
 	ServerURL    string `json:"server_url,omitempty"`
 	ServerAPIKey string `json:"-"`
+}
+
+func (i *WhatsAppInstance) IsExternalUazapi() bool {
+	return i != nil && (i.Provider == WhatsAppProviderAPIPremium || i.Provider == WhatsAppProviderUazapi)
 }
 
 // WhatsAppChat representa uma conversa elegível (CTWA ou Protocolo Web) vinculada a um lead.

@@ -126,10 +126,12 @@ func (h *AdminWhatsAppChats) GetByCRMLead(w http.ResponseWriter, r *http.Request
 
 var ctwaConvertibleEvents = map[string]bool{
 	domain.EventPurchase:         true,
+	domain.EventLead:             true,
 	domain.EventLeadSubmitted:    true,
 	domain.EventInitiateCheckout: true,
 	domain.EventAddToCart:        true,
 	domain.EventViewContent:      true,
+	domain.EventContact:          true,
 	"OrderCreated":               true,
 	"OrderShipped":               true,
 	"OrderDelivered":             true,
@@ -153,7 +155,7 @@ func (h *AdminWhatsAppChats) Convert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ctwaConvertibleEvents[body.EventName] {
-		writeError(w, http.StatusBadRequest, "evento não suportado em business_messaging")
+		writeError(w, http.StatusBadRequest, "evento não suportado para conversão WhatsApp")
 		return
 	}
 	if body.EventName == domain.EventPurchase && (body.Value == nil || *body.Value <= 0) {
@@ -170,18 +172,28 @@ func (h *AdminWhatsAppChats) Convert(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "chat not found")
 		return
 	}
-	if cctx.CtwaClid == "" {
-		writeError(w, http.StatusBadRequest, "este lead não possui ctwa_clid de anúncio Click-to-WhatsApp")
-		return
+
+	actionSource := "website"
+	msgChannel := ""
+	eventName := body.EventName
+	if cctx.CtwaClid != "" {
+		actionSource = "business_messaging"
+		msgChannel = "whatsapp"
+		if eventName == domain.EventLead {
+			eventName = domain.EventLeadSubmitted
+		}
+	} else if eventName == domain.EventLeadSubmitted {
+		eventName = domain.EventLead
 	}
 
 	in := domain.SendEventInput{
 		PixelName:        cctx.PixelName,
-		EventName:        body.EventName,
+		EventName:        eventName,
 		EventID:          util.GenerateID10(),
 		EventTime:        time.Now().Unix(),
-		ActionSource:     "business_messaging",
-		MessagingChannel: "whatsapp",
+		Gateway:          "whatsapp",
+		ActionSource:     actionSource,
+		MessagingChannel: msgChannel,
 		CtwaClid:         cctx.CtwaClid,
 		PageID:           cctx.PageID,
 		ExternalID:       cctx.ExternalID,

@@ -33,12 +33,18 @@ export interface WhatsAppServerHealth {
   instance_count: number
 }
 
+export type WhatsAppProvider = 'evolution_go' | 'api_premium' | 'uazapi'
+
 export interface WhatsAppInstance {
   id: number
   account_id: number
   pixel_id: number
   pixel_name?: string
   server_id: number
+  provider: WhatsAppProvider
+  external_api_url: string
+  has_instance_token: boolean
+  webhook_url?: string
   name: string
   instance_name: string
   evolution_uuid: string
@@ -61,6 +67,9 @@ export interface WhatsAppInstance {
 export interface WhatsAppInstanceInput {
   name: string
   pixel_id: number
+  provider?: WhatsAppProvider
+  external_api_url?: string
+  instance_token?: string
   purchase_trigger?: string
   lead_trigger?: string
   custom_event_name?: string

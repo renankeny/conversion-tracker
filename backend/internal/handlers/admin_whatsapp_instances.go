@@ -11,11 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/evolution"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/uazapi"
 )
 
 type AdminWhatsAppInstances struct {
@@ -52,8 +51,30 @@ func slugifyInstanceName(name string, accID int64) string {
 	return s + "-acc" + strconv.FormatInt(accID, 10) + "-" + strconv.FormatInt(time.Now().Unix()%100000, 10)
 }
 
+func buildProviderWebhookURL(publicAPIURL, provider, secret string) string {
+	if secret == "" {
+		return ""
+	}
+	switch domain.NormalizeWhatsAppProvider(provider) {
+	case domain.WhatsAppProviderAPIPremium:
+		return publicAPIURL + "/webhooks/api-premium/" + secret
+	case domain.WhatsAppProviderUazapi:
+		return publicAPIURL + "/webhooks/uazapi/" + secret
+	default:
+		return publicAPIURL + "/webhooks/evolution/" + secret
+	}
+}
+
 func (h *AdminWhatsAppInstances) buildWebhookURL(secret string) string {
-	return h.publicAPIURL + "/webhooks/evolution/" + secret
+	return buildProviderWebhookURL(h.publicAPIURL, domain.WhatsAppProviderEvolutionGo, secret)
+}
+
+func (h *AdminWhatsAppInstances) decorateInstance(inst *domain.WhatsAppInstance) {
+	if inst == nil {
+		return
+	}
+	inst.Provider = domain.NormalizeWhatsAppProvider(inst.Provider)
+	inst.WebhookURL = buildProviderWebhookURL(h.publicAPIURL, inst.Provider, inst.WebhookSecret)
 }
 
 func (h *AdminWhatsAppInstances) List(w http.ResponseWriter, r *http.Request) {
@@ -63,12 +84,26 @@ func (h *AdminWhatsAppInstances) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "erro ao listar instâncias: "+err.Error())
 		return
 	}
+	for i := range instances {
+		if instances[i].ShareToken == nil || strings.TrimSpace(*instances[i].ShareToken) == "" {
+			tok := randomHexToken(12)
+			_ = h.repo.EnsureInstanceShareToken(r.Context(), instances[i].ID, tok)
+			instances[i].ShareToken = &tok
+		}
+		if instances[i].ConnectionStatus == "CONNECTING" || (instances[i].ConnectionStatus == "OPEN" && (instances[i].OwnerJID == "" || instances[i].ProfilePicURL == "")) {
+			_ = syncInstanceLiveStatus(r.Context(), h.repo, &instances[i], h.publicAPIURL)
+		}
+		h.decorateInstance(&instances[i])
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": instances})
 }
 
 type instanceUpsertInput struct {
 	Name               string `json:"name"`
 	PixelID            int64  `json:"pixel_id"`
+	Provider           string `json:"provider"`
+	ExternalAPIURL     string `json:"external_api_url"`
+	InstanceToken      string `json:"instance_token"`
 	PurchaseTrigger    string `json:"purchase_trigger"`
 	LeadTrigger        string `json:"lead_trigger"`
 	CustomEventName    string `json:"custom_event_name"`
@@ -108,34 +143,40 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	server, err := h.repo.GetAccountServer(ctx, accID)
-	if err != nil || server == nil {
-		writeError(w, http.StatusBadRequest, "configure a URL e API Key da Evolution Go antes de criar uma instância")
-		return
-	}
-
+	provider := domain.NormalizeWhatsAppProvider(in.Provider)
 	slug := slugifyInstanceName(in.Name, accID)
-	instToken := "tok_" + randomHexToken(20)
 	webhookSecret := randomHexToken(20)
 	shareToken := randomHexToken(12)
+	webhookURL := buildProviderWebhookURL(h.publicAPIURL, provider, webhookSecret)
 
-	cli := evolution.NewClient(server.URL, server.APIKey)
-	createdResp, err := cli.CreateInstance(ctx, slug, instToken)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "erro ao criar instância na Evolution Go: "+err.Error())
-		return
-	}
+	var srvID int64
+	var evoName, evoUUID, instToken string
 
-	evoName := createdResp.Data.Name
-	if evoName == "" {
+	if provider == domain.WhatsAppProviderEvolutionGo {
+		server, serr := h.repo.GetAccountServer(ctx, accID)
+		if serr != nil || server == nil {
+			writeError(w, http.StatusBadRequest, "configure a URL e API Key da Evolution Go antes de criar uma conexão via QR Code")
+			return
+		}
+		srvID = server.ID
+		instToken = "tok_" + randomHexToken(20)
+		cli := evolution.NewClient(server.URL, server.APIKey)
+		createdResp, cerr := cli.CreateInstance(ctx, slug, instToken)
+		if cerr != nil {
+			writeError(w, http.StatusBadGateway, "erro ao criar instância na Evolution Go: "+cerr.Error())
+			return
+		}
+		evoName = createdResp.Data.Name
+		if evoName == "" {
+			evoName = slug
+		}
+		evoUUID = createdResp.Data.ID
+		if _, connErr := cli.ConnectInstance(ctx, instToken, webhookURL); connErr != nil {
+			slog.Warn("initial evolution connect warning", "instance", evoName, "err", connErr)
+		}
+	} else {
 		evoName = slug
-	}
-	evoUUID := createdResp.Data.ID
-
-	// Passo 2 obrigatório da Evolution Go: configurar webhookUrl + eventos via /instance/connect
-	webhookURL := h.buildWebhookURL(webhookSecret)
-	if _, connErr := cli.ConnectInstance(ctx, instToken, webhookURL); connErr != nil {
-		slog.Warn("initial evolution connect warning", "instance", evoName, "err", connErr)
+		instToken = strings.TrimSpace(in.InstanceToken)
 	}
 
 	autoCRM := true
@@ -147,7 +188,9 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 		AccountID:          accID,
 		PixelID:            pixel.ID,
 		PixelName:          pixel.Name,
-		ServerID:           server.ID,
+		ServerID:           srvID,
+		Provider:           provider,
+		ExternalAPIURL:     strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/"),
 		Name:               strings.TrimSpace(in.Name),
 		InstanceName:       evoName,
 		EvolutionUUID:      evoUUID,
@@ -165,62 +208,23 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.repo.CreateInstance(ctx, inst); err != nil {
-		_ = cli.DeleteInstance(ctx, evoUUID, evoName)
+		if provider == domain.WhatsAppProviderEvolutionGo && srvID > 0 {
+			if srv, _ := h.repo.GetAccountServer(ctx, accID); srv != nil {
+				_ = evolution.NewClient(srv.URL, srv.APIKey).DeleteInstance(ctx, evoUUID, evoName)
+			}
+		}
 		writeError(w, http.StatusInternalServerError, "erro ao salvar instância: "+err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, inst)
-}
-
-func (h *AdminWhatsAppInstances) Update(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	accID := TenantFromContext(ctx).EffectiveAccountID(0)
-	instanceID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "id inválido")
-		return
-	}
-
-	inst, err := h.repo.GetInstance(ctx, accID, instanceID)
-	if err != nil || inst == nil {
-		writeError(w, http.StatusNotFound, "instância não encontrada")
-		return
-	}
-
-	var in instanceUpsertInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "json inválido")
-		return
-	}
-
-	if in.PixelID > 0 && in.PixelID != inst.PixelID {
-		pixel, perr := h.pixels.FindByID(ctx, in.PixelID)
-		if perr != nil || pixel == nil || pixel.AccountID != accID {
-			writeError(w, http.StatusBadRequest, "Pixel inválido")
-			return
+	if inst.IsExternalUazapi() && inst.ExternalAPIURL != "" && inst.InstanceToken != "" {
+		uazCli := uazapi.New(inst.ExternalAPIURL, inst.InstanceToken)
+		if werr := uazCli.ConfigureWebhook(ctx, webhookURL, webhookSecret); werr != nil {
+			slog.Warn("initial uazapi webhook config warning", "instance_id", inst.ID, "err", werr)
 		}
-		inst.PixelID = pixel.ID
-		inst.PixelName = pixel.Name
-	}
-	if strings.TrimSpace(in.Name) != "" {
-		inst.Name = strings.TrimSpace(in.Name)
-	}
-	inst.PurchaseTrigger = strings.TrimSpace(in.PurchaseTrigger)
-	inst.LeadTrigger = strings.TrimSpace(in.LeadTrigger)
-	inst.CustomEventName = strings.TrimSpace(in.CustomEventName)
-	inst.CustomEventTrigger = strings.TrimSpace(in.CustomEventTrigger)
-	if in.AutoCreateCRMLead != nil {
-		inst.AutoCreateCRMLead = *in.AutoCreateCRMLead
-	}
-	inst.DefaultCRMStageID = in.DefaultCRMStageID
-	if in.Enabled != nil {
-		inst.Enabled = *in.Enabled
+		_ = syncInstanceLiveStatus(ctx, h.repo, inst, h.publicAPIURL)
 	}
 
-	if err := h.repo.UpdateInstance(ctx, inst); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao atualizar instância")
-		return
-	}
-	writeJSON(w, http.StatusOK, inst)
+	h.decorateInstance(inst)
+	writeJSON(w, http.StatusCreated, inst)
 }

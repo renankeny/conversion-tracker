@@ -62,15 +62,24 @@ export const useWhatsAppStore = defineStore('whatsapp', () => {
     }
   }
 
-  function updateInstanceStatus(id: number, status: string, ownerJid?: string, profileName?: string): void {
+  function updateInstanceStatus(
+    id: number,
+    status: string,
+    ownerJid?: string,
+    profileName?: string,
+    profilePicUrl?: string,
+  ): void {
     const idx = instances.value.findIndex((i) => i.id === id)
     if (idx < 0) return
     const cur = instances.value[idx]!
+    const nextStatus = status || cur.connection_status
+    const isReset = nextStatus === 'CLOSED' || (nextStatus === 'CONNECTING' && !ownerJid)
     instances.value[idx] = {
       ...cur,
-      connection_status: status || cur.connection_status,
-      owner_jid: ownerJid || cur.owner_jid,
-      profile_name: profileName || cur.profile_name,
+      connection_status: nextStatus,
+      owner_jid: isReset ? '' : (ownerJid ?? cur.owner_jid),
+      profile_name: isReset ? '' : (profileName ?? cur.profile_name),
+      profile_pic_url: isReset ? '' : (profilePicUrl ?? cur.profile_pic_url),
     }
   }
 

@@ -7,7 +7,7 @@
   >
     <span v-if="loading" class="spinner"></span>
     <slot v-else-if="$slots.iconLeft" name="iconLeft" />
-    <span v-if="!loading"><slot /></span>
+    <span v-if="!loading" class="inline-flex items-center gap-1.5"><slot /></span>
     <slot v-if="!loading && $slots.iconRight" name="iconRight" />
   </button>
 </template>

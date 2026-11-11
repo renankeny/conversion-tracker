@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,158 +13,190 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/evolution"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
+	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/uazapi"
 )
 
-func (h *AdminWhatsAppInstances) loadOwnedInstance(w http.ResponseWriter, r *http.Request) (*domain.WhatsAppInstance, bool) {
-	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
+func (h *AdminWhatsAppInstances) Update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	accID := TenantFromContext(ctx).EffectiveAccountID(0)
 	instanceID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "id inválido")
-		return nil, false
+		return
 	}
-	inst, err := h.repo.GetInstance(r.Context(), accID, instanceID)
+
+	inst, err := h.repo.GetInstance(ctx, accID, instanceID)
 	if err != nil || inst == nil {
 		writeError(w, http.StatusNotFound, "instância não encontrada")
-		return nil, false
-	}
-	return inst, true
-}
-
-func (h *AdminWhatsAppInstances) Connect(w http.ResponseWriter, r *http.Request) {
-	inst, ok := h.loadOwnedInstance(w, r)
-	if !ok {
-		return
-	}
-	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	webhookURL := h.buildWebhookURL(inst.WebhookSecret)
-	if _, err := cli.ConnectInstance(r.Context(), inst.InstanceToken, webhookURL); err != nil {
-		writeError(w, http.StatusBadGateway, "erro ao iniciar conexão na Evolution Go: "+err.Error())
-		return
-	}
-	_ = h.repo.UpdateInstanceStatus(r.Context(), inst.ID, "CONNECTING")
-	writeJSON(w, http.StatusOK, map[string]any{"success": true, "status": "CONNECTING"})
-}
-
-func (h *AdminWhatsAppInstances) QrCode(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	inst, ok := h.loadOwnedInstance(w, r)
-	if !ok {
 		return
 	}
 
-	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	webhookURL := h.buildWebhookURL(inst.WebhookSecret)
-	_, _ = cli.ConnectInstance(ctx, inst.InstanceToken, webhookURL)
+	var in instanceUpsertInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeError(w, http.StatusBadRequest, "json inválido")
+		return
+	}
 
-	qrData, err := cli.GetQrCode(ctx, inst.InstanceToken)
-	if err != nil {
-		if st, stErr := cli.GetStatus(ctx, inst.InstanceToken); stErr == nil && st != nil && (st.Connected || st.LoggedIn) {
-			ownerBare := queue.NormalizeBareJID(st.MyJID)
-			_ = h.repo.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, st.Name, "")
-			writeJSON(w, http.StatusOK, map[string]any{"connected": true, "status": "OPEN", "owner_jid": ownerBare})
+	if in.PixelID > 0 && in.PixelID != inst.PixelID {
+		pixel, perr := h.pixels.FindByID(ctx, in.PixelID)
+		if perr != nil || pixel == nil || pixel.AccountID != accID {
+			writeError(w, http.StatusBadRequest, "Pixel inválido")
 			return
 		}
-		if strings.Contains(strings.ToLower(err.Error()), "already logged in") {
-			_ = h.repo.UpdateInstanceStatus(ctx, inst.ID, "OPEN")
-			writeJSON(w, http.StatusOK, map[string]any{"connected": true, "status": "OPEN"})
-			return
+		inst.PixelID = pixel.ID
+		inst.PixelName = pixel.Name
+	}
+	if strings.TrimSpace(in.Name) != "" {
+		inst.Name = strings.TrimSpace(in.Name)
+	}
+	if inst.IsExternalUazapi() {
+		if in.Provider == domain.WhatsAppProviderAPIPremium || in.Provider == domain.WhatsAppProviderUazapi {
+			inst.Provider = in.Provider
 		}
-		writeError(w, http.StatusBadGateway, "erro ao gerar QR Code: "+err.Error())
+		inst.ExternalAPIURL = strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/")
+		if strings.TrimSpace(in.InstanceToken) != "" {
+			inst.InstanceToken = strings.TrimSpace(in.InstanceToken)
+		}
+	}
+	inst.PurchaseTrigger = strings.TrimSpace(in.PurchaseTrigger)
+	inst.LeadTrigger = strings.TrimSpace(in.LeadTrigger)
+	inst.CustomEventName = strings.TrimSpace(in.CustomEventName)
+	inst.CustomEventTrigger = strings.TrimSpace(in.CustomEventTrigger)
+	if in.AutoCreateCRMLead != nil {
+		inst.AutoCreateCRMLead = *in.AutoCreateCRMLead
+	}
+	inst.DefaultCRMStageID = in.DefaultCRMStageID
+	if in.Enabled != nil {
+		inst.Enabled = *in.Enabled
+	}
+
+	if err := h.repo.UpdateInstance(ctx, inst); err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao atualizar instância")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"connected": false,
-		"qrcode":    qrData.Qrcode,
-		"code":      qrData.Code,
-	})
+	if inst.IsExternalUazapi() && inst.ExternalAPIURL != "" && inst.InstanceToken != "" {
+		webhookURL := buildProviderWebhookURL(h.publicAPIURL, inst.Provider, inst.WebhookSecret)
+		if werr := uazapi.New(inst.ExternalAPIURL, inst.InstanceToken).ConfigureWebhook(ctx, webhookURL, inst.WebhookSecret); werr != nil {
+			slog.Warn("uazapi webhook update warning", "instance_id", inst.ID, "err", werr)
+		}
+		_ = syncInstanceLiveStatus(ctx, h.repo, inst, h.publicAPIURL)
+	}
+
+	h.decorateInstance(inst)
+	writeJSON(w, http.StatusOK, inst)
 }
 
-func (h *AdminWhatsAppInstances) Pair(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	inst, ok := h.loadOwnedInstance(w, r)
-	if !ok {
-		return
-	}
-	var in struct {
-		Phone string `json:"phone"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || strings.TrimSpace(in.Phone) == "" {
-		writeError(w, http.StatusBadRequest, "informe o número de telefone com DDI (ex: 5511999999999)")
-		return
+func syncInstanceLiveStatus(ctx context.Context, r *repo.WhatsAppRepo, inst *domain.WhatsAppInstance, publicAPIURL string) error {
+	if inst.IsExternalUazapi() {
+		if inst.ExternalAPIURL == "" || inst.InstanceToken == "" {
+			return nil
+		}
+		uazCli := uazapi.New(inst.ExternalAPIURL, inst.InstanceToken)
+		if publicAPIURL != "" && inst.WebhookSecret != "" {
+			whURL := buildProviderWebhookURL(publicAPIURL, inst.Provider, inst.WebhookSecret)
+			_ = uazCli.ConfigureWebhook(ctx, whURL, inst.WebhookSecret)
+		}
+		st, err := uazCli.GetStatus(ctx)
+		if err != nil {
+			return err
+		}
+		if st.Connected {
+			ownerBare := queue.NormalizeBareJID(st.OwnerJID)
+			if ownerBare == "" {
+				ownerBare = inst.OwnerJID
+			}
+			profName := st.ProfileName
+			if profName == "" {
+				profName = inst.ProfileName
+			}
+			profPic := st.ProfilePicURL
+			if profPic == "" {
+				profPic = inst.ProfilePicURL
+			}
+			_ = r.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, profName, profPic)
+			inst.ConnectionStatus = "OPEN"
+			inst.OwnerJID = ownerBare
+			inst.ProfileName = profName
+			inst.ProfilePicURL = profPic
+			return nil
+		}
+		status := "CLOSED"
+		if st.Status == "connecting" || st.Qrcode != "" {
+			status = "CONNECTING"
+		}
+		_ = r.ResetInstanceSession(ctx, inst.ID, status)
+		inst.ConnectionStatus = status
+		inst.OwnerJID = ""
+		inst.ProfileName = ""
+		inst.ProfilePicURL = ""
+		return nil
 	}
 
-	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	webhookURL := h.buildWebhookURL(inst.WebhookSecret)
-	_, _ = cli.ConnectInstance(ctx, inst.InstanceToken, webhookURL)
-
-	code, err := cli.PairPhone(ctx, inst.InstanceToken, in.Phone)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "erro ao gerar código de pareamento: "+err.Error())
-		return
-	}
-	_ = h.repo.UpdateInstanceStatus(ctx, inst.ID, "CONNECTING")
-	writeJSON(w, http.StatusOK, map[string]any{"pairing_code": code})
-}
-
-func (h *AdminWhatsAppInstances) RefreshStatus(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	inst, ok := h.loadOwnedInstance(w, r)
-	if !ok {
-		return
-	}
 	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
 	st, err := cli.GetStatus(ctx, inst.InstanceToken)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "erro ao consultar status: "+err.Error())
-		return
+		return err
 	}
 
-	status := "CLOSED"
-	if st.Connected || st.LoggedIn {
-		status = "OPEN"
-	}
-	ownerBare := queue.NormalizeBareJID(st.MyJID)
-	profName := st.Name
-	profPic := ""
 	target := inst.EvolutionUUID
 	if target == "" {
 		target = inst.InstanceName
 	}
-	if info, ierr := cli.GetInfo(ctx, target); ierr == nil && info != nil {
-		if info.ProfileName != "" {
-			profName = info.ProfileName
+	info, _ := cli.GetInfo(ctx, target)
+
+	isLoggedIn := st.LoggedIn || (info != nil && info.Connected)
+	isConnected := st.Connected && isLoggedIn
+
+	if isConnected {
+		ownerBare := queue.NormalizeBareJID(st.MyJID)
+		if ownerBare == "" && info != nil && info.JID != "" {
+			ownerBare = queue.NormalizeBareJID(info.JID)
 		}
-		profPic = info.ProfilePicURL
+		if ownerBare == "" {
+			ownerBare = inst.OwnerJID
+		}
+		profName := strings.TrimSpace(st.Name)
+		if info != nil && strings.TrimSpace(info.ProfileName) != "" {
+			profName = strings.TrimSpace(info.ProfileName)
+		}
+		if profName == "" {
+			profName = inst.ProfileName
+		}
+		profPic := ""
+		if info != nil && strings.TrimSpace(info.ProfilePicURL) != "" {
+			profPic = strings.TrimSpace(info.ProfilePicURL)
+		}
+		if profPic == "" && ownerBare != "" {
+			profPic = cli.GetUserAvatar(ctx, inst.InstanceToken, ownerBare)
+		}
+		if profPic == "" {
+			profPic = inst.ProfilePicURL
+		}
+
+		_ = r.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, profName, profPic)
+		inst.ConnectionStatus = "OPEN"
+		inst.OwnerJID = ownerBare
+		inst.ProfileName = profName
+		inst.ProfilePicURL = profPic
+		return nil
 	}
-	_ = h.repo.UpdateInstanceOwnerAndProfile(ctx, inst.ID, status, ownerBare, profName, profPic)
-	updated, _ := h.repo.GetInstance(ctx, inst.AccountID, inst.ID)
-	writeJSON(w, http.StatusOK, updated)
+
+	if isLoggedIn && !st.Connected {
+		_ = r.UpdateInstanceStatus(ctx, inst.ID, "DISCONNECTED")
+		inst.ConnectionStatus = "DISCONNECTED"
+		return nil
+	}
+
+	status := "CLOSED"
+	if st.Connected || (info != nil && info.Qrcode != "") {
+		status = "CONNECTING"
+	}
+	_ = r.ResetInstanceSession(ctx, inst.ID, status)
+	inst.ConnectionStatus = status
+	inst.OwnerJID = ""
+	inst.ProfileName = ""
+	inst.ProfilePicURL = ""
+	return nil
 }
-
-func (h *AdminWhatsAppInstances) Disconnect(w http.ResponseWriter, r *http.Request) {
-	inst, ok := h.loadOwnedInstance(w, r)
-	if !ok {
-		return
-	}
-	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	_ = cli.LogoutInstance(r.Context(), inst.InstanceToken)
-	_ = h.repo.UpdateInstanceStatus(r.Context(), inst.ID, "CLOSED")
-	writeJSON(w, http.StatusOK, map[string]any{"disconnected": true})
-}
-
-func (h *AdminWhatsAppInstances) Delete(w http.ResponseWriter, r *http.Request) {
-	inst, ok := h.loadOwnedInstance(w, r)
-	if !ok {
-		return
-	}
-	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	_ = cli.DeleteInstance(r.Context(), inst.EvolutionUUID, inst.InstanceName)
-
-	if err := h.repo.DeleteInstance(r.Context(), inst.AccountID, inst.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao excluir instância: "+err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
-}
-

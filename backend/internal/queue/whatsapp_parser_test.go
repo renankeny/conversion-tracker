@@ -23,6 +23,53 @@ func TestStripHeavyBase64FromEventData(t *testing.T) {
 	}
 }
 
+func TestParseEvolutionMessageEvent_UnwrapsEphemeralAndCTWA(t *testing.T) {
+	raw := json.RawMessage(`{
+		"Info": {"ID": "EPH_1", "Chat": "5511988887777@s.whatsapp.net", "Sender": "5511988887777@s.whatsapp.net", "PushName": "Maria Silva"},
+		"Message": {
+			"ephemeralMessage": {
+				"message": {
+					"extendedTextMessage": {
+						"text": "Olá, vi o anúncio! Protocolo: *ABC1234567*",
+						"contextInfo": {
+							"entryPointConversionApp": "instagram",
+							"externalAdReply": {
+								"ctwaClid": "CLID_999",
+								"sourceID": "238500112233",
+								"thumbnailURL": "https://scontent.xx.fbcdn.net/thumb.jpg"
+							}
+						}
+					}
+				}
+			}
+		}
+	}`)
+	parsed, err := ParseEvolutionMessageEvent(raw)
+	if err != nil || parsed == nil {
+		t.Fatalf("expected parsed ephemeral message, err=%v", err)
+	}
+	if parsed.Content != "Olá, vi o anúncio! Protocolo: *ABC1234567*" {
+		t.Fatalf("unexpected content: %q", parsed.Content)
+	}
+	if parsed.CtwaClid != "CLID_999" || parsed.SourceID != "238500112233" || parsed.SourceApp != "instagram" {
+		t.Fatalf("unexpected CTWA fields: %+v", parsed)
+	}
+	if code := ExtractProtocolCode(parsed.Content); code != "ABC1234567" {
+		t.Fatalf("expected protocol code ABC1234567, got %q", code)
+	}
+}
+
+func TestMatchPhraseTriggerWithTerm(t *testing.T) {
+	term, ok := matchPhraseTriggerWithTerm("pagamento confirmado, pix recebido, venda aprovada", "Olá! Seu PIX RECEBIDO no valor de 350 reais!")
+	if !ok || term != "pix recebido" {
+		t.Fatalf("expected match 'pix recebido', got %q (ok=%v)", term, ok)
+	}
+	term2, ok2 := matchPhraseTriggerWithTerm("orcamento enviado", "Segue o orçamento enviado ontem")
+	if !ok2 || term2 != "orcamento enviado" {
+		t.Fatalf("expected accent-insensitive match 'orcamento enviado', got %q (ok=%v)", term2, ok2)
+	}
+}
+
 func TestResolveContactJID_ProtectsAgainstFromMeLIDSwap(t *testing.T) {
 	lidStore := map[string]string{}
 	lookup := func(lid string) string { return lidStore[lid] }
@@ -83,4 +130,3 @@ func TestClassifyPortalOrigin_AllPortals(t *testing.T) {
 		t.Fatalf("expected website_organic, got %q", got)
 	}
 }
-

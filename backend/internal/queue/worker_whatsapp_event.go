@@ -39,8 +39,10 @@ func makeWhatsAppEventHandler(deps Deps) func(context.Context, *asynq.Task) erro
 			status := "DISCONNECTED"
 			if payload.Event == "LoggedOut" {
 				status = "CLOSED"
+				_ = deps.WhatsApp.ResetInstanceSession(ctx, inst.ID, status)
+			} else {
+				_ = deps.WhatsApp.UpdateInstanceStatus(ctx, inst.ID, status)
 			}
-			_ = deps.WhatsApp.UpdateInstanceStatus(ctx, inst.ID, status)
 			wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
 				"instance_id": inst.ID,
 				"status":      status,
@@ -68,18 +70,26 @@ func makeWhatsAppEventHandler(deps Deps) func(context.Context, *asynq.Task) erro
 				"event":       "QRTimeout",
 			})
 		case "Message", "SendMessage":
-			return processEvolutionMessage(ctx, deps, inst, payload.Data)
+			parsed, err := ParseEvolutionMessageEvent(payload.Data)
+			if err != nil || parsed == nil {
+				return nil
+			}
+			return processParsedWhatsAppMessage(ctx, deps, inst, parsed)
+		case "UazapiConnection":
+			syncUazapiMetaFromWebhook(ctx, deps, inst, payload.Data)
+		case "UazapiMessage":
+			syncUazapiMetaFromWebhook(ctx, deps, inst, payload.Data)
+			parsed, err := ParseUazapiMessageEvent(payload.Data)
+			if err != nil || parsed == nil {
+				return nil
+			}
+			return processParsedWhatsAppMessage(ctx, deps, inst, parsed)
 		}
 		return nil
 	}
 }
 
-func processEvolutionMessage(ctx context.Context, deps Deps, inst *domain.WhatsAppInstance, rawData json.RawMessage) error {
-	parsed, err := ParseEvolutionMessageEvent(rawData)
-	if err != nil || parsed == nil {
-		return nil
-	}
-
+func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.WhatsAppInstance, parsed *ParsedWhatsAppMessage) error {
 	remoteJID, phone, lidDigits, skip := ResolveContactJID(
 		parsed,
 		inst.OwnerJID,
@@ -102,9 +112,6 @@ func processEvolutionMessage(ctx context.Context, deps Deps, inst *domain.WhatsA
 
 	protocolCode := ExtractProtocolCode(parsed.Content)
 	hasPortal := parsed.CtwaClid != "" || parsed.SourceID != "" || protocolCode != ""
-	if existingChat == nil && !hasPortal {
-		return nil
-	}
 
 	var trackedUser *domain.TrackedUser
 	originType := ""
@@ -120,7 +127,7 @@ func processEvolutionMessage(ctx context.Context, deps Deps, inst *domain.WhatsA
 		u, portalOrigin := resolveOrCreatePortalLead(ctx, deps, inst, parsed, protocolCode, phone, lidDigits)
 		if u != nil {
 			trackedUser = u
-			if portalOrigin != "" {
+			if portalOrigin != "" && (originType == "" || originType == "unknown" || hasPortal) {
 				originType = portalOrigin
 			}
 		}
@@ -143,9 +150,16 @@ func processEvolutionMessage(ctx context.Context, deps Deps, inst *domain.WhatsA
 		crmLeadID = existingChat.CRMLeadID
 	}
 
-	contactName := parsed.PushName
-	if parsed.IsFromMe && existingChat != nil && existingChat.ContactName != nil {
+	contactName := ""
+	if !parsed.IsFromMe {
+		contactName = parsed.PushName
+	} else if existingChat != nil && existingChat.ContactName != nil && *existingChat.ContactName != "" {
 		contactName = *existingChat.ContactName
+	} else if trackedUser.FirstName != "" {
+		contactName = trackedUser.FirstName
+		if trackedUser.LastName != "" {
+			contactName += " " + trackedUser.LastName
+		}
 	}
 	var contactPtr *string
 	if contactName != "" {

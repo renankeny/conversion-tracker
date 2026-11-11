@@ -1,10 +1,10 @@
 package queue
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 
-	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -93,7 +93,6 @@ func ResolveContactJID(
 				break
 			}
 		}
-		// Se o único JID encontrado for o próprio ownerJID, descarta para não criar chat fantasma.
 		if phoneJID == "" && lidJID == "" {
 			return "", "", "", true
 		}
@@ -124,58 +123,77 @@ func ResolveContactJID(
 	return remoteJID, phone, lid, false
 }
 
-func isPaidMetaUTM(src, med string) bool {
-	s := strings.ToLower(strings.TrimSpace(src))
-	m := strings.ToLower(strings.TrimSpace(med))
-	isMeta := s == "facebook" || s == "fb" || s == "instagram" || s == "ig" || s == "meta" || strings.Contains(s, "facebook") || strings.Contains(s, "instagram")
-	if !isMeta {
-		return false
+func extractMediaSubMessage(msgMap map[string]json.RawMessage, out *ParsedWhatsAppMessage) {
+	mediaKeys := [][2]string{
+		{"audioMessage", "audio"}, {"imageMessage", "image"},
+		{"documentMessage", "document"}, {"videoMessage", "video"}, {"stickerMessage", "sticker"},
 	}
-	return m == "cpc" || m == "ppc" || m == "paid" || m == "ads" || m == "cpm" || m == "paid_social" || strings.Contains(m, "ad") || strings.Contains(m, "pago") || strings.Contains(m, "trafego")
-}
-
-func isBioLinkSession(u *domain.TrackedUser) bool {
-	if u == nil {
-		return false
-	}
-	med := strings.ToLower(u.FirstUTMMedium + " " + u.LastUTMMedium + " " + u.FirstUTMSource + " " + u.LastUTMSource)
-	if strings.Contains(med, "bio") || strings.Contains(med, "linktree") || strings.Contains(med, "perfil") {
-		return true
-	}
-	urls := strings.ToLower(u.FirstURL + " " + u.URL + " " + u.Referrer)
-	for _, token := range []string{"linktr.ee", "beacons.ai", "bio.site", "lnk.bio", "l.instagram.com", "instagram.com", "/bio"} {
-		if strings.Contains(urls, token) {
-			return true
+	for _, mk := range mediaKeys {
+		rawSub, ok := msgMap[mk[0]]
+		if !ok {
+			continue
+		}
+		var sub struct {
+			URL         string          `json:"URL"`
+			UrlLower    string          `json:"url"`
+			Mimetype    string          `json:"mimetype"`
+			Caption     string          `json:"caption"`
+			FileLength  uint64          `json:"fileLength"`
+			Seconds     uint32          `json:"seconds"`
+			FileName    string          `json:"fileName"`
+			Title       string          `json:"title"`
+			ContextInfo *evoContextInfo `json:"contextInfo"`
+		}
+		if json.Unmarshal(rawSub, &sub) == nil && (sub.URL != "" || sub.UrlLower != "" || out.ExternalMediaURL != "") {
+			out.MessageType = mk[1]
+			out.HasMedia = true
+			out.MimeType = sub.Mimetype
+			out.FileLength = int64(sub.FileLength)
+			out.DurationSec = int(sub.Seconds)
+			out.Filename = util.FirstNonEmpty(sub.FileName, sub.Title)
+			if sub.Caption != "" && out.Content == "" {
+				out.Content = sub.Caption
+			}
+			applyContextInfo(sub.ContextInfo, out)
+			protoEnvelope, _ := json.Marshal(map[string]json.RawMessage{mk[0]: rawSub})
+			out.MediaProtoJSON = protoEnvelope
+			return
 		}
 	}
-	return false
+}
+
+func applyContextInfo(ctxInfo *evoContextInfo, out *ParsedWhatsAppMessage) {
+	if ctxInfo == nil {
+		return
+	}
+	if ctxInfo.CtwaClidDirect != "" && out.CtwaClid == "" {
+		out.CtwaClid = strings.TrimSpace(ctxInfo.CtwaClidDirect)
+	}
+	applyReferral(&ctxInfo.ExternalAdReply, util.FirstNonEmpty(ctxInfo.ConversionApp, ctxInfo.ConversionSrc, ctxInfo.ConversionFB), out)
 }
 
 func applyReferral(ref *evoAdReferral, fallbackApp string, out *ParsedWhatsAppMessage) {
 	if ref == nil {
 		return
 	}
-	if ref.CtwaClid != "" && out.CtwaClid == "" {
-		out.CtwaClid = strings.TrimSpace(ref.CtwaClid)
+	if clid := util.FirstNonEmpty(ref.CtwaClid, ref.CtwaClidSnake); clid != "" && out.CtwaClid == "" {
+		out.CtwaClid = strings.TrimSpace(clid)
 	}
-	sid := util.FirstNonEmpty(ref.SourceID, ref.SourceIdAlt)
-	if sid != "" && out.SourceID == "" {
+	if sid := util.FirstNonEmpty(ref.SourceID, ref.SourceIdAlt, ref.SourceIDSnake); sid != "" && out.SourceID == "" {
 		out.SourceID = strings.TrimSpace(sid)
 	}
-	if ref.SourceURL != "" && out.SourceURL == "" {
-		out.SourceURL = strings.TrimSpace(ref.SourceURL)
+	if surl := util.FirstNonEmpty(ref.SourceURL, ref.SourceUrlAlt); surl != "" && out.SourceURL == "" {
+		out.SourceURL = strings.TrimSpace(surl)
 	}
-	app := util.FirstNonEmpty(ref.SourceApp, fallbackApp)
-	if app != "" && out.SourceApp == "" {
+	if app := util.FirstNonEmpty(ref.SourceApp, ref.SourceAppAlt, fallbackApp); app != "" && out.SourceApp == "" {
 		out.SourceApp = strings.ToLower(strings.TrimSpace(app))
 	}
-	thumb := util.FirstNonEmpty(ref.ThumbnailURL, ref.MediaURL)
-	if thumb != "" && out.AdThumbnailURL == "" {
+	if thumb := util.FirstNonEmpty(ref.ThumbnailURL, ref.OriginalImageURL, ref.MediaURL); thumb != "" && out.AdThumbnailURL == "" {
 		out.AdThumbnailURL = strings.TrimSpace(thumb)
 	}
 }
 
-var rxProtocol = regexp.MustCompile(`(?i)protocolo:?\s*([A-Za-z0-9_-]{6,36})`)
+var rxProtocol = regexp.MustCompile(`(?i)(?:protocolo(?:\s+de\s+atendimento)?|c[oó]d(?:igo)?\s+de\s+atendimento|ref(?:er[eê]ncia)?)\s*[:#\-]?\s*\*?([A-Za-z0-9_-]{6,36})\*?`)
 
 func ExtractProtocolCode(text string) string {
 	m := rxProtocol.FindStringSubmatch(text)
@@ -183,26 +201,4 @@ func ExtractProtocolCode(text string) string {
 		return ""
 	}
 	return strings.TrimSpace(m[1])
-}
-
-func ClassifyPortalOrigin(ctwaClid, sourceID string, u *domain.TrackedUser) string {
-	if ctwaClid != "" || sourceID != "" {
-		return domain.WhatsAppOriginMetaCTWA
-	}
-	if u == nil {
-		return domain.WhatsAppOriginWebsiteOrganic
-	}
-	if u.FBC != "" || isPaidMetaUTM(u.FirstUTMSource, u.FirstUTMMedium) || isPaidMetaUTM(u.LastUTMSource, u.LastUTMMedium) {
-		return domain.WhatsAppOriginMetaLP
-	}
-	if u.GCLID != "" || u.GBraid != "" || u.WBraid != "" {
-		return domain.WhatsAppOriginGoogleAds
-	}
-	if u.TTClid != "" {
-		return domain.WhatsAppOriginTikTokAds
-	}
-	if isBioLinkSession(u) {
-		return domain.WhatsAppOriginBioLinkOrganic
-	}
-	return domain.WhatsAppOriginWebsiteOrganic
 }

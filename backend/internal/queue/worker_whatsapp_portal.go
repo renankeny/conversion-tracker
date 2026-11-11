@@ -3,7 +3,6 @@ package queue
 import (
 	"context"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
@@ -22,30 +21,33 @@ func resolveOrCreatePortalLead(
 
 	// Portal 1: Protocolo injetado pelo tracker.js (Site / LP / Link na Bio)
 	if protocolCode != "" {
-		if u, err := deps.Users.FindByProtocolByAccount(ctx, protocolCode, inst.AccountID); err == nil && u != nil {
-			if phone != "" {
-				u.Phone = phone
-			}
-			if lidDigits != "" {
-				u.WaLid = lidDigits
-			}
-			if first != "" && u.FirstName == "" {
-				u.FirstName = first
-			}
-			if last != "" && u.LastName == "" {
-				u.LastName = last
-			}
-			if parsed.CtwaClid != "" {
-				u.CtwaClid = parsed.CtwaClid
-			}
-			_ = deps.Users.Upsert(ctx, u)
-			if phone != "" {
-				if stitched, lerr := deps.Users.ResolveAndLink(ctx, inst.AccountID, u.ExternalID, phone, u.Email); lerr == nil && stitched != nil {
-					u = stitched
-				}
-			}
-			return u, ClassifyPortalOrigin(parsed.CtwaClid, parsed.SourceID, u)
+		u, _ := deps.Users.FindByProtocolByAccount(ctx, protocolCode, inst.AccountID)
+		if u == nil && phone != "" {
+			u, _ = deps.Users.FindByPhoneVariantsByAccount(ctx, util.PhoneVariants(phone), inst.AccountID)
 		}
+		if u == nil && lidDigits != "" {
+			u, _ = deps.Users.FindByWaLIDByAccount(ctx, lidDigits, inst.AccountID)
+		}
+		if u == nil {
+			pixel, err := deps.Pixels.FindByID(ctx, inst.PixelID)
+			if err != nil || pixel == nil {
+				return nil, ""
+			}
+			u = &domain.TrackedUser{
+				ExternalID: protocolCode,
+				IDWpp:      protocolCode,
+				AccountID:  inst.AccountID,
+				PixelName:  pixel.Name,
+			}
+		}
+		hydrateWhatsAppUserFields(u, phone, lidDigits, first, last, parsed)
+		_ = deps.Users.Upsert(ctx, u)
+		if phone != "" {
+			if stitched, lerr := deps.Users.ResolveAndLink(ctx, inst.AccountID, u.ExternalID, phone, u.Email); lerr == nil && stitched != nil {
+				u = stitched
+			}
+		}
+		return u, ClassifyPortalOrigin(parsed.CtwaClid, parsed.SourceID, u)
 	}
 
 	// Portal 2: Meta Ads CTWA Direto (ctwaClid ou referral.sourceID)
@@ -72,21 +74,7 @@ func resolveOrCreatePortalLead(
 				FirstUTMSource: util.FirstNonEmpty(parsed.SourceApp, "facebook"),
 			}
 		}
-		if phone != "" {
-			u.Phone = phone
-		}
-		if lidDigits != "" {
-			u.WaLid = lidDigits
-		}
-		if first != "" && u.FirstName == "" {
-			u.FirstName = first
-		}
-		if last != "" && u.LastName == "" {
-			u.LastName = last
-		}
-		if parsed.CtwaClid != "" {
-			u.CtwaClid = parsed.CtwaClid
-		}
+		hydrateWhatsAppUserFields(u, phone, lidDigits, first, last, parsed)
 		if parsed.SourceID != "" {
 			u.WaAdID = parsed.SourceID
 		}
@@ -108,7 +96,41 @@ func resolveOrCreatePortalLead(
 		return u, domain.WhatsAppOriginMetaCTWA
 	}
 
+	// Portal 3: Visitante já rastreado na conta pelo telefone ou @lid (preencheu form/checkout na LP e chamou sem protocolo)
+	var existingUser *domain.TrackedUser
+	if phone != "" {
+		existingUser, _ = deps.Users.FindByPhoneVariantsByAccount(ctx, util.PhoneVariants(phone), inst.AccountID)
+	}
+	if existingUser == nil && lidDigits != "" {
+		existingUser, _ = deps.Users.FindByWaLIDByAccount(ctx, lidDigits, inst.AccountID)
+	}
+	if existingUser != nil {
+		hydrateWhatsAppUserFields(existingUser, phone, lidDigits, first, last, parsed)
+		_ = deps.Users.Upsert(ctx, existingUser)
+		return existingUser, ClassifyPortalOrigin(parsed.CtwaClid, parsed.SourceID, existingUser)
+	}
+
 	return nil, ""
+}
+
+func hydrateWhatsAppUserFields(u *domain.TrackedUser, phone, lidDigits, first, last string, parsed *ParsedWhatsAppMessage) {
+	if phone != "" {
+		u.Phone = phone
+	}
+	if lidDigits != "" {
+		u.WaLid = lidDigits
+	}
+	if !parsed.IsFromMe {
+		if first != "" && u.FirstName == "" {
+			u.FirstName = first
+		}
+		if last != "" && u.LastName == "" {
+			u.LastName = last
+		}
+	}
+	if parsed.CtwaClid != "" {
+		u.CtwaClid = parsed.CtwaClid
+	}
 }
 
 func ensureCRMLeadForWhatsApp(ctx context.Context, deps Deps, inst *domain.WhatsAppInstance, trackedUserID int64) int64 {
@@ -141,7 +163,57 @@ func ensureCRMLeadForWhatsApp(ctx context.Context, deps Deps, inst *domain.Whats
 	return id
 }
 
-var rxMoneyExplicit = regexp.MustCompile(`(?i)(?:R\$\s*\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?|R\$\s*\d+(?:[.,]\d{2})?|\b\d{1,3}(?:\.\d{3})+,\d{2}\b|\b\d+,\d{2}\b|\b\d{1,3}(?:,\d{3})+\.\d{2}\b)`)
+func ClassifyPortalOrigin(ctwaClid, sourceID string, u *domain.TrackedUser) string {
+	if ctwaClid != "" || sourceID != "" {
+		return domain.WhatsAppOriginMetaCTWA
+	}
+	if u == nil {
+		return domain.WhatsAppOriginWebsiteOrganic
+	}
+	if u.CtwaClid != "" {
+		return domain.WhatsAppOriginMetaCTWA
+	}
+	if u.FBC != "" || isPaidMetaUTM(u.FirstUTMSource, u.FirstUTMMedium) || isPaidMetaUTM(u.LastUTMSource, u.LastUTMMedium) {
+		return domain.WhatsAppOriginMetaLP
+	}
+	if u.GCLID != "" || u.GBraid != "" || u.WBraid != "" {
+		return domain.WhatsAppOriginGoogleAds
+	}
+	if u.TTClid != "" {
+		return domain.WhatsAppOriginTikTokAds
+	}
+	if isBioLinkSession(u) {
+		return domain.WhatsAppOriginBioLinkOrganic
+	}
+	return domain.WhatsAppOriginWebsiteOrganic
+}
+
+func isPaidMetaUTM(src, med string) bool {
+	s := strings.ToLower(strings.TrimSpace(src))
+	m := strings.ToLower(strings.TrimSpace(med))
+	isMeta := s == "facebook" || s == "fb" || s == "instagram" || s == "ig" || s == "meta" || strings.Contains(s, "facebook") || strings.Contains(s, "instagram")
+	if !isMeta {
+		return false
+	}
+	return m == "cpc" || m == "ppc" || m == "paid" || m == "ads" || m == "cpm" || m == "paid_social" || strings.Contains(m, "ad") || strings.Contains(m, "pago") || strings.Contains(m, "trafego")
+}
+
+func isBioLinkSession(u *domain.TrackedUser) bool {
+	if u == nil {
+		return false
+	}
+	med := strings.ToLower(u.FirstUTMMedium + " " + u.LastUTMMedium + " " + u.FirstUTMSource + " " + u.LastUTMSource)
+	if strings.Contains(med, "bio") || strings.Contains(med, "linktree") || strings.Contains(med, "perfil") {
+		return true
+	}
+	urls := strings.ToLower(u.FirstURL + " " + u.URL + " " + u.Referrer)
+	for _, token := range []string{"linktr.ee", "beacons.ai", "bio.site", "lnk.bio", "l.instagram.com", "instagram.com", "/bio"} {
+		if strings.Contains(urls, token) {
+			return true
+		}
+	}
+	return false
+}
 
 func splitFullName(pushName string) (string, string) {
 	pushName = strings.TrimSpace(pushName)

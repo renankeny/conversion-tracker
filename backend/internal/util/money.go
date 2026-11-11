@@ -102,6 +102,7 @@ func parseMoneyString(s string) float64 {
 
 	hasComma := strings.Contains(cleaned, ",")
 	hasDot := strings.Contains(cleaned, ".")
+	hasCurrencyHint := strings.Contains(strings.ToUpper(s), "R$") || strings.Contains(strings.ToLower(s), "reais")
 
 	switch {
 	case hasComma && hasDot:
@@ -113,7 +114,28 @@ func parseMoneyString(s string) float64 {
 			cleaned = strings.ReplaceAll(cleaned, ",", "")
 		}
 	case hasComma:
-		cleaned = strings.Replace(cleaned, ",", ".", 1)
+		if strings.Count(cleaned, ",") > 1 {
+			last := strings.LastIndex(cleaned, ",")
+			if len(cleaned)-last-1 <= 2 {
+				cleaned = strings.ReplaceAll(cleaned[:last], ",", "") + "." + cleaned[last+1:]
+			} else {
+				cleaned = strings.ReplaceAll(cleaned, ",", "")
+			}
+		} else {
+			cleaned = strings.Replace(cleaned, ",", ".", 1)
+		}
+	case hasDot:
+		if strings.Count(cleaned, ".") > 1 {
+			last := strings.LastIndex(cleaned, ".")
+			if len(cleaned)-last-1 <= 2 {
+				cleaned = strings.ReplaceAll(cleaned[:last], ".", "") + "." + cleaned[last+1:]
+			} else {
+				cleaned = strings.ReplaceAll(cleaned, ".", "")
+			}
+		} else if hasCurrencyHint && len(cleaned)-strings.IndexByte(cleaned, '.')-1 == 3 {
+			// Ex: "R$ 1.500" -> ponto de milhar brasileiro (1500.00)
+			cleaned = strings.ReplaceAll(cleaned, ".", "")
+		}
 	}
 
 	f, err := strconv.ParseFloat(cleaned, 64)

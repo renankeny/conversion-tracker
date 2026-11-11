@@ -36,12 +36,18 @@ func registerWebhookRoutes(r chi.Router, h routeHandlers) {
 		r.Post("/webhooks/custom/{id}", h.customWebhook.Handle)
 	})
 
-	// Evolution Go pode enviar mídias inline em base64 quando WEBHOOK_FILES=true;
-	// aceitamos até 25 MB aqui e removemos o base64 antes de enfileirar no Redis.
+	// Webhooks de WhatsApp (Evolution Go, API Premium e Uazapi):
+	// aceitamos até 25 MB e removemos thumbnails/base64 pesados antes de enfileirar no Redis.
 	r.Group(func(r chi.Router) {
 		r.Use(MaxBodyBytes(25 * 1024 * 1024))
 		r.Use(rlWebhooks)
 		r.Post("/webhooks/evolution/{secret}", h.webhookEvolution.HandleBySecret)
 		r.Post("/webhooks/evolution-go/{instanceName}", h.webhookEvolution.HandleLegacyByName)
+		r.Post("/webhooks/whatsapp/{provider}/{secret}", h.webhookEvolution.HandleUazapiBySecret)
+		r.Post("/webhooks/whatsapp/{provider}/{secret}/*", h.webhookEvolution.HandleUazapiBySecret)
+		r.Post("/webhooks/api-premium/{secret}", h.webhookEvolution.HandleUazapiBySecret)
+		r.Post("/webhooks/api-premium/{secret}/*", h.webhookEvolution.HandleUazapiBySecret)
+		r.Post("/webhooks/uazapi/{secret}", h.webhookEvolution.HandleUazapiBySecret)
+		r.Post("/webhooks/uazapi/{secret}/*", h.webhookEvolution.HandleUazapiBySecret)
 	})
 }

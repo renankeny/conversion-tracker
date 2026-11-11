@@ -69,17 +69,25 @@ func StripHeavyBase64FromEventData(raw json.RawMessage) json.RawMessage {
 }
 
 type evoAdReferral struct {
-	CtwaClid     string `json:"ctwaClid"`
-	SourceID     string `json:"sourceID"`
-	SourceIdAlt  string `json:"sourceId"`
-	SourceURL    string `json:"sourceURL"`
-	SourceApp    string `json:"sourceApp"`
-	ThumbnailURL string `json:"thumbnailURL"`
-	MediaURL     string `json:"mediaURL"`
+	CtwaClid      string `json:"ctwaClid"`
+	CtwaClidSnake string `json:"ctwa_clid"`
+	SourceID      string `json:"sourceID"`
+	SourceIdAlt   string `json:"sourceId"`
+	SourceIDSnake string `json:"source_id"`
+	SourceURL     string `json:"sourceURL"`
+	SourceUrlAlt  string `json:"sourceUrl"`
+	SourceApp     string `json:"sourceApp"`
+	SourceAppAlt  string `json:"source_app"`
+	ThumbnailURL     string `json:"thumbnailURL"`
+	OriginalImageURL string `json:"originalImageURL"`
+	MediaURL         string `json:"mediaURL"`
 }
 
 type evoContextInfo struct {
 	ConversionApp   string        `json:"entryPointConversionApp"`
+	ConversionSrc   string        `json:"entryPointConversionSource"`
+	ConversionFB    string        `json:"conversionSource"`
+	CtwaClidDirect  string        `json:"ctwaClid"`
 	ExternalAdReply evoAdReferral `json:"externalAdReply"`
 }
 
@@ -135,7 +143,7 @@ func ParseEvolutionMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage
 		out.DeviceDestJID = env.Info.DeviceSentMeta.DestinationJID
 	}
 
-	extractMessageContentAndMedia(env.Message, out)
+	extractMessageContentAndMedia(unwrapMessageContainers(env.Message, out, 0), out)
 	if env.Referral != nil {
 		applyReferral(env.Referral, "", out)
 	}
@@ -145,11 +153,58 @@ func ParseEvolutionMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage
 	return out, nil
 }
 
+// unwrapMessageContainers desencapsula envelopes aninhados do WhatsApp (mensagens temporárias
+// ephemeralMessage, viewOnceMessage, deviceSentMessage, documentWithCaptionMessage, editedMessage).
+func unwrapMessageContainers(msgMap map[string]json.RawMessage, out *ParsedWhatsAppMessage, depth int) map[string]json.RawMessage {
+	if len(msgMap) == 0 || depth > 4 {
+		return msgMap
+	}
+	if rawURL, ok := msgMap["mediaUrl"]; ok && out.ExternalMediaURL == "" {
+		_ = json.Unmarshal(rawURL, &out.ExternalMediaURL)
+	}
+	if rawCtx, ok := msgMap["contextInfo"]; ok {
+		var ctxInfo evoContextInfo
+		if json.Unmarshal(rawCtx, &ctxInfo) == nil {
+			applyContextInfo(&ctxInfo, out)
+		}
+	}
+	containerKeys := []string{
+		"ephemeralMessage", "viewOnceMessage", "viewOnceMessageV2",
+		"viewOnceMessageV2Extension", "deviceSentMessage",
+		"documentWithCaptionMessage", "editedMessage",
+	}
+	for _, key := range containerKeys {
+		rawWrap, ok := msgMap[key]
+		if !ok {
+			continue
+		}
+		var wrap struct {
+			DestinationJID  string                     `json:"destinationJID"`
+			Message         map[string]json.RawMessage `json:"message"`
+			ProtocolMessage *struct {
+				EditedMessage map[string]json.RawMessage `json:"editedMessage"`
+			} `json:"protocolMessage"`
+		}
+		if json.Unmarshal(rawWrap, &wrap) == nil {
+			if wrap.DestinationJID != "" && out.DeviceDestJID == "" {
+				out.DeviceDestJID = wrap.DestinationJID
+			}
+			if len(wrap.Message) > 0 {
+				return unwrapMessageContainers(wrap.Message, out, depth+1)
+			}
+			if wrap.ProtocolMessage != nil && len(wrap.ProtocolMessage.EditedMessage) > 0 {
+				return unwrapMessageContainers(wrap.ProtocolMessage.EditedMessage, out, depth+1)
+			}
+		}
+	}
+	return msgMap
+}
+
 func extractMessageContentAndMedia(msgMap map[string]json.RawMessage, out *ParsedWhatsAppMessage) {
 	if len(msgMap) == 0 {
 		return
 	}
-	if rawURL, ok := msgMap["mediaUrl"]; ok {
+	if rawURL, ok := msgMap["mediaUrl"]; ok && out.ExternalMediaURL == "" {
 		_ = json.Unmarshal(rawURL, &out.ExternalMediaURL)
 	}
 	if rawConv, ok := msgMap["conversation"]; ok {
@@ -158,60 +213,23 @@ func extractMessageContentAndMedia(msgMap map[string]json.RawMessage, out *Parse
 			out.Content = s
 		}
 	}
-	if rawExt, ok := msgMap["extendedTextMessage"]; ok {
-		var ext struct {
-			Text        string          `json:"text"`
-			ContextInfo *evoContextInfo `json:"contextInfo"`
-		}
-		if json.Unmarshal(rawExt, &ext) == nil {
-			if ext.Text != "" {
-				out.Content = ext.Text
+	for _, key := range []string{"extendedTextMessage", "buttonsResponseMessage", "listResponseMessage", "templateButtonReplyMessage"} {
+		if rawExt, ok := msgMap[key]; ok {
+			var ext struct {
+				Text                string          `json:"text"`
+				SelectedDisplayText string          `json:"selectedDisplayText"`
+				Title               string          `json:"title"`
+				Description         string          `json:"description"`
+				ContextInfo         *evoContextInfo `json:"contextInfo"`
 			}
-			if ext.ContextInfo != nil {
-				applyReferral(&ext.ContextInfo.ExternalAdReply, ext.ContextInfo.ConversionApp, out)
+			if json.Unmarshal(rawExt, &ext) == nil {
+				txt := util.FirstNonEmpty(ext.Text, ext.SelectedDisplayText, ext.Title, ext.Description)
+				if txt != "" && out.Content == "" {
+					out.Content = txt
+				}
+				applyContextInfo(ext.ContextInfo, out)
 			}
 		}
 	}
 	extractMediaSubMessage(msgMap, out)
-}
-
-func extractMediaSubMessage(msgMap map[string]json.RawMessage, out *ParsedWhatsAppMessage) {
-	mediaKeys := [][2]string{
-		{"audioMessage", "audio"}, {"imageMessage", "image"},
-		{"documentMessage", "document"}, {"videoMessage", "video"}, {"stickerMessage", "sticker"},
-	}
-	for _, mk := range mediaKeys {
-		rawSub, ok := msgMap[mk[0]]
-		if !ok {
-			continue
-		}
-		var sub struct {
-			URL         string          `json:"URL"`
-			UrlLower    string          `json:"url"`
-			Mimetype    string          `json:"mimetype"`
-			Caption     string          `json:"caption"`
-			FileLength  uint64          `json:"fileLength"`
-			Seconds     uint32          `json:"seconds"`
-			FileName    string          `json:"fileName"`
-			Title       string          `json:"title"`
-			ContextInfo *evoContextInfo `json:"contextInfo"`
-		}
-		if json.Unmarshal(rawSub, &sub) == nil && (sub.URL != "" || sub.UrlLower != "" || out.ExternalMediaURL != "") {
-			out.MessageType = mk[1]
-			out.HasMedia = true
-			out.MimeType = sub.Mimetype
-			out.FileLength = int64(sub.FileLength)
-			out.DurationSec = int(sub.Seconds)
-			out.Filename = util.FirstNonEmpty(sub.FileName, sub.Title)
-			if sub.Caption != "" && out.Content == "" {
-				out.Content = sub.Caption
-			}
-			if sub.ContextInfo != nil {
-				applyReferral(&sub.ContextInfo.ExternalAdReply, sub.ContextInfo.ConversionApp, out)
-			}
-			protoEnvelope, _ := json.Marshal(map[string]json.RawMessage{mk[0]: rawSub})
-			out.MediaProtoJSON = protoEnvelope
-			return
-		}
-	}
 }

@@ -1,55 +1,83 @@
 <template>
   <article class="meta-card">
-    <header class="meta-card-header">
-      <div class="meta-title">
-        <div class="card-avatar">
+    <div class="meta-top">
+      <header class="meta-header">
+        <div class="meta-avatar-wrap">
           <img
             v-if="avatarSrc && !imgBroken"
             :src="avatarSrc"
             :alt="account.name"
             referrerpolicy="no-referrer"
-            class="card-avatar-img"
+            class="meta-avatar-img"
             @error="imgBroken = true"
-          />
-          <BrandIcon v-else channel="meta" size="md" :colored="true" />
+          >
+          <div v-else class="meta-avatar">
+            <BrandIcon channel="meta" size="md" :colored="true" />
+          </div>
+          <span class="avatar-dot" :class="dotClass" />
         </div>
-        <div class="meta-name">
-          <h3>{{ account.ad_account_name || account.name }}</h3>
-          <span v-if="account.ad_account_id" class="meta-sub-id">
-            {{ account.ad_account_id }}
+
+        <div class="meta-titles">
+          <h3 class="meta-name">{{ account.name }}</h3>
+          <p class="meta-sub">{{ headerSubtitle }}</p>
+        </div>
+
+        <span class="status-pill" :class="pillClass">
+          <span class="status-dot" :class="dotClass" />
+          {{ statusLabel }}
+        </span>
+      </header>
+
+      <div class="meta-body">
+        <div class="meta-row">
+          <span class="meta-label">Perfil OAuth</span>
+          <span class="meta-val" :class="{ muted: !oauthProfile }">
+            {{ oauthProfile || 'Não autenticado' }}
           </span>
         </div>
-      </div>
-      <span class="status-pill" :class="statusClass">{{ statusLabel }}</span>
-    </header>
 
-    <div class="meta-details">
-      <div v-if="account.oauth_name || account.oauth_email" class="detail-row">
-        <span class="detail-label">Perfil autorizado</span>
-        <span class="detail-value">{{ account.oauth_name || account.oauth_email }}</span>
-      </div>
-      <div v-if="account.ad_account_id" class="detail-row">
-        <span class="detail-label">Conta de Anúncios</span>
-        <span class="detail-value mono">{{ account.ad_account_id }}</span>
-      </div>
-      <div v-if="account.default_page_id" class="detail-row">
-        <span class="detail-label">Página CTWA</span>
-        <span class="detail-value">{{ account.default_page_name || account.default_page_id }}</span>
+        <div class="meta-row">
+          <span class="meta-label">Conta de Anúncios</span>
+          <span class="meta-val meta-mono" :class="{ muted: !account.ad_account_id }">
+            {{ account.ad_account_id || 'Não selecionada' }}
+          </span>
+        </div>
+
+        <div class="meta-row">
+          <span class="meta-label">Página CTWA</span>
+          <span class="meta-val" :class="{ muted: !pageDisplay }">
+            {{ pageDisplay || 'Nenhuma página' }}
+          </span>
+        </div>
       </div>
     </div>
 
     <footer class="meta-actions">
-      <BaseButton variant="ghost" size="sm" @click="$emit('edit', account)">
-        Configurar
-      </BaseButton>
-      <BaseButton variant="ghost" size="sm" @click="$emit('delete', account)">
-        Excluir
-      </BaseButton>
+      <button
+        type="button"
+        class="action-main"
+        @click="$emit('edit', account)"
+      >
+        <Settings :size="16" />
+        <span>Configurar conta</span>
+      </button>
+
+      <div class="action-divider" />
+
+      <button
+        type="button"
+        class="action-icon action-delete"
+        title="Excluir conta Meta Ads"
+        @click="$emit('delete', account)"
+      >
+        <Trash2 :size="16" />
+      </button>
     </footer>
   </article>
 </template>
 
 <script setup lang="ts">
+import { Settings, Trash2 } from 'lucide-vue-next'
 import BrandIcon from '~/components/events/BrandIcon.vue'
 import type { MetaAccount } from '#shared/types'
 
@@ -66,9 +94,11 @@ const imgBroken = ref(false)
 const avatarSrc = computed(
   () => props.account.ad_account_picture_url || props.account.picture_url || props.account.oauth_picture_url || '',
 )
-watch(avatarSrc, () => { imgBroken.value = false })
+watch(avatarSrc, () => {
+  imgBroken.value = false
+})
 
-const statusClass = computed(() => {
+const statusState = computed<'connected' | 'pending' | 'disabled'>(() => {
   if (!props.account.enabled) return 'disabled'
   return props.account.connected ? 'connected' : 'pending'
 })
@@ -78,26 +108,54 @@ const statusLabel = computed(() => {
   if (!props.account.connected) return 'Aguardando OAuth'
   return 'Conectada'
 })
+
+const pillClass = computed(() => `pill-${statusState.value}`)
+const dotClass = computed(() => `dot-${statusState.value}`)
+
+const oauthProfile = computed(() => props.account.oauth_name || props.account.oauth_email || '')
+const pageDisplay = computed(() => props.account.default_page_name || props.account.default_page_id || '')
+
+const headerSubtitle = computed(() => {
+  if (props.account.ad_account_name && props.account.ad_account_name !== props.account.name) {
+    return props.account.ad_account_name
+  }
+  if (props.account.ad_account_id) return props.account.ad_account_id
+  if (oauthProfile.value) return oauthProfile.value
+  return 'Conta Meta Ads'
+})
 </script>
 
 <style scoped>
-.meta-card { display: flex; flex-direction: column; gap: 1rem; padding: 1.25rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; transition: border-color 0.15s; }
-.meta-card:hover { border-color: var(--brand-border); }
-.meta-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
-.meta-title { display: flex; gap: 0.75rem; align-items: center; flex: 1; min-width: 0; }
-.card-avatar { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-soft); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
-.card-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.meta-name { min-width: 0; }
-.meta-name h3 { font-family: var(--font-heading); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.meta-sub-id { display: block; margin-top: 0.15rem; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
-.status-pill { font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 0.25rem 0.625rem; border-radius: 999px; white-space: nowrap; }
-.status-pill.connected { background: var(--success-soft); color: var(--success); }
-.status-pill.pending { background: var(--warning-soft); color: var(--warning); }
-.status-pill.disabled { background: var(--surface-soft); color: var(--text-3); }
-.meta-details { display: flex; flex-direction: column; gap: 0.5rem; }
-.detail-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; font-size: var(--fs-base); }
-.detail-label { color: var(--text-2); }
-.detail-value { color: var(--text-1); font-weight: var(--fw-medium); text-align: right; word-break: break-all; }
-.detail-value.mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
-.meta-actions { display: flex; gap: 0.5rem; justify-content: flex-end; border-top: 1px solid var(--border-faint); padding-top: 0.75rem; margin-top: auto; }
+.meta-card { display: flex; flex-direction: column; justify-content: space-between; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; transition: border-color 0.2s ease, transform 0.2s ease; }
+.meta-card:hover { border-color: var(--brand-border); transform: translateY(-1px); }
+.meta-header { display: flex; align-items: center; gap: 0.875rem; padding: 1.125rem 1.25rem; border-bottom: 1px solid var(--border-soft); }
+.meta-avatar-wrap { position: relative; width: 46px; height: 46px; flex-shrink: 0; }
+.meta-avatar, .meta-avatar-img { width: 46px; height: 46px; border-radius: 12px; object-fit: cover; display: flex; align-items: center; justify-content: center; }
+.meta-avatar-img { border: 1px solid var(--border); background: var(--surface-deep); }
+.meta-avatar { background: var(--surface-soft); border: 1px solid var(--border); }
+.avatar-dot { position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--surface-2); }
+.meta-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.meta-name { font-family: var(--font-heading); font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta-sub { font-size: var(--fs-xs); color: var(--text-3); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-pill { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.7rem; border-radius: 999px; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; flex-shrink: 0; }
+.pill-connected { background: var(--surface-soft); color: var(--success); border: 1px solid var(--border-soft); }
+.pill-pending { background: var(--surface-soft); color: var(--warning); border: 1px solid var(--border-soft); }
+.pill-disabled { background: var(--surface-deep); color: var(--text-3); border: 1px solid var(--border-soft); }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot-connected { background: var(--success); }
+.dot-pending { background: var(--warning); }
+.dot-disabled { background: var(--text-3); }
+.meta-body { padding: 0.95rem 1.25rem; display: flex; flex-direction: column; gap: 0.65rem; background: var(--surface-deep); border-bottom: 1px solid var(--border-soft); }
+.meta-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: var(--fs-xs); }
+.meta-label { color: var(--text-3); font-weight: var(--fw-medium); white-space: nowrap; }
+.meta-val { color: var(--text-1); font-weight: var(--fw-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+.meta-mono { font-family: var(--font-mono); }
+.muted { color: var(--text-3); font-weight: var(--fw-normal); }
+.meta-actions { display: flex; align-items: stretch; height: 46px; background: var(--surface-2); }
+.action-main { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0 1rem; border: none; background: transparent; color: var(--text-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); cursor: pointer; white-space: nowrap; transition: background 0.15s ease, color 0.15s ease; }
+.action-main:hover { background: var(--surface-soft); color: var(--brand); }
+.action-divider { width: 1px; background: var(--border-soft); flex-shrink: 0; }
+.action-icon { width: 46px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text-2); cursor: pointer; flex-shrink: 0; transition: background 0.15s ease, color 0.15s ease; }
+.action-delete { color: var(--danger); }
+.action-delete:hover { background: var(--surface-soft); color: var(--danger); }
 </style>

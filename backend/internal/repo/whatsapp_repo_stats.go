@@ -84,7 +84,7 @@ func (r *WhatsAppRepo) Overview(ctx context.Context, f WhatsAppStatsFilter) (*Wh
 		args := []any{f.AccountID}
 		conds := []string{
 			"e.account_id = $1",
-			"(e.payload->'data'->0->>'action_source' = 'business_messaging' OR e.payload->'data'->0->>'messaging_channel' = 'whatsapp')",
+			"(e.input_json->>'gateway' = 'whatsapp' OR e.payload->'data'->0->>'action_source' = 'business_messaging' OR e.payload->'data'->0->>'messaging_channel' = 'whatsapp' OR e.event_id LIKE 'ctwa:%')",
 		}
 		idx := 1
 		if f.PixelName != "" {
@@ -104,11 +104,16 @@ func (r *WhatsAppRepo) Overview(ctx context.Context, f WhatsAppStatsFilter) (*Wh
 		}
 		q := `
 			SELECT
-				COUNT(DISTINCT e.event_id) FILTER (WHERE e.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead')),
-				COUNT(DISTINCT e.event_id) FILTER (WHERE e.event_name = 'Purchase' AND e.status = 'sent'),
-				COALESCE(SUM(e.purchase_value) FILTER (WHERE e.event_name = 'Purchase' AND e.status = 'sent'), 0)
-			FROM sent_events e
-			WHERE ` + strings.Join(conds, " AND ")
+				COUNT(*) FILTER (WHERE event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead')),
+				COUNT(*) FILTER (WHERE event_name = 'Purchase' AND has_sent),
+				COALESCE(SUM(max_val) FILTER (WHERE event_name = 'Purchase' AND has_sent), 0)
+			FROM (
+				SELECT e.event_id, MAX(e.event_name) AS event_name,
+				       BOOL_OR(e.status = 'sent') AS has_sent, MAX(e.purchase_value) AS max_val
+				FROM sent_events e
+				WHERE ` + strings.Join(conds, " AND ") + `
+				GROUP BY e.event_id
+			) dedup`
 		if err := r.db.QueryRow(ctx, q, args...).Scan(&out.Leads, &out.Sales, &out.Revenue); err != nil {
 			return nil, err
 		}
