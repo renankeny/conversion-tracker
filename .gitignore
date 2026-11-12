@@ -32,7 +32,6 @@ CLAUDE.md
 /LP/
 /examples/
 /scratch/
-/setup/
 /documentações api/
 /landing page trackeado/
 
@@ -85,6 +84,15 @@ frontend/.data/
 frontend/.cache/
 frontend/node_modules/
 frontend/dist/
+setup/.nuxt/
+setup/.output/
+setup/.data/
+setup/.cache/
+setup/node_modules/
+setup/dist/
+setup/.env
+setup/.env.*
+!setup/.env.example
 
 # =============================================================================
 # Logs, pacotes, certificados, chaves privadas e infra privada
