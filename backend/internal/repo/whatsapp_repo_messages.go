@@ -28,34 +28,73 @@ func scanWhatsAppMessage(scanner pgx.Row, m *domain.WhatsAppMessage) error {
 }
 
 func (r *WhatsAppRepo) ListMessages(ctx context.Context, chatID int64, limit int) ([]*domain.WhatsAppMessage, error) {
-	if limit <= 0 || limit > 1000 {
-		limit = 300
+	msgs, _, _, err := r.ListMessagesPaginated(ctx, chatID, 0, limit)
+	return msgs, err
+}
+
+// ListMessagesPaginated lista mensagens com cursor antes de beforeID (paginação de histórico para cima).
+// Retorna os itens em ordem cronológica (ASC), hasMore se há mais mensagens anteriores, e nextBeforeID.
+func (r *WhatsAppRepo) ListMessagesPaginated(ctx context.Context, chatID int64, beforeID int64, limit int) ([]*domain.WhatsAppMessage, bool, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
 	}
-	rows, err := r.db.Query(ctx, `
-		SELECT * FROM (
-			SELECT `+selectMessageColumns+`
-			FROM whatsapp_messages m
-			WHERE m.chat_id = $1
-			ORDER BY m.timestamp DESC, m.id DESC
-			LIMIT $2
-		) sub
-		ORDER BY sub.timestamp ASC, sub.id ASC
-	`, chatID, limit)
+	fetchLimit := limit + 1
+	var rows pgx.Rows
+	var err error
+	if beforeID > 0 {
+		rows, err = r.db.Query(ctx, `
+			SELECT * FROM (
+				SELECT `+selectMessageColumns+`
+				FROM whatsapp_messages m
+				WHERE m.chat_id = $1
+				  AND (
+				    m.timestamp < (SELECT timestamp FROM whatsapp_messages WHERE id = $2)
+				    OR (m.timestamp = (SELECT timestamp FROM whatsapp_messages WHERE id = $2) AND m.id < $2)
+				  )
+				ORDER BY m.timestamp DESC, m.id DESC
+				LIMIT $3
+			) sub
+			ORDER BY sub.timestamp ASC, sub.id ASC
+		`, chatID, beforeID, fetchLimit)
+	} else {
+		rows, err = r.db.Query(ctx, `
+			SELECT * FROM (
+				SELECT `+selectMessageColumns+`
+				FROM whatsapp_messages m
+				WHERE m.chat_id = $1
+				ORDER BY m.timestamp DESC, m.id DESC
+				LIMIT $2
+			) sub
+			ORDER BY sub.timestamp ASC, sub.id ASC
+		`, chatID, fetchLimit)
+	}
 	if err != nil {
-		return nil, err
+		return nil, false, 0, err
 	}
 	defer rows.Close()
 
-	msgs := make([]*domain.WhatsAppMessage, 0)
+	items := make([]*domain.WhatsAppMessage, 0, fetchLimit)
 	for rows.Next() {
 		var m domain.WhatsAppMessage
 		if err := scanWhatsAppMessage(rows, &m); err != nil {
-			return nil, err
+			return nil, false, 0, err
 		}
-		msgs = append(msgs, &m)
+		items = append(items, &m)
 	}
-	return msgs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, 0, err
+	}
+
+	hasMore := false
+	var nextBeforeID int64
+	if len(items) > limit {
+		hasMore = true
+		items = items[len(items)-limit:]
+		nextBeforeID = items[0].ID
+	}
+	return items, hasMore, nextBeforeID, nil
 }
+
 
 // CreateMessage insere uma mensagem com idempotência por (chat_id, whatsapp_message_id).
 // Retorna inserted=true apenas quando a linha foi efetivamente criada.

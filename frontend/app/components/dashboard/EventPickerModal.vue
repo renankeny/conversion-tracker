@@ -9,7 +9,9 @@
         :class="{ active: activeTab === tab.value }"
         @click="activeTab = tab.value"
       >
-        {{ tab.label }}
+        <MetaAdsIcon v-if="tab.value === 'meta'" :size="11" />
+        <GoogleAdsIcon v-else-if="tab.value === 'google'" :size="11" />
+        <span>{{ tab.label }}</span>
       </button>
     </div>
 
@@ -43,7 +45,9 @@
             :label="labelOf(id)"
           />
           <span v-if="categoryBadgeOf(id)" class="cat-pill" :class="`cat-${categoryOf(id)}`">
-            {{ categoryBadgeOf(id) }}
+            <MetaAdsIcon v-if="categoryOf(id) === 'meta'" :size="10" />
+            <GoogleAdsIcon v-else-if="categoryOf(id) === 'google'" :size="10" />
+            <span>{{ categoryBadgeOf(id) }}</span>
           </span>
         </div>
         <input
@@ -65,6 +69,7 @@
 
 <script setup lang="ts">
 import { ChevronUp, ChevronDown } from 'lucide-vue-next'
+import { MetaAdsIcon, GoogleAdsIcon } from '~/utils/adIcons'
 import BaseModal from '~/components/BaseModal.vue'
 import BaseButton from '~/components/BaseButton.vue'
 import type { CardCategory } from '~/utils/dashboardEventCatalog'
@@ -179,7 +184,7 @@ const onSave = () => {
 
 <style scoped>
 .cat-tabs { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-bottom: 0.875rem; padding-bottom: 0.625rem; border-bottom: 1px solid var(--border-soft); }
-.cat-tab { padding: 0.35rem 0.7rem; border-radius: 8px; border: 1px solid var(--border-soft); background: var(--surface-deep); color: var(--text-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer; transition: all 0.15s ease; }
+.cat-tab { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.7rem; border-radius: 8px; border: 1px solid var(--border-soft); background: var(--surface-deep); color: var(--text-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer; transition: all 0.15s ease; }
 .cat-tab:hover { border-color: var(--border); color: var(--text-1); }
 .cat-tab.active { background: var(--brand-soft); border-color: var(--brand-border); color: var(--brand); }
 .event-picker-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 58vh; overflow-y: auto; padding-right: 0.25rem; }
@@ -190,10 +195,8 @@ const onSave = () => {
 .reorder-btn:hover:not(:disabled) { color: var(--text-1); background: var(--surface-soft); }
 .reorder-btn:disabled { opacity: 0.25; cursor: not-allowed; }
 .event-picker-check { display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0; flex-wrap: wrap; }
-.cat-pill { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); padding: 0.12rem 0.45rem; border-radius: 999px; border: 1px solid var(--border-soft); background: var(--surface-deep); color: var(--text-3); }
-.cat-meta { color: var(--info); border-color: var(--info); }
-.cat-google { color: var(--warning); border-color: var(--warning); }
-.cat-general { color: var(--brand); border-color: var(--brand-border); }
+.cat-pill { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); padding: 0.12rem 0.45rem; border-radius: 999px; border: 1px solid var(--border-soft); background: var(--surface-deep); color: var(--text-3); }
+.cat-meta, .cat-google, .cat-general { color: var(--brand); border-color: var(--brand-border); }
 .event-picker-label-input { width: 42%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 0.35rem 0.5rem; font-size: var(--fs-sm); color: var(--text-1); outline: none; }
 .event-picker-label-input:focus { border-color: var(--brand); }
 @media (max-width: 480px) {

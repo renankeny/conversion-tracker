@@ -192,7 +192,7 @@ func (h *TrackerHandler) Tracker(w http.ResponseWriter, r *http.Request) {
 
 func writeTrackerResponse(w http.ResponseWriter, r *http.Request, body, etag string) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=60")
+	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	if etag != "" {
 		w.Header().Set("ETag", etag)

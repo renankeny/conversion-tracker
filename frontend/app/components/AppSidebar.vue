@@ -34,6 +34,7 @@
           class="sidebar-link sidebar-sublink"
           :class="{ active: isActive(sub.to) }"
         >
+          <component :is="sub.icon" v-if="sub.icon" :size="15" class="sublink-icon" />
           <span class="link-label">{{ sub.label }}</span>
         </NuxtLink>
       </SidebarGroup>
@@ -80,6 +81,7 @@ import {
   LayoutDashboard, Plug, Zap, Users, Settings,
   Sun, Moon, LogOut, Webhook, Kanban, Building2,
 } from 'lucide-vue-next'
+import { MetaAdsIcon, GoogleAdsIcon, WhatsAppIcon, PixelBrainIcon } from '~/utils/adIcons'
 
 const {
   route, user, logout, isDark, toggleTheme,
@@ -104,10 +106,10 @@ const primaryLinks = computed(() => {
 })
 
 const integrationLinks = [
-  { to: '/integracoes/pixels', label: 'Pixels' },
-  { to: '/integracoes/whatsapp', label: 'WhatsApp' },
-  { to: '/integracoes/meta-ads', label: 'Meta Ads' },
-  { to: '/integracoes/google-ads', label: 'Google Ads' },
+  { to: '/integracoes/meta-ads', label: 'Meta Ads', icon: MetaAdsIcon },
+  { to: '/integracoes/google-ads', label: 'Google Ads', icon: GoogleAdsIcon },
+  { to: '/integracoes/pixels', label: 'Pixel', icon: PixelBrainIcon },
+  { to: '/integracoes/whatsapp', label: 'WhatsApp', icon: WhatsAppIcon },
   { to: '/integracoes/plataformas', label: 'Checkouts (infoprodutos)' },
   { to: '/integracoes/custom', label: 'Checkouts Personalizados' },
   { to: '/integracoes/ecommerce/confirmacao-vendas', label: 'Confirmação de Vendas' },
@@ -169,8 +171,9 @@ const integrationLinks = [
   background: var(--brand);
   border-radius: 0 3px 3px 0;
 }
-.sidebar-sublink { font-size: var(--fs-md); padding: 0.5rem 0.75rem; }
+.sidebar-sublink { font-size: var(--fs-md); padding: 0.5rem 0.75rem; gap: 0.625rem; }
 .sidebar-sublink.active::before { display: none; }
+.sublink-icon { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: inherit; }
 .link-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .sidebar-footer {
   padding: 1rem 0.75rem;

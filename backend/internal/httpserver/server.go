@@ -158,6 +158,7 @@ func New(deps Deps) (*Server, error) {
 	adminDashMetaH.SetQueryCache(queryCache)
 	adminDashMetaH.SetMetaOAuth(metaAccountRepo, metaOAuthClient)
 	adminDashGoogleH := handlers.NewAdminDashboardGoogle(pixels, googleAdsAccountRepo, googleAdsClient)
+	adminDashGoogleH.SetStatsRepo(stats)
 	adminDashGoogleH.SetQueryCache(queryCache)
 	adminPixelTestH := handlers.NewAdminPixelTestEvent(pixels, deps.Cfg.MetaAPIVersion, deps.Cfg.MetaPartnerAgent, deps.Cfg.TikTokPartnerName)
 	adminPixelTestH.SetMetaOAuth(metaAccountRepo, metaOAuthClient)

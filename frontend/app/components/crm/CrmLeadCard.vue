@@ -11,17 +11,15 @@
         </div>
       </div>
 
-      <a
-        v-if="lead.tracked_user?.phone"
-        :href="getWhatsAppLink(lead)"
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        v-if="lead.tracked_user?.phone || lead.tracked_user_id"
+        type="button"
         class="quick-wpp-btn"
-        title="Conversar no WhatsApp"
-        @click.stop
+        title="Ver conversa WhatsApp"
+        @click.stop="onClickChat"
       >
         <MessageCircle :size="13" />
-      </a>
+      </button>
     </div>
 
     <div class="card-meta">
@@ -79,13 +77,17 @@ const emit = defineEmits<{
 
 const {
   formatCurrency, timeAgo, getOriginBadge, getStagnantDays,
-  getLeadFullName, getLeadInitials, getWhatsAppLink,
+  getLeadFullName, getLeadInitials,
 } = useCrmHelpers()
 
 const originBadge = computed(() => getOriginBadge(props.lead.tracked_user))
 const stagnantDays = computed(() => getStagnantDays(props.lead.updated_at))
 const visibleTags = computed(() => (props.lead.tags || []).slice(0, 3))
 const extraTagsCount = computed(() => Math.max(0, (props.lead.tags?.length || 0) - 3))
+
+const onClickChat = () => {
+  emit('select', props.lead)
+}
 
 let pointerStartX = 0
 let pointerStartY = 0

@@ -11,6 +11,12 @@ type LiveInsightsSummary struct {
 	Spend       float64 `json:"spend"`
 	Clicks      int64   `json:"clicks"`
 	Impressions int64   `json:"impressions"`
+	Conversions float64 `json:"conversions"`
+	Leads       int64   `json:"leads"`
+	Purchases   int64   `json:"purchases"`
+	Revenue     float64 `json:"revenue"`
+	PrevSpend   float64 `json:"prev_spend,omitempty"`
+	PrevClicks  int64   `json:"prev_clicks,omitempty"`
 	Connected   bool    `json:"connected"`
 }
 
@@ -22,6 +28,9 @@ type KeywordInsight struct {
 	Impressions  int64   `json:"impressions"`
 	Spend        float64 `json:"spend"`
 	CPC          float64 `json:"cpc"`
+	Leads        int64   `json:"leads,omitempty"`
+	Purchases    int64   `json:"purchases,omitempty"`
+	Revenue      float64 `json:"revenue,omitempty"`
 }
 
 func (c *Client) FetchLiveInsights(ctx context.Context, account *domain.GoogleAdsAccount, since, until string) (LiveInsightsSummary, error) {
@@ -53,4 +62,3 @@ func (c *Client) FetchKeywordRanking(ctx context.Context, account *domain.Google
 	}
 	return out.Keywords, nil
 }
-

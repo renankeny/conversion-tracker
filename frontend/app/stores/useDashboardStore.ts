@@ -85,6 +85,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const customTo = ref('')
   const selectedPixel = ref('')
   const trafficSource = ref<DashboardTrafficSource>('all')
+  const privacyMode = ref(false)
   const hydrated = ref(false)
 
   function hydrate(init: {
@@ -129,12 +130,19 @@ export const useDashboardStore = defineStore('dashboard', () => {
     return true
   })
 
+  function togglePrivacyMode(): void {
+    privacyMode.value = !privacyMode.value
+    setBrowserCookie('tf_dashboard_privacy', privacyMode.value ? '1' : null, COOKIE_MAX_AGE)
+  }
+
   return {
     period,
     customFrom,
     customTo,
     selectedPixel,
     trafficSource,
+    privacyMode,
+    togglePrivacyMode,
     hydrated,
     hydrate,
     setSelectedPixel,

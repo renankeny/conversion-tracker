@@ -28,14 +28,8 @@ func NewAdminDashboardMeta(pr *repo.PixelRepo) *AdminDashboardMeta {
 	return &AdminDashboardMeta{pixelRepo: pr}
 }
 
-func (h *AdminDashboardMeta) SetStatsRepo(sr *repo.StatsRepo) {
-	h.statsRepo = sr
-}
-
-func (h *AdminDashboardMeta) SetQueryCache(qc *cache.QueryCache) {
-	h.qcache = qc
-}
-
+func (h *AdminDashboardMeta) SetStatsRepo(sr *repo.StatsRepo) { h.statsRepo = sr }
+func (h *AdminDashboardMeta) SetQueryCache(qc *cache.QueryCache) { h.qcache = qc }
 func (h *AdminDashboardMeta) SetMetaOAuth(metaAccs *repo.MetaAccountRepo, metaOAuth *metaoauth.Client) {
 	h.metaAccs = metaAccs
 	h.metaOAuth = metaOAuth
@@ -78,10 +72,8 @@ func (h *AdminDashboardMeta) resolveMetaSource(r *http.Request) (*resolvedMetaSo
 			}
 			if adAccID != "" {
 				return &resolvedMetaSource{
-					pixelName:   p.Name,
-					accountID:   p.AccountID,
-					adAccountID: adAccID,
-					oauthAcc:    acc,
+					pixelName: p.Name, accountID: p.AccountID,
+					adAccountID: adAccID, oauthAcc: acc,
 				}, nil
 			}
 		}
@@ -89,20 +81,18 @@ func (h *AdminDashboardMeta) resolveMetaSource(r *http.Request) (*resolvedMetaSo
 
 	if p.MetaPermanentToken != "" && p.MetaAdAccountID != "" {
 		return &resolvedMetaSource{
-			pixelName:   p.Name,
-			accountID:   p.AccountID,
-			adAccountID: p.MetaAdAccountID,
-			legacyToken: p.MetaPermanentToken,
+			pixelName: p.Name, accountID: p.AccountID,
+			adAccountID: p.MetaAdAccountID, legacyToken: p.MetaPermanentToken,
 		}, nil
 	}
 	return nil, errors.New("pixel sem Conta Meta Ads OAuth ou Ad Account ID configurado")
 }
 
-func getTimeRange(r *http.Request) string {
+func parseSinceUntilDates(r *http.Request) (string, string) {
 	fromRaw := strings.TrimSpace(r.URL.Query().Get("from"))
 	toRaw := strings.TrimSpace(r.URL.Query().Get("to"))
 	if fromRaw == "" || toRaw == "" {
-		return ""
+		return "", ""
 	}
 	loc, err := time.LoadLocation(config.ProjectTimezone)
 	if err != nil {
@@ -114,8 +104,24 @@ func getTimeRange(r *http.Request) string {
 		toTime.Hour() == 0 && toTime.Minute() == 0 && toTime.Second() == 0 && toTime.Nanosecond() == 0 {
 		toDate = toTime.Add(-time.Second).Format("2006-01-02")
 	}
-	tr := map[string]string{"since": fromDate, "until": toDate}
-	b, _ := json.Marshal(tr)
+	return fromDate, toDate
+}
+
+func previousYMDWindow(since, until string) (string, string) {
+	s, err1 := time.Parse("2006-01-02", since)
+	u, err2 := time.Parse("2006-01-02", until)
+	if err1 != nil || err2 != nil || u.Before(s) {
+		return "", ""
+	}
+	days := int(u.Sub(s)/(24*time.Hour)) + 1
+	return s.AddDate(0, 0, -days).Format("2006-01-02"), s.AddDate(0, 0, -1).Format("2006-01-02")
+}
+
+func marshalMetaRange(since, until string) string {
+	if since == "" || until == "" {
+		return ""
+	}
+	b, _ := json.Marshal(map[string]string{"since": since, "until": until})
 	return string(b)
 }
 
@@ -132,30 +138,39 @@ func parseDateInLocation(raw string, loc *time.Location) (string, time.Time, boo
 	return raw, time.Time{}, false
 }
 
+func (h *AdminDashboardMeta) fetchMetaSummary(ctx context.Context, src *resolvedMetaSource, tr string) (meta.LiveInsightsSummary, error) {
+	if src.oauthAcc != nil {
+		return h.metaOAuth.FetchLiveInsights(ctx, src.oauthAcc, src.adAccountID, tr)
+	}
+	return meta.FetchLiveInsights(ctx, src.adAccountID, src.legacyToken, tr)
+}
+
 func (h *AdminDashboardMeta) LiveInsights(w http.ResponseWriter, r *http.Request) {
 	src, err := h.resolveMetaSource(r)
 	if err != nil {
 		writeJSON(w, http.StatusOK, meta.LiveInsightsSummary{Connected: false})
 		return
 	}
-	timeRange := getTimeRange(r)
+	since, until := parseSinceUntilDates(r)
+	timeRange := marshalMetaRange(since, until)
 	if timeRange == "" {
 		writeError(w, http.StatusBadRequest, "missing from and to dates")
 		return
 	}
-	key := cache.HashQueryKey("meta:insights:v2", src.adAccountID, timeRange)
+	prevSince, prevUntil := previousYMDWindow(since, until)
+	prevRange := marshalMetaRange(prevSince, prevUntil)
+
+	key := cache.HashQueryKey("meta:insights:v3", src.adAccountID, timeRange)
 	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
-		var (
-			summary meta.LiveInsightsSummary
-			ferr    error
-		)
-		if src.oauthAcc != nil {
-			summary, ferr = h.metaOAuth.FetchLiveInsights(ctx, src.oauthAcc, src.adAccountID, timeRange)
-		} else {
-			summary, ferr = meta.FetchLiveInsights(ctx, src.adAccountID, src.legacyToken, timeRange)
-		}
+		summary, ferr := h.fetchMetaSummary(ctx, src, timeRange)
 		if ferr != nil {
 			return nil, ferr
+		}
+		if prevRange != "" {
+			if prev, perr := h.fetchMetaSummary(ctx, src, prevRange); perr == nil {
+				summary.PrevSpend = prev.Spend
+				summary.PrevClicks = prev.Clicks
+			}
 		}
 		summary.Connected = true
 		return json.Marshal(summary)
@@ -174,7 +189,8 @@ func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusOK, []meta.CreativeInsight{})
 		return
 	}
-	timeRange := getTimeRange(r)
+	since, until := parseSinceUntilDates(r)
+	timeRange := marshalMetaRange(since, until)
 	if timeRange == "" {
 		writeError(w, http.StatusBadRequest, "missing from and to dates")
 		return
@@ -182,7 +198,7 @@ func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Requ
 	fromTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("from")))
 	toTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("to")))
 
-	key := cache.HashQueryKey("meta:creatives:v2", src.pixelName, src.adAccountID, timeRange)
+	key := cache.HashQueryKey("meta:creatives:v3", src.pixelName, src.adAccountID, timeRange)
 	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
 		var (
 			ranking []meta.CreativeInsight
@@ -201,10 +217,7 @@ func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Requ
 		}
 		if h.statsRepo != nil && len(ranking) > 0 {
 			h.statsRepo.EnrichCreativesWithTrackedConversions(ctx, repo.StatsFilter{
-				AccountID: src.accountID,
-				PixelName: src.pixelName,
-				From:      fromTime,
-				To:        toTime,
+				AccountID: src.accountID, PixelName: src.pixelName, From: fromTime, To: toTime,
 			}, ranking)
 		}
 		if ranking == nil {

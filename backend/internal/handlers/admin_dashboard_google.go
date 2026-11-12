@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
-	"github.com/renankeny/conversion-tracker/backend/internal/config"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/googleads"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
@@ -17,6 +16,7 @@ import (
 
 type AdminDashboardGoogle struct {
 	pixelRepo *repo.PixelRepo
+	statsRepo *repo.StatsRepo
 	gadsAccs  *repo.GoogleAdsAccountRepo
 	gadsCli   *googleads.Client
 	qcache    *cache.QueryCache
@@ -30,30 +30,29 @@ func NewAdminDashboardGoogle(pr *repo.PixelRepo, ga *repo.GoogleAdsAccountRepo, 
 	}
 }
 
-func (h *AdminDashboardGoogle) SetQueryCache(qc *cache.QueryCache) {
-	h.qcache = qc
-}
+func (h *AdminDashboardGoogle) SetStatsRepo(sr *repo.StatsRepo)  { h.statsRepo = sr }
+func (h *AdminDashboardGoogle) SetQueryCache(qc *cache.QueryCache) { h.qcache = qc }
 
-func (h *AdminDashboardGoogle) resolveGoogleSource(r *http.Request) (*domain.GoogleAdsAccount, error) {
+func (h *AdminDashboardGoogle) resolveGoogleSource(r *http.Request) (*domain.GoogleAdsAccount, *domain.Pixel, error) {
 	if h.gadsAccs == nil || h.gadsCli == nil {
-		return nil, errors.New("google ads service not configured")
+		return nil, nil, errors.New("google ads service not configured")
 	}
 	pixelName := strings.TrimSpace(r.URL.Query().Get("pixel_name"))
 	if pixelName == "" {
-		return nil, errors.New("pixel_name is required")
+		return nil, nil, errors.New("pixel_name is required")
 	}
 	p, err := h.pixelRepo.FindByName(r.Context(), pixelName)
 	if err != nil {
-		return nil, errors.New("pixel not found")
+		return nil, nil, errors.New("pixel not found")
 	}
 	scope := TenantFromContext(r.Context())
 	if !scope.IsOwner && p.AccountID != scope.AccountID {
-		return nil, errors.New("forbidden")
+		return nil, nil, errors.New("forbidden")
 	}
 
 	if p.GoogleAdsAccountID != nil && *p.GoogleAdsAccountID > 0 {
 		if acc, ferr := h.gadsAccs.FindByID(r.Context(), *p.GoogleAdsAccountID); ferr == nil && acc != nil && acc.Enabled && acc.IsConnected() && acc.CustomerID != "" {
-			return acc, nil
+			return acc, p, nil
 		}
 	}
 
@@ -61,48 +60,37 @@ func (h *AdminDashboardGoogle) resolveGoogleSource(r *http.Request) (*domain.Goo
 	if err == nil {
 		for i := range list {
 			if list[i].Enabled && list[i].IsConnected() && list[i].CustomerID != "" {
-				return &list[i], nil
+				return &list[i], p, nil
 			}
 		}
 	}
-	return nil, errors.New("pixel sem Conta Google Ads ativa")
-}
-
-func parseGoogleDatesFromReq(r *http.Request) (string, string) {
-	fromRaw := strings.TrimSpace(r.URL.Query().Get("from"))
-	toRaw := strings.TrimSpace(r.URL.Query().Get("to"))
-	if fromRaw == "" || toRaw == "" {
-		return "", ""
-	}
-	loc, err := time.LoadLocation(config.ProjectTimezone)
-	if err != nil {
-		loc = time.FixedZone("BRT", -3*3600)
-	}
-	fromDate, fromTime, hasFromTime := parseDateInLocation(fromRaw, loc)
-	toDate, toTime, hasToTime := parseDateInLocation(toRaw, loc)
-	if hasFromTime && hasToTime && toTime.After(fromTime) &&
-		toTime.Hour() == 0 && toTime.Minute() == 0 && toTime.Second() == 0 && toTime.Nanosecond() == 0 {
-		toDate = toTime.Add(-time.Second).Format("2006-01-02")
-	}
-	return fromDate, toDate
+	return nil, nil, errors.New("pixel sem Conta Google Ads ativa")
 }
 
 func (h *AdminDashboardGoogle) LiveInsights(w http.ResponseWriter, r *http.Request) {
-	acc, err := h.resolveGoogleSource(r)
+	acc, _, err := h.resolveGoogleSource(r)
 	if err != nil {
 		writeJSON(w, http.StatusOK, googleads.LiveInsightsSummary{Connected: false})
 		return
 	}
-	since, until := parseGoogleDatesFromReq(r)
+	since, until := parseSinceUntilDates(r)
 	if since == "" || until == "" {
 		writeError(w, http.StatusBadRequest, "missing from and to dates")
 		return
 	}
-	key := cache.HashQueryKey("gads:insights:v1", acc.CustomerID, since, until)
+	prevSince, prevUntil := previousYMDWindow(since, until)
+
+	key := cache.HashQueryKey("gads:insights:v2", acc.CustomerID, since, until)
 	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
 		summary, ferr := h.gadsCli.FetchLiveInsights(ctx, acc, since, until)
 		if ferr != nil {
 			return nil, ferr
+		}
+		if prevSince != "" && prevUntil != "" {
+			if prev, perr := h.gadsCli.FetchLiveInsights(ctx, acc, prevSince, prevUntil); perr == nil {
+				summary.PrevSpend = prev.Spend
+				summary.PrevClicks = prev.Clicks
+			}
 		}
 		summary.Connected = true
 		return json.Marshal(summary)
@@ -116,17 +104,20 @@ func (h *AdminDashboardGoogle) LiveInsights(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *AdminDashboardGoogle) KeywordRanking(w http.ResponseWriter, r *http.Request) {
-	acc, err := h.resolveGoogleSource(r)
+	acc, px, err := h.resolveGoogleSource(r)
 	if err != nil {
 		writeJSON(w, http.StatusOK, []googleads.KeywordInsight{})
 		return
 	}
-	since, until := parseGoogleDatesFromReq(r)
+	since, until := parseSinceUntilDates(r)
 	if since == "" || until == "" {
 		writeError(w, http.StatusBadRequest, "missing from and to dates")
 		return
 	}
-	key := cache.HashQueryKey("gads:keywords:v1", acc.CustomerID, since, until)
+	fromTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("from")))
+	toTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("to")))
+
+	key := cache.HashQueryKey("gads:keywords:v2", px.Name, acc.CustomerID, since, until)
 	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
 		kw, ferr := h.gadsCli.FetchKeywordRanking(ctx, acc, since, until)
 		if ferr != nil {
@@ -134,6 +125,11 @@ func (h *AdminDashboardGoogle) KeywordRanking(w http.ResponseWriter, r *http.Req
 		}
 		if len(kw) > 5 {
 			kw = kw[:5]
+		}
+		if h.statsRepo != nil && len(kw) > 0 {
+			h.statsRepo.EnrichGoogleKeywordsWithTrackedConversions(ctx, repo.StatsFilter{
+				AccountID: px.AccountID, PixelName: px.Name, From: fromTime, To: toTime,
+			}, kw)
 		}
 		if kw == nil {
 			kw = []googleads.KeywordInsight{}
@@ -147,4 +143,3 @@ func (h *AdminDashboardGoogle) KeywordRanking(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(raw)
 }
-

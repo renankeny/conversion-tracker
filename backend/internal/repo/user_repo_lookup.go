@@ -92,15 +92,9 @@ func (r *UserRepo) FindByID(ctx context.Context, id int64) (*domain.TrackedUser,
 	return u, nil
 }
 
-// EnrichLTV preenche LTV e TimeToPurchase no usuário. Não roda em todo Find*
-// pra não pesar caminhos internos de alta frequência (ex: lookup de webhook
-// buscando por telefone) — quem precisa exibir esses campos (painel admin)
-// chama explicitamente.
-//
-// Quando u.GroupID estiver preenchido, soma/considera através de TODOS os
-// external_id do mesmo grupo (mesma pessoa, outro navegador) — não só do
-// próprio registro.
+// EnrichLTV preenche LTV, TimeToPurchase e consolida cookies/click IDs/UTMs do grupo.
 func (r *UserRepo) EnrichLTV(ctx context.Context, u *domain.TrackedUser) error {
+	enrichTrackedUserGroupFields(ctx, r.pool, u)
 	extIDs := r.groupExternalIDs(ctx, u)
 	accID := u.AccountID
 

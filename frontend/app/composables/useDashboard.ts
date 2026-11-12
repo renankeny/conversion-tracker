@@ -3,9 +3,12 @@ import type {
   CounterFilters,
   CounterSeriesResponse,
   CounterSummaryResponse,
+  DashboardHeatmap,
   EventFilters,
   GoogleKeywordInsight,
   GroupedEventsResponse,
+  PanelAudit,
+  PreviousPeriodMetrics,
   SourceBreakdown,
   TrafficQualityStats,
 } from '#shared/types'
@@ -41,6 +44,9 @@ export const useDashboard = () => {
       tracked_users: number
       traffic_quality?: TrafficQualityStats
       source_breakdown?: SourceBreakdown
+      panel_audit?: PanelAudit
+      previous_period?: PreviousPeriodMetrics
+      heatmap?: DashboardHeatmap
     }>('/admin/stats' + buildQuery(filters))
   }
 

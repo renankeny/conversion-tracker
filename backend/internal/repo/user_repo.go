@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -196,3 +197,14 @@ func (r *UserRepo) UpdateByID(ctx context.Context, u *domain.TrackedUser) error 
 	}
 	return nil
 }
+
+// UpdateEmail atualiza cirurgicamente o e-mail de um tracked_user pelo ID.
+func (r *UserRepo) UpdateEmail(ctx context.Context, id int64, email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if id <= 0 || email == "" {
+		return nil
+	}
+	_, err := r.pool.Exec(ctx, `UPDATE tracked_users SET email = $1, updated_at = NOW() WHERE id = $2`, email, id)
+	return err
+}
+

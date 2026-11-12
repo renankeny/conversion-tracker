@@ -9,6 +9,7 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/traffic"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 // Upsert cria ou atualiza pelo external_id.
@@ -152,40 +153,11 @@ func (r *UserRepo) LinkedFieldsByAccount(ctx context.Context, accountID int64, e
 	if err != nil {
 		return out, err
 	}
-	if u.GroupID == nil {
-		return domain.LinkedTrackingFields{
-			FBP: u.FBP, FBC: u.FBC, GCLID: u.GCLID, WBraid: u.WBraid, GBraid: u.GBraid,
-			TTClid: u.TTClid, TTP: u.TTP, GA4ClientID: u.GA4ClientID, GA4SessionID: u.GA4SessionID,
-		}, nil
-	}
-
-	rows, err := r.pool.Query(ctx, `SELECT `+userColumns+` FROM tracked_users WHERE group_id = $1 AND ($2 = 0 OR account_id = $2) ORDER BY updated_at DESC`, *u.GroupID, u.AccountID)
-	if err != nil {
-		return out, err
-	}
-	defer rows.Close()
-
-	fill := func(dst *string, v string) {
-		if *dst == "" && v != "" {
-			*dst = v
-		}
-	}
-	for rows.Next() {
-		m, err := scanUser(rows)
-		if err != nil {
-			return out, err
-		}
-		fill(&out.FBP, m.FBP)
-		fill(&out.FBC, m.FBC)
-		fill(&out.GCLID, m.GCLID)
-		fill(&out.WBraid, m.WBraid)
-		fill(&out.GBraid, m.GBraid)
-		fill(&out.TTClid, m.TTClid)
-		fill(&out.TTP, m.TTP)
-		fill(&out.GA4ClientID, m.GA4ClientID)
-		fill(&out.GA4SessionID, m.GA4SessionID)
-	}
-	return out, rows.Err()
+	enrichTrackedUserGroupFields(ctx, r.pool, u)
+	return domain.LinkedTrackingFields{
+		FBP: u.FBP, FBC: u.FBC, GCLID: u.GCLID, WBraid: u.WBraid, GBraid: u.GBraid,
+		TTClid: u.TTClid, TTP: u.TTP, GA4ClientID: u.GA4ClientID, GA4SessionID: u.GA4SessionID,
+	}, nil
 }
 
 func scanUser(row pgx.Row) (*domain.TrackedUser, error) {
@@ -211,6 +183,8 @@ func scanUser(row pgx.Row) (*domain.TrackedUser, error) {
 	if err != nil {
 		return nil, err
 	}
+	u.FirstUTMSource = util.StripUserIDFromUTM(u.FirstUTMSource)
+	u.LastUTMSource = util.StripUserIDFromUTM(u.LastUTMSource)
 	if len(rulesJSON) > 0 && string(rulesJSON) != "[]" && string(rulesJSON) != "null" && u.TrafficType == "bot" {
 		u.TrafficRules = json.RawMessage(rulesJSON)
 	} else if u.ClientUserAgent != "" {

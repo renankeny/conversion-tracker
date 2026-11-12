@@ -5,6 +5,14 @@ const PRE_POST_SALE_REGEX = /\b(pr[eé][\s-]*venda|p[oó]s[\s-]*venda)\b/i
 const LOST_STAGE_REGEX = /\b(perdid[oa]s?|descartad[oa]s?|arquivad[oa]s?|cancelad[oa]s?|sem\s+interesse)\b/i
 
 export const useCrmHelpers = () => {
+  const cleanUtmValue = (raw?: string | null): string => {
+    if (!raw) return ''
+    return String(raw)
+      .replace(/\|(?:userId|uid)[A-Za-z0-9_-]+\|/gi, '')
+      .replace(/^\|+|\|+$/g, '')
+      .trim()
+  }
+
   const formatCurrency = (val: number): string => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0)
   }
@@ -36,7 +44,7 @@ export const useCrmHelpers = () => {
 
   const getOriginBadge = (tu?: Partial<TrackedUser> | null): CrmOriginBadge | null => {
     if (!tu) return null
-    const src = (tu.last_utm_source || tu.first_utm_source || '').toLowerCase().trim()
+    const src = cleanUtmValue(tu.last_utm_source || tu.first_utm_source).toLowerCase()
 
     if (tu.ctwa_clid) {
       return { label: 'Meta CTWA', class: 'origin-meta' }
@@ -134,6 +142,7 @@ export const useCrmHelpers = () => {
   }
 
   return {
+    cleanUtmValue,
     formatCurrency,
     formatDateTime,
     timeAgo,

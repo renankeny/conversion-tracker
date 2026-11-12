@@ -9,6 +9,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
 
@@ -30,45 +31,11 @@ func makeWhatsAppEventHandler(deps Deps) func(context.Context, *asynq.Task) erro
 			return nil
 		}
 
+		if HandleWhatsAppLifecycleEvent(ctx, deps, inst, payload.Event, payload.Data) {
+			return nil
+		}
+
 		switch payload.Event {
-		case "Connected", "PairSuccess", "QRSuccess":
-			handleEvolutionConnected(ctx, deps, inst, payload.Data)
-		case "ProfileUpdated":
-			handleEvolutionProfile(ctx, deps, inst, payload.Data)
-		case "Disconnected", "LoggedOut", "ConnectFailure", "TemporaryBan":
-			status := "DISCONNECTED"
-			if payload.Event == "LoggedOut" {
-				status = "CLOSED"
-				_ = deps.WhatsApp.ResetInstanceSession(ctx, inst.ID, status)
-			} else {
-				_ = deps.WhatsApp.UpdateInstanceStatus(ctx, inst.ID, status)
-			}
-			wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
-				"instance_id": inst.ID,
-				"status":      status,
-				"event":       payload.Event,
-			})
-		case "QRCode":
-			var qr struct {
-				Qrcode string `json:"qrcode"`
-				Code   string `json:"code"`
-				Count  int    `json:"count"`
-			}
-			if json.Unmarshal(payload.Data, &qr) == nil && qr.Qrcode != "" {
-				wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_qr", map[string]any{
-					"instance_id": inst.ID,
-					"qrcode":      qr.Qrcode,
-					"code":        qr.Code,
-					"count":       qr.Count,
-				})
-			}
-		case "QRTimeout":
-			_ = deps.WhatsApp.UpdateInstanceStatus(ctx, inst.ID, "CLOSED")
-			wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
-				"instance_id": inst.ID,
-				"status":      "CLOSED",
-				"event":       "QRTimeout",
-			})
 		case "Message", "SendMessage":
 			parsed, err := ParseEvolutionMessageEvent(payload.Data)
 			if err != nil || parsed == nil {
@@ -131,6 +98,10 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 				originType = portalOrigin
 			}
 		}
+	} else if originType == domain.WhatsAppOriginWebsiteOrganic || originType == domain.WhatsAppOriginBioLinkOrganic {
+		if reclassified := ClassifyPortalOrigin("", "", trackedUser); reclassified != "" && reclassified != domain.WhatsAppOriginWebsiteOrganic {
+			originType = reclassified
+		}
 	}
 	if trackedUser == nil {
 		return nil
@@ -139,6 +110,20 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	if phone != "" && trackedUser.Phone == "" {
 		trackedUser.Phone = phone
 		_ = deps.Users.Upsert(ctx, trackedUser)
+	}
+
+	if !parsed.IsFromMe {
+		if rawEmail := util.ExtractEmail(parsed.Content); rawEmail != "" {
+			if trackedUser.Email == "" || trackedUser.Email != rawEmail {
+				trackedUser.Email = rawEmail
+				_ = deps.Users.UpdateEmail(ctx, trackedUser.ID, rawEmail)
+				_, _ = deps.Users.ResolveAndLink(ctx, trackedUser.AccountID, trackedUser.ExternalID, trackedUser.Phone, rawEmail)
+				slog.Info("enriched tracked user with email from received whatsapp message",
+					"tracked_user_id", trackedUser.ID,
+					"email", rawEmail,
+				)
+			}
+		}
 	}
 
 	var crmLeadID *int64
@@ -166,11 +151,20 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		contactPtr = &contactName
 	}
 
+	effCtwaClid := parsed.CtwaClid
+	effSourceID := parsed.SourceID
+	if existingChat != nil {
+		effCtwaClid = util.FirstNonEmpty(effCtwaClid, existingChat.CtwaClid)
+		effSourceID = util.FirstNonEmpty(effSourceID, existingChat.SourceID)
+	}
+	effCtwaClid = util.FirstNonEmpty(effCtwaClid, trackedUser.CtwaClid)
+	effSourceID = util.FirstNonEmpty(effSourceID, trackedUser.WaAdID)
+
 	chatRow := &domain.WhatsAppChat{
 		AccountID: inst.AccountID, InstanceID: inst.ID, RemoteJid: remoteJID,
 		TrackedUserID: &trackedUser.ID, CRMLeadID: crmLeadID, Phone: phone, LidJid: lidJID,
 		PushName: contactName, ContactName: contactPtr, OriginType: originType,
-		CtwaClid: parsed.CtwaClid, SourceID: parsed.SourceID, SourceApp: parsed.SourceApp,
+		CtwaClid: effCtwaClid, SourceID: effSourceID, SourceApp: parsed.SourceApp,
 		AdThumbnailURL: parsed.AdThumbnailURL, LastMessageTime: parsed.Timestamp,
 	}
 	chatID, err := deps.WhatsApp.UpsertActiveChat(ctx, chatRow, !parsed.IsFromMe)
@@ -178,8 +172,8 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		return fmt.Errorf("upsert whatsapp chat: %w", err)
 	}
 
-	if parsed.CtwaClid != "" || parsed.SourceID != "" {
-		enrichAndDispatchCTWALead(ctx, deps, inst, trackedUser, chatID, phone, parsed.SourceID, parsed.CtwaClid)
+	if effCtwaClid != "" || effSourceID != "" {
+		enrichAndDispatchCTWALead(ctx, deps, inst, trackedUser, chatID, phone, effSourceID, effCtwaClid, !parsed.IsFromMe)
 	}
 
 	mediaStatus, expiresAt := classifyInitialMediaStatus(deps, parsed)

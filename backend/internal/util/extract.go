@@ -2,6 +2,7 @@ package util
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 )
 
@@ -166,3 +167,25 @@ func PhoneVariants(phone string) []string {
 	}
 	return out
 }
+
+var emailRegex = regexp.MustCompile(`(?i)\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b`)
+
+// ExtractEmail extrai o primeiro endereço de e-mail válido encontrado em um texto.
+// Normaliza para letras minúsculas e remove pontuações residuais adjacentes.
+func ExtractEmail(s string) string {
+	if s == "" {
+		return ""
+	}
+	m := emailRegex.FindString(s)
+	if m == "" {
+		return ""
+	}
+	m = strings.TrimRight(m, ".,;!?:)'\"")
+	m = strings.TrimLeft(m, "('\"<")
+	m = strings.ToLower(strings.TrimSpace(m))
+	if !strings.Contains(m, "@") || !strings.Contains(m, ".") {
+		return ""
+	}
+	return m
+}
+

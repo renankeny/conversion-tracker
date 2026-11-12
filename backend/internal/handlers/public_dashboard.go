@@ -205,6 +205,9 @@ func (h *PublicDashboard) Revenue(w http.ResponseWriter, r *http.Request) {
 			"total_revenue":    overview.TotalRevenue,
 			"traffic_quality":  overview.TrafficQuality,
 			"source_breakdown": overview.SourceBreakdown,
+			"panel_audit":      overview.PanelAudit,
+			"previous_period":  overview.PreviousPeriod,
+			"heatmap":          overview.Heatmap,
 		}, nil
 	})
 }

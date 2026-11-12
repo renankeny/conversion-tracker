@@ -154,3 +154,55 @@ func SignMessageStreamIfReady(m *domain.WhatsAppMessage, publicAPIURL, jwtSecret
 		m.MediaStreamURL = storage.SignMediaURL(publicAPIURL, jwtSecret, accountID, m.ID, 2*time.Hour)
 	}
 }
+
+// HandleWhatsAppLifecycleEvent processa eventos de conexão/desconexão e QR code.
+// Retorna true se o evento foi tratado aqui.
+func HandleWhatsAppLifecycleEvent(ctx context.Context, deps Deps, inst *domain.WhatsAppInstance, event string, data json.RawMessage) bool {
+	switch event {
+	case "Connected", "PairSuccess", "QRSuccess":
+		handleEvolutionConnected(ctx, deps, inst, data)
+		return true
+	case "ProfileUpdated":
+		handleEvolutionProfile(ctx, deps, inst, data)
+		return true
+	case "Disconnected", "LoggedOut", "ConnectFailure", "TemporaryBan":
+		status := "DISCONNECTED"
+		if event == "LoggedOut" {
+			status = "CLOSED"
+			_ = deps.WhatsApp.ResetInstanceSession(ctx, inst.ID, status)
+		} else {
+			_ = deps.WhatsApp.UpdateInstanceStatus(ctx, inst.ID, status)
+		}
+		wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
+			"instance_id": inst.ID,
+			"status":      status,
+			"event":       event,
+		})
+		return true
+	case "QRCode":
+		var qr struct {
+			Qrcode string `json:"qrcode"`
+			Code   string `json:"code"`
+			Count  int    `json:"count"`
+		}
+		if json.Unmarshal(data, &qr) == nil && qr.Qrcode != "" {
+			wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_qr", map[string]any{
+				"instance_id": inst.ID,
+				"qrcode":      qr.Qrcode,
+				"code":        qr.Code,
+				"count":       qr.Count,
+			})
+		}
+		return true
+	case "QRTimeout":
+		_ = deps.WhatsApp.UpdateInstanceStatus(ctx, inst.ID, "CLOSED")
+		wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
+			"instance_id": inst.ID,
+			"status":      "CLOSED",
+			"event":       "QRTimeout",
+		})
+		return true
+	}
+	return false
+}
+

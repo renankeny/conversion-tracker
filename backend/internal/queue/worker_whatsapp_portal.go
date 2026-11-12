@@ -107,6 +107,11 @@ func resolveOrCreatePortalLead(
 	if existingUser != nil {
 		hydrateWhatsAppUserFields(existingUser, phone, lidDigits, first, last, parsed)
 		_ = deps.Users.Upsert(ctx, existingUser)
+		if phone != "" {
+			if stitched, lerr := deps.Users.ResolveAndLink(ctx, inst.AccountID, existingUser.ExternalID, phone, existingUser.Email); lerr == nil && stitched != nil {
+				existingUser = stitched
+			}
+		}
 		return existingUser, ClassifyPortalOrigin(parsed.CtwaClid, parsed.SourceID, existingUser)
 	}
 
@@ -161,58 +166,6 @@ func ensureCRMLeadForWhatsApp(ctx context.Context, deps Deps, inst *domain.Whats
 		wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{"action": "whatsapp_lead_ensured", "lead_id": id})
 	}
 	return id
-}
-
-func ClassifyPortalOrigin(ctwaClid, sourceID string, u *domain.TrackedUser) string {
-	if ctwaClid != "" || sourceID != "" {
-		return domain.WhatsAppOriginMetaCTWA
-	}
-	if u == nil {
-		return domain.WhatsAppOriginWebsiteOrganic
-	}
-	if u.CtwaClid != "" {
-		return domain.WhatsAppOriginMetaCTWA
-	}
-	if u.FBC != "" || isPaidMetaUTM(u.FirstUTMSource, u.FirstUTMMedium) || isPaidMetaUTM(u.LastUTMSource, u.LastUTMMedium) {
-		return domain.WhatsAppOriginMetaLP
-	}
-	if u.GCLID != "" || u.GBraid != "" || u.WBraid != "" {
-		return domain.WhatsAppOriginGoogleAds
-	}
-	if u.TTClid != "" {
-		return domain.WhatsAppOriginTikTokAds
-	}
-	if isBioLinkSession(u) {
-		return domain.WhatsAppOriginBioLinkOrganic
-	}
-	return domain.WhatsAppOriginWebsiteOrganic
-}
-
-func isPaidMetaUTM(src, med string) bool {
-	s := strings.ToLower(strings.TrimSpace(src))
-	m := strings.ToLower(strings.TrimSpace(med))
-	isMeta := s == "facebook" || s == "fb" || s == "instagram" || s == "ig" || s == "meta" || strings.Contains(s, "facebook") || strings.Contains(s, "instagram")
-	if !isMeta {
-		return false
-	}
-	return m == "cpc" || m == "ppc" || m == "paid" || m == "ads" || m == "cpm" || m == "paid_social" || strings.Contains(m, "ad") || strings.Contains(m, "pago") || strings.Contains(m, "trafego")
-}
-
-func isBioLinkSession(u *domain.TrackedUser) bool {
-	if u == nil {
-		return false
-	}
-	med := strings.ToLower(u.FirstUTMMedium + " " + u.LastUTMMedium + " " + u.FirstUTMSource + " " + u.LastUTMSource)
-	if strings.Contains(med, "bio") || strings.Contains(med, "linktree") || strings.Contains(med, "perfil") {
-		return true
-	}
-	urls := strings.ToLower(u.FirstURL + " " + u.URL + " " + u.Referrer)
-	for _, token := range []string{"linktr.ee", "beacons.ai", "bio.site", "lnk.bio", "l.instagram.com", "instagram.com", "/bio"} {
-		if strings.Contains(urls, token) {
-			return true
-		}
-	}
-	return false
 }
 
 func splitFullName(pushName string) (string, string) {

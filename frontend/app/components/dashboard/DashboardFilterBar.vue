@@ -43,6 +43,15 @@
         v-model:customFrom="dashboardStore.customFrom"
         v-model:customTo="dashboardStore.customTo"
       />
+      <BaseButton
+        variant="ghost"
+        size="sm"
+        :title="dashboardStore.privacyMode ? 'Mostrar valores financeiros' : 'Ocultar valores financeiros'"
+        @click="dashboardStore.togglePrivacyMode()"
+      >
+        <EyeOff v-if="dashboardStore.privacyMode" :size="15" />
+        <Eye v-else :size="15" />
+      </BaseButton>
       <BaseButton variant="outline" size="sm" :loading="loading" @click="$emit('refresh')">
         Atualizar
       </BaseButton>
@@ -51,6 +60,7 @@
 </template>
 
 <script setup lang="ts">
+import { Eye, EyeOff } from 'lucide-vue-next'
 import PeriodSelector from '~/components/dashboard/PeriodSelector.vue'
 import { useDashboardStore } from '~/stores/useDashboardStore'
 import type { Pixel } from '#shared/types'

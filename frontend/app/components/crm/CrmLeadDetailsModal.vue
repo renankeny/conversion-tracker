@@ -1,7 +1,7 @@
 <template>
   <BaseModal
     :model-value="modelValue"
-    size="lg"
+    size="2xl"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #header>
@@ -10,7 +10,7 @@
           <div class="lead-modal-avatar">
             {{ (leadEdit.first_name || leadEdit.phone || 'L').slice(0, 2).toUpperCase() }}
           </div>
-          <div>
+          <div class="lead-identity-texts">
             <h2 class="lead-modal-title">
               {{ leadEdit.first_name || leadEdit.last_name ? `${leadEdit.first_name} ${leadEdit.last_name}`.trim() : 'Lead sem nome' }}
             </h2>
@@ -23,17 +23,6 @@
         </div>
 
         <div class="lead-modal-quick-actions">
-          <a
-            v-if="leadEdit.phone"
-            :href="getWhatsAppLink(leadEdit.phone, leadEdit.first_name)"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="btn-wpp-lead-modal"
-            title="Abrir no WhatsApp"
-          >
-            <MessageCircle :size="15" />
-            <span>WhatsApp</span>
-          </a>
           <BaseButton
             v-if="trackedUser"
             variant="outline"
@@ -93,22 +82,6 @@
           @remove-tag="emit('remove-tag', $event)"
           @delete-account-tag="emit('delete-account-tag', $event)"
         />
-
-        <div class="lead-main-actions">
-          <BaseButton
-            v-if="canDeleteLeads"
-            variant="ghost"
-            size="sm"
-            class="delete-lead-btn"
-            @click="emit('delete-lead')"
-          >
-            Excluir este Lead
-          </BaseButton>
-          <div v-else></div>
-          <BaseButton variant="primary" :loading="isSavingLead" @click="emit('save-lead')">
-            Salvar Alterações
-          </BaseButton>
-        </div>
       </div>
 
       <CrmLeadRightPanel
@@ -122,6 +95,24 @@
         @delete-note="emit('delete-note', $event)"
       />
     </div>
+
+    <template v-if="leadId" #footer>
+      <div class="lead-footer-bar">
+        <BaseButton
+          v-if="canDeleteLeads"
+          variant="ghost"
+          size="sm"
+          class="delete-lead-btn"
+          @click="emit('delete-lead')"
+        >
+          Excluir este Lead
+        </BaseButton>
+        <div v-else />
+        <BaseButton variant="primary" :loading="isSavingLead" @click="emit('save-lead')">
+          Salvar Alterações
+        </BaseButton>
+      </div>
+    </template>
   </BaseModal>
 </template>
 
@@ -164,17 +155,17 @@ const emit = defineEmits<{
 }>()
 
 const { brandName } = useBranding()
-const { getWhatsAppLink } = useCrmHelpers()
 </script>
 
 <style scoped>
 .lead-modal-header-custom {
   display: flex; justify-content: space-between; align-items: center;
-  width: 100%; flex-wrap: wrap; gap: 0.75rem;
+  width: 100%; flex-wrap: wrap; gap: 0.75rem; min-width: 0;
 }
-.lead-modal-identity { display: flex; align-items: center; gap: 0.75rem; }
+.lead-modal-identity { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+.lead-identity-texts { min-width: 0; }
 .lead-modal-avatar {
-  width: 40px; height: 40px; border-radius: 8px;
+  width: 40px; height: 40px; border-radius: 8px; flex-shrink: 0;
   background: var(--brand-soft); color: var(--brand);
   display: flex; align-items: center; justify-content: center;
   font-size: var(--fs-lg); font-weight: var(--fw-bold);
@@ -182,41 +173,36 @@ const { getWhatsAppLink } = useCrmHelpers()
 .lead-modal-title { font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--text-strong); margin: 0; }
 .lead-modal-sub {
   font-size: var(--fs-sm); color: var(--text-3);
-  display: flex; align-items: center; gap: 0.35rem; margin-top: 2px;
+  display: flex; align-items: center; gap: 0.35rem; margin-top: 2px; flex-wrap: wrap;
 }
-.lead-modal-quick-actions { display: flex; align-items: center; gap: 0.5rem; }
-.btn-wpp-lead-modal {
-  display: inline-flex; align-items: center; gap: 0.375rem;
-  background: var(--success-soft); color: var(--success);
-  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
-  padding: 0.35rem 0.75rem;
-  border-radius: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold);
-  text-decoration: none; transition: all 0.15s;
-}
-.btn-wpp-lead-modal:hover { background: var(--success); color: var(--brand-text); border-color: var(--success); }
+.lead-modal-quick-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 .journey-btn { font-size: var(--fs-sm) !important; color: var(--brand) !important; border-color: var(--brand-border) !important; }
 .journey-icon { margin-right: 4px; }
-.lead-modal-body-grid { display: grid; grid-template-columns: 1.15fr 1.35fr; gap: 1.5rem; }
-.lead-col-main { display: flex; flex-direction: column; }
+.lead-modal-body-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+.lead-col-main { display: flex; flex-direction: column; gap: 0.875rem; min-width: 0; }
 .info-card-box {
   background: var(--surface-deep); border: 1px solid var(--border);
-  border-radius: 8px; padding: 0.875rem; margin-bottom: 0.875rem;
+  border-radius: 8px; padding: 0.875rem; min-width: 0;
 }
 .box-subtitle {
   font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text-1);
   margin: 0 0 0.625rem 0; text-transform: uppercase; letter-spacing: 0.03em;
 }
-.form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.form-grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.875rem; }
 .mt-half { margin-top: 0.625rem; }
-.lead-main-actions {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-soft);
+.lead-footer-bar {
+  display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 0.75rem;
 }
 .delete-lead-btn { color: var(--danger) !important; font-size: var(--fs-base) !important; padding: 0 !important; }
-@media (max-width: 900px) {
-  .lead-modal-body-grid { grid-template-columns: 1fr; }
+@media (max-width: 920px) {
+  .lead-modal-body-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
-  .form-grid-2 { grid-template-columns: 1fr; gap: 0.75rem; }
+  .form-grid-2 { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
 }
 </style>

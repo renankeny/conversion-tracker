@@ -47,8 +47,11 @@ type Overview struct {
 	TotalEvents    int64               `json:"total_events"`    // soma de tudo
 	TotalRevenue   float64             `json:"total_revenue"`   // soma de purchase_value onde event='Purchase' e status='sent'
 	TrackedUsers    int64               `json:"tracked_users"`    // total de tracked_users (sem filtro de janela; com filtro de pixel)
-	TrafficQuality  TrafficQualityStats `json:"traffic_quality"`  // auditoria de bots vs humanos
-	SourceBreakdown SourceBreakdown     `json:"source_breakdown"` // métricas rastreadas separadas por Meta Ads e Google Ads
+	TrafficQuality  TrafficQualityStats   `json:"traffic_quality"`  // auditoria de bots vs humanos
+	SourceBreakdown SourceBreakdown       `json:"source_breakdown"` // métricas rastreadas separadas por Meta Ads e Google Ads
+	PanelAudit      PanelAudit            `json:"panel_audit"`      // auditoria Painel (enviados vs não enviados) por canal
+	PreviousPeriod  PreviousPeriodMetrics `json:"previous_period"`  // métricas do período anterior equivalente
+	Heatmap         DashboardHeatmap      `json:"heatmap"`          // mapa de calor dia x hora (mensagens, leads, vendas)
 }
 
 // DailyBucket é uma linha da série temporal por dia.
@@ -200,6 +203,8 @@ func (s *StatsRepo) Overview(ctx context.Context, f StatsFilter) (*Overview, err
 		return nil, err
 	}
 	_ = s.populateSourceBreakdown(ctx, f, out)
+	s.populatePanelAudit(ctx, f, out)
+	s.populatePreviousAndHeatmap(ctx, f, out)
 
 	return out, nil
 }

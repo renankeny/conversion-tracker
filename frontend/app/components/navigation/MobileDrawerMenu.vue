@@ -74,7 +74,8 @@
                 :class="{ active: isActive(sub.to) }"
                 @click="close"
               >
-                <span class="sublink-dot" />
+                <component :is="sub.icon" v-if="sub.icon" :size="15" class="sublink-icon" />
+                <span v-else class="sublink-dot" />
                 <span>{{ sub.label }}</span>
               </NuxtLink>
             </div>
@@ -123,6 +124,7 @@ import {
   Plug, Settings, X, Sun, Moon, LogOut,
   Building2, ChevronDown,
 } from 'lucide-vue-next'
+import { MetaAdsIcon, GoogleAdsIcon, WhatsAppIcon, PixelBrainIcon } from '~/utils/adIcons'
 
 defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void }>()
@@ -160,11 +162,11 @@ const primaryLinks = computed(() => {
 })
 
 const integrationLinks = [
-  { to: '/integracoes/pixels', label: 'Pixels' },
-  { to: '/integracoes/whatsapp', label: 'WhatsApp (CTWA)' },
-  { to: '/integracoes/meta-ads', label: 'Meta Ads' },
-  { to: '/integracoes/google-ads', label: 'Google Ads' },
-  { to: '/integracoes/plataformas', label: 'Plataformas' },
+  { to: '/integracoes/meta-ads', label: 'Meta Ads', icon: MetaAdsIcon },
+  { to: '/integracoes/google-ads', label: 'Google Ads', icon: GoogleAdsIcon },
+  { to: '/integracoes/pixels', label: 'Pixel', icon: PixelBrainIcon },
+  { to: '/integracoes/whatsapp', label: 'WhatsApp', icon: WhatsAppIcon },
+  { to: '/integracoes/plataformas', label: 'Checkouts (infoprodutos)' },
   { to: '/integracoes/custom', label: 'Checkouts Personalizados' },
   { to: '/integracoes/ecommerce/confirmacao-vendas', label: 'Confirmação de Vendas' },
 ]
@@ -200,6 +202,7 @@ const integrationLinks = [
 .drawer-group-children { display: flex; flex-direction: column; gap: 2px; padding: 0.25rem 0 0.25rem 1.75rem; }
 .drawer-sublink { display: flex; align-items: center; gap: 0.625rem; padding: 0.5625rem 0.75rem; border-radius: 8px; color: var(--text-2); text-decoration: none; font-size: var(--fs-md); font-weight: var(--fw-medium); }
 .drawer-sublink.active { background: var(--brand-soft); color: var(--brand); font-weight: var(--fw-semibold); }
+.sublink-icon { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: inherit; }
 .sublink-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.6; }
 .drawer-footer { display: flex; gap: 0.5rem; padding: 0.75rem 1rem 0.25rem; border-top: 1px solid var(--border-soft); }
 .drawer-action { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.625rem; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer; }

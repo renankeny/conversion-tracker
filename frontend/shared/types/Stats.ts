@@ -18,6 +18,9 @@ export interface DashboardStats {
   total_revenue?: number
   traffic_quality?: TrafficQualityStats
   source_breakdown?: SourceBreakdown
+  panel_audit?: PanelAudit
+  previous_period?: PreviousPeriodMetrics
+  heatmap?: DashboardHeatmap
 }
 
 export interface SourceMetrics {
@@ -32,10 +35,55 @@ export interface SourceBreakdown {
   google: SourceMetrics
 }
 
+export interface AuditCounter {
+  total: number
+  sent: number
+  not_sent: number
+  meta_total: number
+  meta_sent: number
+  meta_not_sent: number
+  google_total: number
+  google_sent: number
+  google_not_sent: number
+}
+
+export interface PanelAudit {
+  ad_messages: AuditCounter
+  leads: AuditCounter
+  purchases: AuditCounter
+}
+
+export interface PreviousPeriodMetrics {
+  page_views: number
+  ad_messages: number
+  leads: number
+  purchases: number
+  revenue: number
+}
+
+export interface HeatmapBucket {
+  weekday: number
+  hour: number
+  count: number
+}
+
+export interface DashboardHeatmap {
+  messages: HeatmapBucket[]
+  leads: HeatmapBucket[]
+  sales: HeatmapBucket[]
+}
+
 export interface AdPlatformLiveInsights {
   spend: number
   clicks: number
   impressions: number
+  messages?: number
+  leads?: number
+  purchases?: number
+  revenue?: number
+  conversions?: number
+  prev_spend?: number
+  prev_clicks?: number
   connected: boolean
 }
 
@@ -47,6 +95,9 @@ export interface GoogleKeywordInsight {
   impressions: number
   spend: number
   cpc: number
+  leads?: number
+  purchases?: number
+  revenue?: number
 }
 
 export interface TrafficQualityStats {
@@ -65,4 +116,3 @@ export interface StatsFilters {
   to?: string
   pixel?: string
 }
-

@@ -78,6 +78,11 @@ func evaluateAttendantTriggers(
 		matches = append(matches, triggerMatch{eventName: strings.TrimSpace(inst.CustomEventName), phrase: matchedCustom, allowBare: true})
 	}
 
+	var linked domain.LinkedTrackingFields
+	if deps.Users != nil {
+		linked, _ = deps.Users.LinkedFieldsByAccount(ctx, inst.AccountID, u.ExternalID)
+	}
+
 	for _, tm := range matches {
 		eventID := waMessageID + ":" + tm.eventName
 		if exists, _ := deps.SentEvents.ExistsSent(ctx, eventID, pixel.Name); exists {
@@ -127,15 +132,15 @@ func evaluateAttendantTriggers(
 			State:            u.State,
 			City:             u.City,
 			PostalCode:       u.PostalCode,
-			FBP:              u.FBP,
-			FBC:              u.FBC,
-			GCLID:            u.GCLID,
-			WBraid:           u.WBraid,
-			GBraid:           u.GBraid,
-			TTClid:           u.TTClid,
-			TTP:              u.TTP,
-			GA4ClientID:      u.GA4ClientID,
-			GA4SessionID:     u.GA4SessionID,
+			FBP:              util.FirstNonEmpty(u.FBP, linked.FBP),
+			FBC:              util.FirstNonEmpty(u.FBC, linked.FBC),
+			GCLID:            util.FirstNonEmpty(u.GCLID, linked.GCLID),
+			WBraid:           util.FirstNonEmpty(u.WBraid, linked.WBraid),
+			GBraid:           util.FirstNonEmpty(u.GBraid, linked.GBraid),
+			TTClid:           util.FirstNonEmpty(u.TTClid, linked.TTClid),
+			TTP:              util.FirstNonEmpty(u.TTP, linked.TTP),
+			GA4ClientID:      util.FirstNonEmpty(u.GA4ClientID, linked.GA4ClientID),
+			GA4SessionID:     util.FirstNonEmpty(u.GA4SessionID, linked.GA4SessionID),
 			Value:            valPtr,
 			Currency:         domain.NormalizeWhatsAppCurrency(inst.Currency),
 		})

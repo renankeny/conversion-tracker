@@ -33,9 +33,24 @@
         <BaseButton variant="primary" size="sm" :loading="loading" @click="retryLoad">Tentar novamente</BaseButton>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard v-for="c in visibleCards" :key="c.id" :label="c.label" :value="c.value" :format="c.format" :variant="c.variant" :icon="c.icon" />
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          v-for="c in visibleCards"
+          :key="c.id"
+          :label="c.label"
+          :value="c.value"
+          :format="c.format"
+          :variant="c.variant"
+          :icon="c.icon"
+          :change-percent="c.changePercent"
+          :change-inverse="c.changeInverse"
+          :previous-label="c.previousLabel"
+          :comparisons="c.comparisons"
+          :delivery="c.delivery"
+        />
       </div>
+
+      <DashboardHeatmapCard :heatmap="heatmap" />
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <EventsChart :points="seriesData?.points || []" :granularity="seriesData?.granularity || 'day'" subtitle="Comparativo de eventos" />
@@ -53,8 +68,8 @@
 </template>
 
 <script setup lang="ts">
-import type { Component } from 'vue'
 import KpiCard from '~/components/dashboard/KpiCard.vue'
+import DashboardHeatmapCard from '~/components/dashboard/DashboardHeatmapCard.vue'
 import EventsChart from '~/components/dashboard/EventsChart.vue'
 import ConversionFunnel from '~/components/dashboard/ConversionFunnel.vue'
 import GeoGlobe from '~/components/dashboard/GeoGlobe.vue'
@@ -64,12 +79,13 @@ import EventDetailsModal from '~/components/events/EventDetailsModal.vue'
 import { computeSaoPauloRange, type PeriodValue } from '~/stores/useDashboardStore'
 import {
   ALL_CARD_IDS, DEFAULT_ENABLED_CARDS, CATALOG_IDS,
-  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue,
-  type EventCatalogEntry,
+  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon,
 } from '~/utils/dashboardEventCatalog'
+import { computeCardRichDetails } from '~/utils/dashboardCardDetails'
+import type { DashboardVisibleCard } from '~/composables/useDashboardView'
 import type {
   CounterSummaryResponse, CounterSeriesResponse, CounterSummaryRow,
-  DashboardConfig, GroupedEvent, SourceBreakdown,
+  DashboardConfig, DashboardHeatmap, GroupedEvent, PanelAudit, PreviousPeriodMetrics, SourceBreakdown,
 } from '#shared/types'
 
 definePageMeta({ layout: 'default' })
@@ -102,13 +118,13 @@ const recentPurchases = ref<GroupedEvent[]>([])
 const geoData = ref<any[]>([])
 const totalRevenue = ref(0)
 const sourceBreakdown = ref<SourceBreakdown | null>(null)
+const panelAudit = ref<PanelAudit | null>(null)
+const previousPeriod = ref<PreviousPeriodMetrics | null>(null)
+const heatmap = ref<DashboardHeatmap | null>(null)
 
 const purchaseModalOpen = ref(false)
 const purchaseSelected = ref<GroupedEvent | null>(null)
-const onPurchaseSelect = (ev: GroupedEvent) => {
-  purchaseSelected.value = ev
-  purchaseModalOpen.value = true
-}
+const onPurchaseSelect = (ev: GroupedEvent) => { purchaseSelected.value = ev; purchaseModalOpen.value = true }
 
 const periodLabels: Record<string, string> = {
   today: 'Hoje', yesterday: 'Ontem', '7d': 'Últimos 7 dias',
@@ -124,15 +140,23 @@ const sumOf = (event: string) => summaryByEvent.value.get(event)?.count_total ??
 const failedTotal = computed(() => (summaryData.value?.events || []).reduce((s, r) => s + r.count_failed, 0))
 const eventLabel = (id: string, fallback: string): string => dashboardConfig.value?.event_labels?.[id] || fallback
 
-const visibleCards = computed(() => {
-  const order = dashboardConfig.value?.card_order?.length ? dashboardConfig.value.card_order : ALL_CARD_IDS
+const visibleCards = computed<DashboardVisibleCard[]>(() => {
+  const order = dashboardConfig.value?.card_order?.length
+    ? Array.from(new Set([...dashboardConfig.value.card_order, ...ALL_CARD_IDS]))
+    : Array.from(new Set([...DEFAULT_ENABLED_CARDS, ...ALL_CARD_IDS]))
   const enabled = dashboardConfig.value?.enabled_cards?.length ? dashboardConfig.value.enabled_cards : DEFAULT_ENABLED_CARDS
-  const cards: Array<{ id: string; label: string; icon: Component; variant: EventCatalogEntry['variant']; value: number; format?: 'number' | 'currency' | 'roas' }> = []
-  const ctx = { sumOf, failedTotal: failedTotal.value, totalRevenue: totalRevenue.value, sourceBreakdown: sourceBreakdown.value }
+  const cards: DashboardVisibleCard[] = []
+  const ctx = {
+    sumOf, failedTotal: failedTotal.value, totalRevenue: totalRevenue.value,
+    sourceBreakdown: sourceBreakdown.value, panelAudit: panelAudit.value, previousPeriod: previousPeriod.value,
+  }
   for (const id of order) {
     if (!enabled.includes(id)) continue
     const e = catalogById.get(id)
-    if (e) cards.push({ id, label: eventLabel(id, e.label), icon: e.icon, variant: e.variant, value: computeCardMetricValue(id, ctx), format: e.format })
+    if (!e) continue
+    const value = computeCardMetricValue(id, ctx)
+    const rich = computeCardRichDetails(id, value, ctx)
+    cards.push({ id, label: eventLabel(id, e.label), icon: resolveCardIcon(e), variant: e.variant, value, format: e.format, ...rich })
   }
   return cards
 })
@@ -151,24 +175,16 @@ const funnelSteps = computed(() => {
 
 const handleApiError = (err: any) => {
   const code = err?.statusCode
-  if (code === 404 || code === 410) {
-    notFound.value = true
-    loadError.value = null
-  } else {
-    loadError.value = err?.message || 'Não foi possível carregar os dados no momento. Verifique sua conexão e tente novamente.'
-  }
+  if (code === 404 || code === 410) { notFound.value = true; loadError.value = null }
+  else loadError.value = err?.message || 'Não foi possível carregar os dados no momento.'
 }
 
 const fetchMeta = async () => {
   try {
     const res = await api.meta()
-    pixelLabel.value = res.pixel_label
-    dashboardConfig.value = res.dashboard_config
-    metaLoaded.value = true
-    loadError.value = null
-  } catch (err: any) {
-    handleApiError(err)
-  }
+    pixelLabel.value = res.pixel_label; dashboardConfig.value = res.dashboard_config
+    metaLoaded.value = true; loadError.value = null
+  } catch (err: any) { handleApiError(err) }
 }
 
 const fetchAll = async () => {
@@ -177,25 +193,20 @@ const fetchAll = async () => {
   try {
     const { from, to } = dateRange.value
     const [summary, series, purchases, geo, geoPurchases, revenue] = await Promise.all([
-      api.summary({ from, to }),
-      api.series({ from, to, granularity: granularity.value }),
-      api.purchases({ from, to }),
-      api.geo({ from, to }),
-      api.geoByEvent({ from, to, event: 'Purchase' }),
-      api.revenue({ from, to }),
+      api.summary({ from, to }), api.series({ from, to, granularity: granularity.value }),
+      api.purchases({ from, to }), api.geo({ from, to }),
+      api.geoByEvent({ from, to, event: 'Purchase' }), api.revenue({ from, to }),
     ])
-    summaryData.value = summary
-    seriesData.value = series
-    recentPurchases.value = purchases.data || []
+    summaryData.value = summary; seriesData.value = series; recentPurchases.value = purchases.data || []
     totalRevenue.value = revenue.total_revenue ?? 0
     sourceBreakdown.value = revenue.source_breakdown || null
+    panelAudit.value = revenue.panel_audit || null
+    previousPeriod.value = revenue.previous_period || null
+    heatmap.value = revenue.heatmap || null
     geoData.value = [...(geo || []).map((g: any) => ({ ...g, event_name: 'PageView' })), ...(geoPurchases || [])]
     loadError.value = null
-  } catch (err: any) {
-    handleApiError(err)
-  } finally {
-    loading.value = false
-  }
+  } catch (err: any) { handleApiError(err) }
+  finally { loading.value = false }
 }
 
 const refresh = () => fetchAll()
@@ -210,10 +221,7 @@ watch([period, customFrom, customTo], () => {
   if (period.value !== 'custom' || (customFrom.value && customTo.value)) refresh()
 })
 
-onMounted(async () => {
-  void fetchBranding()
-  await retryLoad()
-})
+onMounted(async () => { void fetchBranding(); await retryLoad() })
 </script>
 
 <style scoped>

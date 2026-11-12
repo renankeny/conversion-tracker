@@ -10,6 +10,7 @@ export interface TrackedUser {
   gbraid: string
   ttclid: string
   ttp: string
+  ctwa_clid?: string
   ga4_client_id: string
   ga4_session_id: string
   client_ip: string

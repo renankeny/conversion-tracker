@@ -62,12 +62,37 @@ export const useWhatsApp = () => {
     store.updateInstanceStatus(id, 'CLOSED')
   }
 
-  const getChatByLead = (leadId: number): Promise<WhatsAppChatWithMessages> => {
-    return api.get<WhatsAppChatWithMessages>(`/admin/whatsapp/chats/by-lead/${leadId}`)
+  const getChatByLead = (
+    leadId: number,
+    params?: { before_id?: number | null; limit?: number },
+  ): Promise<WhatsAppChatWithMessages> => {
+    const q = new URLSearchParams()
+    if (params?.before_id) q.set('before_id', String(params.before_id))
+    if (params?.limit) q.set('limit', String(params.limit))
+    const qs = q.toString() ? `?${q.toString()}` : ''
+    return api.get<WhatsAppChatWithMessages>(`/admin/whatsapp/chats/by-lead/${leadId}${qs}`)
   }
 
-  const getChatByTrackedUser = (userId: number): Promise<WhatsAppChatWithMessages> => {
-    return api.get<WhatsAppChatWithMessages>(`/admin/whatsapp/chats/by-user/${userId}`)
+  const getChatByTrackedUser = (
+    userId: number,
+    params?: { before_id?: number | null; limit?: number },
+  ): Promise<WhatsAppChatWithMessages> => {
+    const q = new URLSearchParams()
+    if (params?.before_id) q.set('before_id', String(params.before_id))
+    if (params?.limit) q.set('limit', String(params.limit))
+    const qs = q.toString() ? `?${q.toString()}` : ''
+    return api.get<WhatsAppChatWithMessages>(`/admin/whatsapp/chats/by-user/${userId}${qs}`)
+  }
+
+  const getChatMessages = (
+    chatId: number,
+    params?: { before_id?: number | null; limit?: number },
+  ): Promise<WhatsAppChatWithMessages> => {
+    const q = new URLSearchParams()
+    if (params?.before_id) q.set('before_id', String(params.before_id))
+    if (params?.limit) q.set('limit', String(params.limit))
+    const qs = q.toString() ? `?${q.toString()}` : ''
+    return api.get<WhatsAppChatWithMessages>(`/admin/whatsapp/chats/${chatId}/messages${qs}`)
   }
 
   const convertChat = (
@@ -90,6 +115,7 @@ export const useWhatsApp = () => {
     disconnectInstance,
     getChatByLead,
     getChatByTrackedUser,
+    getChatMessages,
     convertChat,
   }
 }

@@ -21,7 +21,7 @@
   window.__tf_trackers[TF_PIXEL_NAME] = true;
   window.__tf_tracker_loaded = true;
   window.__tf_version = "2.1";
-  if (window.console) console.log("[TF] tracker v2.1 carregando para pixel:", TF_PIXEL_NAME);
+  if (window.console) console.log("[" + (TF_PIXEL_NAME || "Trackeado") + " carregado ✅]");
 
   if ((!TF_META_PIXEL_IDS || !TF_META_PIXEL_IDS.length) && TF_META_INIT_PIXEL_ID) {
     TF_META_PIXEL_IDS = [TF_META_INIT_PIXEL_ID];
@@ -198,16 +198,26 @@
   function getUserDataCookie() { return getUserData(); }
   function saveUserDataCookie(obj) { saveUserData(obj); }
 
-  // === Google Ads Identifiers ==========================================
-  function getGoogleParams() {
+  // === Google Ads Identifiers & Cookies =================================
+  function ensureGoogleCookies() {
+    var nowSec = Math.floor(Date.now() / 1000);
+    var gclAu = getCookie("_gcl_au") || getStorage("_gcl_au");
+    if (!gclAu) {
+      gclAu = "1.1." + (Math.floor(Math.random() * 1000000000) + 100000000) + "." + nowSec;
+      savePersistent("_gcl_au", gclAu, 90);
+    }
     var qp = new URLSearchParams(window.location.search);
     var gclid = qp.get("gclid");
     if (gclid) {
       savePersistent("_gclid", gclid, 90);
+      var curAw = getCookie("_gcl_aw") || "";
+      if (curAw.indexOf(gclid) === -1) {
+        savePersistent("_gcl_aw", "GCL." + nowSec + "." + gclid, 90);
+      }
     } else {
       gclid = getPersistent("_gclid");
       if (!gclid) {
-        var gclAw = getCookie("_gcl_aw") || getCookie("_gcl_dc");
+        var gclAw = getCookie("_gcl_aw") || getCookie("_gcl_dc") || getStorage("_gcl_aw");
         if (gclAw) {
           var parts = gclAw.split(".");
           if (parts.length >= 3) {
@@ -223,13 +233,34 @@
     else wbraid = getPersistent("_wbraid");
 
     var gbraid = qp.get("gbraid");
-    if (gbraid) savePersistent("_gbraid", gbraid, 90);
-    else gbraid = getPersistent("_gbraid");
+    if (gbraid) {
+      savePersistent("_gbraid", gbraid, 90);
+      var curGb = getCookie("_gcl_gb") || "";
+      if (curGb.indexOf(gbraid) === -1) {
+        savePersistent("_gcl_gb", "GCL." + nowSec + "." + gbraid, 90);
+      }
+    } else {
+      gbraid = getPersistent("_gbraid");
+      if (!gbraid) {
+        var gclGb = getCookie("_gcl_gb") || getStorage("_gcl_gb");
+        if (gclGb) {
+          var gbParts = gclGb.split(".");
+          if (gbParts.length >= 3) {
+            gbraid = gbParts.slice(2).join(".");
+            savePersistent("_gbraid", gbraid, 90);
+          }
+        }
+      }
+    }
 
     return { gclid: gclid, wbraid: wbraid, gbraid: gbraid };
   }
 
-  // === TikTok Identifiers ==============================================
+  function getGoogleParams() {
+    return ensureGoogleCookies();
+  }
+
+  // === TikTok Identifiers & Cookies =====================================
   function formatPhoneE164(raw) {
     if (!raw) return "";
     var s = String(raw).trim();
@@ -247,23 +278,41 @@
     return "+" + digits;
   }
 
+  function generateFallbackTtp() {
+    var alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    var prefix = "01";
+    for (var i = 0; i < 24; i++) {
+      prefix += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+    }
+    return prefix + "_.tt.1." + Date.now();
+  }
+
   function getTikTokParams() {
     var qp = new URLSearchParams(window.location.search);
     var ttclid = qp.get("ttclid");
     if (ttclid) savePersistent("_ttclid", ttclid, 90);
     else ttclid = getPersistent("_ttclid");
     var cookieTtp = getCookie("_ttp");
-    if (cookieTtp) setStorage("_ttp", cookieTtp);
+    if (cookieTtp) {
+      setStorage("_ttp", cookieTtp);
+    }
     var ttp = cookieTtp || getStorage("_ttp") || null;
+    if (!ttp) {
+      ttp = generateFallbackTtp();
+      savePersistent("_ttp", ttp, 390);
+    }
     return { ttclid: ttclid, ttp: ttp };
   }
 
   // === GA4 ==============================================================
   function ensureGaCookie() {
-    var ga = getCookie("_ga");
+    var ga = getCookie("_ga") || getStorage("_ga");
     if (!ga) {
       var clientId = Math.floor(Math.random() * 2147483647) + "." + Math.floor(Date.now() / 1000);
-      setCookie("_ga", "GA1.1." + clientId, 730);
+      ga = "GA1.1." + clientId;
+      savePersistent("_ga", ga, 730);
+    } else if (!getCookie("_ga")) {
+      setCookie("_ga", ga, 730);
     }
   }
 
@@ -283,6 +332,22 @@
           if (sParts.length >= 3) ga4SessionID = sParts[2];
         }
       }
+      if (!ga4ClientID) {
+        var savedGa = getStorage("_ga") || "";
+        var gParts = savedGa.split(".");
+        if (gParts.length >= 4) ga4ClientID = gParts[2] + "." + gParts[3];
+      }
+      if (!ga4SessionID) {
+        try {
+          ga4SessionID = window.sessionStorage.getItem("_tf_ga4_sid") || "";
+          if (!ga4SessionID) {
+            ga4SessionID = String(Math.floor(Date.now() / 1000));
+            window.sessionStorage.setItem("_tf_ga4_sid", ga4SessionID);
+          }
+        } catch (e2) {
+          ga4SessionID = String(Math.floor(Date.now() / 1000));
+        }
+      }
     } catch (e) {}
     return { ga4_client_id: ga4ClientID, ga4_session_id: ga4SessionID };
   }
@@ -293,12 +358,16 @@
     if (!fbp) {
       fbp = "fb.1." + Date.now() + "." + Math.floor(Math.random() * 9999999999);
       savePersistent("_fbp", fbp, 90);
+    } else if (!getCookie("_fbp")) {
+      setCookie("_fbp", fbp, 90);
     }
     var fbclid = new URLSearchParams(window.location.search).get("fbclid");
     var fbc = getPersistent("_fbc");
     if (fbclid) {
       savePersistent("_tf_fbclid", fbclid, 90);
-      fbc = "fb.1." + Date.now() + "." + fbclid;
+      if (!fbc || fbc.indexOf(fbclid) === -1) {
+        fbc = "fb.1." + Date.now() + "." + fbclid;
+      }
       savePersistent("_fbc", fbc, 90);
     } else if (!fbc) {
       var savedFbclid = getPersistent("_tf_fbclid");
@@ -306,6 +375,8 @@
         fbc = "fb.1." + Date.now() + "." + savedFbclid;
         savePersistent("_fbc", fbc, 90);
       }
+    } else {
+      savePersistent("_fbc", fbc, 90);
     }
     return { fbp: fbp, fbc: fbc };
   }
@@ -314,7 +385,12 @@
   function getEffectiveUTMs(metaCookies, googleParams, tikTokParams) {
     var qp = new URLSearchParams(window.location.search);
     var rawSrc = stripUserMarker(qp.get("utm_source"));
-    var fbclid = qp.get("fbclid") || getPersistent("_tf_fbclid") || (metaCookies && metaCookies.fbc);
+    var rawMed = stripUserMarker(qp.get("utm_medium"));
+    var urlFbclid = qp.get("fbclid");
+    var urlGclid = qp.get("gclid") || qp.get("wbraid") || qp.get("gbraid") || qp.get("gad_source");
+    var urlTtclid = qp.get("ttclid");
+
+    var fbclid = urlFbclid || getPersistent("_tf_fbclid") || (metaCookies && metaCookies.fbc);
     var gclid = (googleParams && googleParams.gclid) || (googleParams && googleParams.wbraid) || (googleParams && googleParams.gbraid);
     var ttclid = tikTokParams && tikTokParams.ttclid;
 
@@ -322,10 +398,25 @@
       rawSrc = "";
     }
 
+    // Se a URL atual trouxe um click ID pago explícito sem utm_source na URL,
+    // inferimos imediatamente a plataforma correta (não mantendo utm_source antiga de outra sessão).
+    if (!rawSrc) {
+      if (urlGclid) {
+        rawSrc = "google";
+        if (!rawMed) rawMed = "cpc";
+      } else if (urlFbclid) {
+        rawSrc = "facebook";
+        if (!rawMed) rawMed = "paid";
+      } else if (urlTtclid) {
+        rawSrc = "tiktok";
+        if (!rawMed) rawMed = "paid";
+      }
+    }
+
     var current = {
       utm_source: rawSrc || null,
-      utm_medium: stripUserMarker(qp.get("utm_medium")) || null,
-      utm_campaign: stripUserMarker(qp.get("utm_campaign")) || null,
+      utm_medium: rawMed || null,
+      utm_campaign: stripUserMarker(qp.get("utm_campaign")) || stripUserMarker(qp.get("utm_id")) || null,
       utm_content: stripUserMarker(qp.get("utm_content")) || null,
       utm_term: stripUserMarker(qp.get("utm_term")) || null
     };
@@ -442,6 +533,7 @@
 
   function sendEvent(eventType, data) {
     data = data || {};
+    var useBeacon = !!data.__useBeacon;
     if (dedupedEvents[eventType]) {
       if (sentOnce[eventType]) return Promise.resolve();
       sentOnce[eventType] = true;
@@ -490,21 +582,26 @@
       var ttqEvent = mapEventToTikTok(eventType);
       if (ttqEvent) {
         var ttqContentName = data.content_name || data.contentName || TF_PIXEL_NAME;
-        var ttqProps = {
-          content_id: contentId,
-          content_type: data.content_type || data.contentType || "product",
-          content_name: ttqContentName
+        var ttqContentType = data.content_type || data.contentType || "product";
+        var ttqPrice = (valueEvents[eventType] && typeof data.value === "number" && data.value > 0) ? data.value : undefined;
+        var ttqContentItem = {
+          content_id: String(contentId),
+          content_type: ttqContentType,
+          content_name: ttqContentName,
+          quantity: 1
         };
-        if (valueEvents[eventType] && typeof data.value === "number" && data.value > 0) {
-          ttqProps.value = data.value;
+        if (typeof ttqPrice === "number") {
+          ttqContentItem.price = ttqPrice;
+        }
+        var ttqProps = {
+          content_id: String(contentId),
+          content_type: ttqContentType,
+          content_name: ttqContentName,
+          contents: [ttqContentItem]
+        };
+        if (typeof ttqPrice === "number") {
+          ttqProps.value = ttqPrice;
           ttqProps.currency = data.currency || TF_CONFIG.product_currency || "BRL";
-          ttqProps.contents = [{
-            content_id: contentId,
-            content_type: data.content_type || data.contentType || "product",
-            content_name: ttqContentName,
-            price: data.value,
-            quantity: 1
-          }];
         } else if (ttqEvent === "Purchase") {
           ttqProps.value = 0;
           ttqProps.currency = data.currency || TF_CONFIG.product_currency || "BRL";
@@ -561,6 +658,15 @@
     };
 
     var bodyStr = JSON.stringify(payload);
+    if (useBeacon && navigator && typeof navigator.sendBeacon === "function" && eventType !== "Init") {
+      try {
+        var beaconBlob = new Blob([bodyStr], { type: "application/json" });
+        if (navigator.sendBeacon(TF_API_URL + "/events/collect", beaconBlob)) {
+          return Promise.resolve(null);
+        }
+      } catch (eb) {}
+    }
+
     return fetch(TF_API_URL + "/events/collect", {
       method: "POST",
       credentials: "omit",
@@ -911,9 +1017,18 @@
           } catch (e) {}
         }
 
-        if (opts.lead && !link.dataset.tfWaLeadAttached) {
+        if (!link.dataset.tfWaLeadAttached) {
           link.addEventListener("click", function () {
-            sendEvent(opts.leadEvent || "Lead");
+            ensureMetaCookies();
+            ensureGoogleCookies();
+            getTikTokParams();
+            getGA4Cookies();
+            var evName = opts.leadEvent || "Lead";
+            if (opts.lead && (!dedupedEvents[evName] || !sentOnce[evName])) {
+              sendEvent(evName, { __useBeacon: true });
+            } else {
+              sendEvent("UpdateUserData", { __useBeacon: true });
+            }
           }, true);
           link.dataset.tfWaLeadAttached = "1";
         }
@@ -1023,6 +1138,8 @@
     return ud;
   }
 
+  var initializedFbqPixels = {};
+
   function bootstrapFbq() {
     if (!TF_META_PIXEL_IDS || !TF_META_PIXEL_IDS.length) return;
     !function (f, b, e, v, n, t, s) {
@@ -1031,6 +1148,7 @@
       if (!f._fbq) f._fbq = n;
       n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = [];
       t = b.createElement(e); t.async = !0;
+      t.onerror = function () {};
       t.src = v;
       s = b.getElementsByTagName(e)[0];
       if (s && s.parentNode) s.parentNode.insertBefore(t, s);
@@ -1039,7 +1157,11 @@
 
     clientUserData = buildAdvancedMatching({});
     for (var i = 0; i < TF_META_PIXEL_IDS.length; i++) {
-      window.fbq("init", TF_META_PIXEL_IDS[i], clientUserData);
+      var pid = TF_META_PIXEL_IDS[i];
+      if (!initializedFbqPixels[pid]) {
+        initializedFbqPixels[pid] = true;
+        window.fbq("init", pid, clientUserData);
+      }
     }
   }
 
@@ -1048,7 +1170,18 @@
     var ud = buildAdvancedMatching(initData || lastInitData);
     clientUserData = ud;
     for (var i = 0; i < TF_META_PIXEL_IDS.length; i++) {
-      window.fbq("init", TF_META_PIXEL_IDS[i], ud);
+      var pid = TF_META_PIXEL_IDS[i];
+      if (!initializedFbqPixels[pid]) {
+        initializedFbqPixels[pid] = true;
+        window.fbq("init", pid, ud);
+      } else {
+        // Atualiza propriedades do usuário sem re-executar 'init' e causar erro de duplicidade
+        try {
+          if (typeof window.fbq.setUserProperties === "function") {
+            window.fbq.setUserProperties(pid, ud);
+          }
+        } catch (e) {}
+      }
     }
   }
 
@@ -1072,6 +1205,7 @@
     if (!TF_GA4_MEASUREMENT_ID) return;
     var s = document.createElement("script");
     s.async = true;
+    s.onerror = function () {};
     s.src = "https://www.googletagmanager.com/gtag/js?id=" + TF_GA4_MEASUREMENT_ID;
     var first = document.getElementsByTagName("script")[0];
     if (first && first.parentNode) first.parentNode.insertBefore(s, first);
@@ -1085,42 +1219,163 @@
     window.gtag("config", TF_GA4_MEASUREMENT_ID, { send_page_view: false });
   }
 
+  var ttqVsaEvents = {
+    ViewContent: 1,
+    AddToCart: 1,
+    InitiateCheckout: 1,
+    Purchase: 1,
+    CompletePayment: 1,
+    PlaceAnOrder: 1,
+    AddToWishlist: 1
+  };
+
+  function wrapTikTokTrackHolder(holder) {
+    if (!holder || holder.__tf_vsa_guarded || typeof holder.track !== "function") return false;
+    var fallbackCid = String((TF_CONFIG && TF_CONFIG.content_id) || TF_PIXEL_NAME || "product");
+    var origTrack = holder.track;
+    holder.track = function (ev, props, opts) {
+      if (ev && ttqVsaEvents[ev]) {
+        props = props && typeof props === "object" ? props : {};
+        if (props.content_id === undefined && props.contents === undefined) {
+          props.content_id = fallbackCid;
+          if (!props.content_type) props.content_type = "product";
+        }
+      }
+      return origTrack.call(this, ev, props, opts);
+    };
+    holder.__tf_vsa_guarded = true;
+    return true;
+  }
+
+  function installTtqReportersHook(ttqObj) {
+    if (!ttqObj || ttqObj.__tf_rep_hooked) return;
+    ttqObj.__tf_rep_hooked = true;
+    var currentReps = ttqObj.reporters;
+    function hookReportersArray(arr) {
+      if (!Array.isArray(arr)) return;
+      for (var i = 0; i < arr.length; i++) wrapTikTokTrackHolder(arr[i]);
+      if (!arr.__tf_push_hooked) {
+        arr.__tf_push_hooked = true;
+        var origPush = arr.push;
+        arr.push = function () {
+          for (var j = 0; j < arguments.length; j++) wrapTikTokTrackHolder(arguments[j]);
+          return origPush.apply(this, arguments);
+        };
+      }
+    }
+    if (Array.isArray(currentReps)) hookReportersArray(currentReps);
+    try {
+      Object.defineProperty(ttqObj, "reporters", {
+        configurable: true,
+        enumerable: true,
+        get: function () { return currentReps; },
+        set: function (arr) {
+          currentReps = arr;
+          hookReportersArray(arr);
+        }
+      });
+    } catch (e) {}
+  }
+
+  function patchTikTokPixelRules(pixelId) {
+    try {
+      var entry = window.ttq && window.ttq._i && window.ttq._i[pixelId];
+      var rules = entry && entry.rules;
+      if (!Array.isArray(rules) || !rules.length) return;
+      var filtered = [];
+      for (var rIdx = 0; rIdx < rules.length; rIdx++) {
+        var rule = rules[rIdx];
+        var m = rule && typeof rule.code === "string" && rule.code.match(/\.track\s*\(\s*["']([^"')]+)["']/);
+        var evName = m && m[1];
+        if (evName && ttqVsaEvents[evName]) {
+          var conds = Array.isArray(rule.conditions) ? rule.conditions : [];
+          var hasContents = false;
+          for (var cIdx = 0; cIdx < conds.length; cIdx++) {
+            var dp = conds[cIdx] && conds[cIdx].dynamic_parameter;
+            if (dp && Array.isArray(dp.contents) && dp.contents.length > 0) {
+              hasContents = true;
+              break;
+            }
+          }
+          if (!hasContents) continue;
+        }
+        filtered.push(rule);
+      }
+      entry.rules = filtered;
+    } catch (e) {}
+  }
+
+  function guardTikTokVsaParams() {
+    if (!TF_TIKTOK_PIXEL_IDS || !TF_TIKTOK_PIXEL_IDS.length) return;
+    var elapsed = 0;
+    var iv = setInterval(function () {
+      elapsed += 200;
+      for (var p = 0; p < TF_TIKTOK_PIXEL_IDS.length; p++) {
+        patchTikTokPixelRules(TF_TIKTOK_PIXEL_IDS[p]);
+      }
+      var allWrapped = true;
+      if (window.ttq && !Array.isArray(window.ttq) && typeof window.ttq.instance === "function") {
+        wrapTikTokTrackHolder(window.ttq);
+        for (var k = 0; k < TF_TIKTOK_PIXEL_IDS.length; k++) {
+          var inst = window.ttq.instance(TF_TIKTOK_PIXEL_IDS[k]);
+          if (!inst || Array.isArray(inst) || !wrapTikTokTrackHolder(inst)) {
+            if (!inst || !inst.__tf_vsa_guarded) allWrapped = false;
+          }
+        }
+      } else {
+        allWrapped = false;
+      }
+      if (allWrapped || elapsed >= 10000) clearInterval(iv);
+    }, 200);
+  }
+
   function bootstrapTtq() {
     if (!TF_TIKTOK_PIXEL_IDS || !TF_TIKTOK_PIXEL_IDS.length) return;
     !function (w, d, t) {
       w.TiktokAnalyticsObject = t;
       var ttq = w[t] = w[t] || [];
-      ttq.methods = ["page", "track", "identify", "instances", "debug", "on", "off", "once", "ready", "alias", "group", "enableCookie", "disableCookie", "holdConsent", "revokeConsent", "grantConsent"];
-      ttq.setAndDefer = function (t, e) {
-        t[e] = function () { t.push([e].concat(Array.prototype.slice.call(arguments, 0))); };
-      };
-      for (var i = 0; i < ttq.methods.length; i++) ttq.setAndDefer(ttq, ttq.methods[i]);
-      ttq.instance = function (t) {
-        for (var e = ttq._i[t] || [], n = 0; n < ttq.methods.length; n++) ttq.setAndDefer(e, ttq.methods[n]);
-        return e;
-      };
-      ttq.load = function (e, n) {
-        var r = "https://analytics.tiktok.com/i18n/pixel/events.js";
-        ttq._i = ttq._i || {};
-        ttq._i[e] = [];
-        ttq._i[e]._u = r;
-        ttq._t = ttq._t || {};
-        ttq._t[e] = +new Date();
-        ttq._o = ttq._o || {};
-        ttq._o[e] = n || {};
-        var script = document.createElement("script");
-        script.type = "text/javascript";
-        script.async = !0;
-        script.src = r + "?sdkid=" + e + "&lib=" + t;
-        var s = document.getElementsByTagName("script")[0];
-        if (s && s.parentNode) s.parentNode.insertBefore(script, s);
-        else (d.head || d.documentElement).appendChild(script);
-      };
+      installTtqReportersHook(ttq);
+      if (!ttq.methods) {
+        ttq.methods = ["page", "track", "identify", "instances", "debug", "on", "off", "once", "ready", "alias", "group", "enableCookie", "disableCookie", "holdConsent", "revokeConsent", "grantConsent"];
+        ttq.setAndDefer = function (t, e) {
+          t[e] = function () { t.push([e].concat(Array.prototype.slice.call(arguments, 0))); };
+        };
+        for (var i = 0; i < ttq.methods.length; i++) ttq.setAndDefer(ttq, ttq.methods[i]);
+        ttq.instance = function (t) {
+          for (var e = ttq._i[t] || [], n = 0; n < ttq.methods.length; n++) ttq.setAndDefer(e, ttq.methods[n]);
+          return e;
+        };
+        ttq.load = function (e, n) {
+          var r = "https://analytics.tiktok.com/i18n/pixel/events.js";
+          ttq._i = ttq._i || {};
+          ttq._i[e] = [];
+          ttq._i[e]._u = r;
+          ttq._t = ttq._t || {};
+          ttq._t[e] = +new Date();
+          ttq._o = ttq._o || {};
+          ttq._o[e] = n || {};
+          var script = document.createElement("script");
+          script.type = "text/javascript";
+          script.async = !0;
+          script.onload = function () { patchTikTokPixelRules(e); };
+          script.onerror = function () {};
+          script.src = r + "?sdkid=" + e + "&lib=" + t;
+          var s = document.getElementsByTagName("script")[0];
+          if (s && s.parentNode) s.parentNode.insertBefore(script, s);
+          else (d.head || d.documentElement).appendChild(script);
+        };
+      }
       for (var p = 0; p < TF_TIKTOK_PIXEL_IDS.length; p++) {
-        ttq.load(TF_TIKTOK_PIXEL_IDS[p]);
+        var pid = TF_TIKTOK_PIXEL_IDS[p];
+        if (ttq._i && ttq._i[pid]) {
+          patchTikTokPixelRules(pid);
+        } else if (typeof ttq.load === "function") {
+          ttq.load(pid);
+        }
       }
     }(window, document, "ttq");
 
+    guardTikTokVsaParams();
     refreshTtqIdentify({});
     watchTtpCookie(!!getCookie("_ttp"));
   }
@@ -1201,7 +1456,9 @@
   // === Boot ============================================================
 
   var bootMeta = ensureMetaCookies();
-  ensureGaCookie();
+  ensureGoogleCookies();
+  getTikTokParams();
+  getGA4Cookies();
   if (bootMeta.fbc) clientUserData.fbc = bootMeta.fbc;
   if (bootMeta.fbp) clientUserData.fbp = bootMeta.fbp;
 

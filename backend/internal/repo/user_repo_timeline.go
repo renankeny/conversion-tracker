@@ -193,6 +193,7 @@ func (r *UserRepo) ResolveAndLink(ctx context.Context, accountID int64, external
 	}
 	result := pick()
 	result.GroupID = &canonicalGroupID
+	enrichTrackedUserGroupFields(ctx, r.pool, result)
 	return result, nil
 }
 

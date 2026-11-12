@@ -133,5 +133,7 @@ export interface WhatsAppMessage {
 export interface WhatsAppChatWithMessages {
   chat: WhatsAppChat | null
   messages: WhatsAppMessage[]
+  has_more?: boolean
+  next_before_id?: number | null
 }
 

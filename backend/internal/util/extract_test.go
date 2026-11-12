@@ -76,3 +76,25 @@ func TestFirstNonEmpty(t *testing.T) {
 		t.Errorf("FirstNonEmpty(): got %q", got)
 	}
 }
+
+func TestExtractEmail(t *testing.T) {
+	cases := []struct {
+		text string
+		want string
+	}{
+		{"", ""},
+		{"Olá, meu email é cliente@gmail.com", "cliente@gmail.com"},
+		{"Pode mandar para CONTATO@EMPRESA.COM.BR!", "contato@empresa.com.br"},
+		{"meu email: (teste.lead+promo@dominio.io).", "teste.lead+promo@dominio.io"},
+		{"email: 'financeiro@empresa.com' obrigado", "financeiro@empresa.com"},
+		{"não tem email aqui", ""},
+		{"email quebrado @dominio sem arroba", ""},
+	}
+	for _, c := range cases {
+		got := ExtractEmail(c.text)
+		if got != c.want {
+			t.Errorf("ExtractEmail(%q) = %q, want %q", c.text, got, c.want)
+		}
+	}
+}
+

@@ -51,5 +51,25 @@ func TestBuildCAPIPayload_BusinessMessagingLeadMapsToLeadSubmitted(t *testing.T)
 	if parsed.Data[0].EventName != domain.EventLead {
 		t.Fatalf("expected %q for website, got %q", domain.EventLead, parsed.Data[0].EventName)
 	}
+
+	ctwaRaw, err := BuildCAPIPayload(domain.SendEventInput{
+		EventName: domain.EventLead,
+		EventID:   "evt-3",
+		EventTime: 1700000000,
+		CtwaClid:  "ctwa_auto_map",
+		Phone:     "5511999998888",
+	}, "", "")
+	if err != nil {
+		t.Fatalf("BuildCAPIPayload ctwa error: %v", err)
+	}
+	if err := json.Unmarshal(ctwaRaw, &parsed); err != nil || len(parsed.Data) != 1 {
+		t.Fatalf("unexpected ctwa payload: %s", string(ctwaRaw))
+	}
+	if parsed.Data[0].EventName != domain.EventLeadSubmitted {
+		t.Fatalf("expected %q for ctwa with CtwaClid, got %q", domain.EventLeadSubmitted, parsed.Data[0].EventName)
+	}
+	if parsed.Data[0].ActionSource != "business_messaging" {
+		t.Fatalf("expected %q action_source for ctwa with CtwaClid, got %q", "business_messaging", parsed.Data[0].ActionSource)
+	}
 }
 

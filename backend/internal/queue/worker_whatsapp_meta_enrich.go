@@ -2,11 +2,7 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -14,16 +10,6 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
-
-type cachedAdMetadata struct {
-	CampaignID   string `json:"campaign_id"`
-	CampaignName string `json:"campaign_name"`
-	AdsetID      string `json:"adset_id"`
-	AdsetName    string `json:"adset_name"`
-	AdName       string `json:"ad_name"`
-	PageID       string `json:"page_id"`
-	ThumbnailURL string `json:"thumbnail_url"`
-}
 
 func resolvePixelMetaOAuth(ctx context.Context, deps Deps, pixel *domain.Pixel) *domain.MetaAccount {
 	if deps.MetaAcc == nil || deps.MetaOAuth == nil || pixel == nil {
@@ -88,6 +74,7 @@ func enrichAndDispatchCTWALead(
 	u *domain.TrackedUser,
 	chatID int64,
 	phone, sourceID, ctwaClid string,
+	isInbound bool,
 ) {
 	pixel, err := deps.Pixels.FindByID(ctx, inst.PixelID)
 	if err != nil || pixel == nil || !pixel.Enabled {
@@ -122,21 +109,36 @@ func enrichAndDispatchCTWALead(
 		metaInfo.PageID = oauthAcc.DefaultPageID
 	}
 
-	if ctwaClid == "" || deps.Enqueuer == nil {
+	if !isInbound || deps.Enqueuer == nil || (ctwaClid == "" && sourceID == "") {
 		return
 	}
+
+	actionSource := "business_messaging"
+	messagingChannel := "whatsapp"
 	eventID := "ctwa:" + ctwaClid
+	if ctwaClid == "" {
+		actionSource = "system_generated"
+		messagingChannel = ""
+		eventID = fmt.Sprintf("ctwa_ad:%s:%d", sourceID, chatID)
+	}
+
 	if exists, _ := deps.SentEvents.ExistsSent(ctx, eventID, pixel.Name); exists {
 		return
 	}
+
+	var linked domain.LinkedTrackingFields
+	if deps.Users != nil {
+		linked, _ = deps.Users.LinkedFieldsByAccount(ctx, inst.AccountID, u.ExternalID)
+	}
+
 	_ = deps.Enqueuer.EnqueueSendEvent(ctx, domain.SendEventInput{
 		PixelName:        pixel.Name,
 		EventName:        domain.EventLeadSubmitted,
 		EventID:          eventID,
 		EventTime:        time.Now().Unix(),
 		Gateway:          "whatsapp",
-		ActionSource:     "business_messaging",
-		MessagingChannel: "whatsapp",
+		ActionSource:     actionSource,
+		MessagingChannel: messagingChannel,
 		CtwaClid:         ctwaClid,
 		PageID:           metaInfo.PageID,
 		ExternalID:       u.ExternalID,
@@ -151,94 +153,15 @@ func enrichAndDispatchCTWALead(
 		State:            u.State,
 		City:             u.City,
 		PostalCode:       u.PostalCode,
-		FBP:              u.FBP,
-		FBC:              u.FBC,
-		GCLID:            u.GCLID,
-		WBraid:           u.WBraid,
-		GBraid:           u.GBraid,
-		TTClid:           u.TTClid,
-		TTP:              u.TTP,
-		GA4ClientID:      u.GA4ClientID,
-		GA4SessionID:     u.GA4SessionID,
+		FBP:              util.FirstNonEmpty(u.FBP, linked.FBP),
+		FBC:              util.FirstNonEmpty(u.FBC, linked.FBC),
+		GCLID:            util.FirstNonEmpty(u.GCLID, linked.GCLID),
+		WBraid:           util.FirstNonEmpty(u.WBraid, linked.WBraid),
+		GBraid:           util.FirstNonEmpty(u.GBraid, linked.GBraid),
+		TTClid:           util.FirstNonEmpty(u.TTClid, linked.TTClid),
+		TTP:              util.FirstNonEmpty(u.TTP, linked.TTP),
+		GA4ClientID:      util.FirstNonEmpty(u.GA4ClientID, linked.GA4ClientID),
+		GA4SessionID:     util.FirstNonEmpty(u.GA4SessionID, linked.GA4SessionID),
 		Currency:         domain.NormalizeWhatsAppCurrency(inst.Currency),
 	})
-}
-
-func fetchAdMetadataCached(ctx context.Context, deps Deps, sourceID string, oauthAcc *domain.MetaAccount, legacyToken string) cachedAdMetadata {
-	cacheKey := "tf:meta:ad:" + sourceID
-	if deps.Redis != nil {
-		if raw, err := deps.Redis.Get(ctx, cacheKey).Bytes(); err == nil && len(raw) > 0 {
-			var cached cachedAdMetadata
-			if json.Unmarshal(raw, &cached) == nil {
-				return cached
-			}
-		}
-	}
-
-	var out cachedAdMetadata
-	if oauthAcc != nil && deps.MetaOAuth != nil {
-		if res, err := deps.MetaOAuth.GetAdMetadata(ctx, oauthAcc, sourceID); err == nil {
-			out = cachedAdMetadata{
-				CampaignID:   res.CampaignID,
-				CampaignName: res.CampaignName,
-				AdsetID:      res.AdsetID,
-				AdsetName:    res.AdsetName,
-				AdName:       res.AdName,
-				PageID:       res.PageID,
-				ThumbnailURL: res.ThumbnailURL,
-			}
-		}
-	}
-
-	if out.AdName == "" && out.CampaignName == "" && legacyToken != "" {
-		out = fetchAdMetadataDirect(ctx, sourceID, legacyToken)
-	}
-
-	if (out.AdName != "" || out.CampaignName != "" || out.PageID != "") && deps.Redis != nil {
-		if b, err := json.Marshal(out); err == nil {
-			_ = deps.Redis.Set(ctx, cacheKey, b, 24*time.Hour).Err()
-		}
-	}
-	return out
-}
-
-func fetchAdMetadataDirect(ctx context.Context, sourceID, token string) cachedAdMetadata {
-	adURL := fmt.Sprintf("https://graph.facebook.com/v26.0/%s?fields=name,campaign{id,name},adset{id,name},creative{thumbnail_url,image_url},tracking_specs&access_token=%s",
-		url.PathEscape(sourceID), url.QueryEscape(token))
-	cli := &http.Client{Timeout: 8 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adURL, nil)
-	if err != nil {
-		return cachedAdMetadata{}
-	}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return cachedAdMetadata{}
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return cachedAdMetadata{}
-	}
-	var adData struct {
-		Name          string                       `json:"name"`
-		Campaign      struct{ ID, Name string }    `json:"campaign"`
-		Adset         struct{ ID, Name string }    `json:"adset"`
-		Creative      struct{ ThumbnailURL, ImageURL string } `json:"creative"`
-		TrackingSpecs []struct{ Page []string }    `json:"tracking_specs"`
-	}
-	if json.NewDecoder(resp.Body).Decode(&adData) != nil {
-		return cachedAdMetadata{}
-	}
-	out := cachedAdMetadata{
-		CampaignID: adData.Campaign.ID, CampaignName: adData.Campaign.Name,
-		AdsetID: adData.Adset.ID, AdsetName: adData.Adset.Name, AdName: adData.Name,
-		ThumbnailURL: util.FirstNonEmpty(adData.Creative.ThumbnailURL, adData.Creative.ImageURL),
-	}
-	for _, sp := range adData.TrackingSpecs {
-		if len(sp.Page) > 0 && sp.Page[0] != "" {
-			out.PageID = sp.Page[0]
-			break
-		}
-	}
-	return out
 }

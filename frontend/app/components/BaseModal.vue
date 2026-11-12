@@ -36,7 +36,7 @@ interface Props {
   modelValue: boolean
   title?: string
   description?: string
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
   closeOnOverlay?: boolean
 }
 
@@ -145,6 +145,10 @@ onMounted(() => {
 
 .modal-size-xl {
   max-width: 900px;
+}
+
+.modal-size-2xl {
+  max-width: 1040px;
 }
 
 .modal-header {

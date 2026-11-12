@@ -82,6 +82,6 @@ const adHierarchy = computed(() => {
   font-size: var(--fs-xs); color: var(--text-2); margin: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.readonly-hint { font-size: var(--fs-2xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
+.readonly-hint { font-size: var(--fs-2xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; flex-shrink: 0; }
 </style>
 

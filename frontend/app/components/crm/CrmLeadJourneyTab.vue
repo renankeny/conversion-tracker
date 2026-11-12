@@ -1,31 +1,39 @@
 <template>
-  <div>
+  <div class="journey-sections">
     <div v-if="trackedUser" class="info-card-box">
       <h4 class="box-subtitle">Inteligência de Tráfego</h4>
       <div class="tracking-meta-grid">
         <div class="meta-item">
           <span class="meta-lbl">User ID</span>
-          <span class="meta-val font-mono">{{ trackedUser.external_id || trackedUser.id }}</span>
+          <span class="meta-val font-mono truncate-val" :title="String(trackedUser.external_id || trackedUser.id)">
+            {{ trackedUser.external_id || trackedUser.id }}
+          </span>
         </div>
         <div class="meta-item">
           <span class="meta-lbl">Origem</span>
-          <span class="meta-val">{{ getOriginBadge(trackedUser)?.label || 'Direto' }}</span>
+          <span class="meta-val truncate-val">{{ getOriginBadge(trackedUser)?.label || 'Direto' }}</span>
         </div>
-        <div v-if="trackedUser.first_utm_source || trackedUser.last_utm_source" class="meta-item">
+        <div v-if="effectiveUtmSource" class="meta-item">
           <span class="meta-lbl">UTM Source</span>
-          <span class="meta-val">{{ trackedUser.first_utm_source || trackedUser.last_utm_source }}</span>
+          <span class="meta-val truncate-val" :title="effectiveUtmSource">{{ effectiveUtmSource }}</span>
         </div>
-        <div v-if="trackedUser.first_utm_campaign" class="meta-item">
+        <div v-if="effectiveUtmMedium" class="meta-item">
+          <span class="meta-lbl">UTM Medium</span>
+          <span class="meta-val truncate-val" :title="effectiveUtmMedium">{{ effectiveUtmMedium }}</span>
+        </div>
+        <div v-if="effectiveUtmCampaign" class="meta-item">
           <span class="meta-lbl">Campanha</span>
-          <span class="meta-val truncate-val" :title="trackedUser.first_utm_campaign">{{ trackedUser.first_utm_campaign }}</span>
+          <span class="meta-val truncate-val" :title="effectiveUtmCampaign">{{ effectiveUtmCampaign }}</span>
         </div>
         <div v-if="trackedUser.traffic_type" class="meta-item">
           <span class="meta-lbl">Tráfego</span>
-          <span class="meta-val" :class="trackedUser.traffic_type === 'bot' ? 'text-danger-val' : 'text-brand-val'">
-            {{ trackedUser.traffic_type === 'bot' ? 'Provável Robô' : 'Humano (+85)' }}
+          <span class="meta-val truncate-val" :class="trackedUser.traffic_type === 'bot' ? 'text-danger-val' : 'text-brand-val'">
+            {{ trafficLabel }}
           </span>
         </div>
       </div>
+
+      <CrmLeadCookiesList :tracked-user="trackedUser" />
     </div>
 
     <div class="info-card-box">
@@ -50,7 +58,7 @@
       </div>
 
       <div class="add-tag-row">
-        <div class="flex-1">
+        <div class="tag-select-wrap">
           <BaseDropdown
             :model-value="selectedTagToAdd"
             size="sm"
@@ -84,6 +92,7 @@ import { computed } from 'vue'
 import { Trash2 } from 'lucide-vue-next'
 import type { CrmTag, TrackedUser } from '#shared/types'
 import { useCrmHelpers } from '~/composables/useCrmHelpers'
+import CrmLeadCookiesList from '~/components/crm/CrmLeadCookiesList.vue'
 
 const props = withDefaults(defineProps<{
   trackedUser: TrackedUser | null
@@ -103,7 +112,42 @@ const emit = defineEmits<{
   (e: 'delete-account-tag', tagId: number): void
 }>()
 
-const { getOriginBadge } = useCrmHelpers()
+const { getOriginBadge, cleanUtmValue } = useCrmHelpers()
+
+const effectiveUtmSource = computed(() => {
+  const u = props.trackedUser
+  if (!u) return ''
+  const last = cleanUtmValue(u.last_utm_source)
+  const first = cleanUtmValue(u.first_utm_source)
+  const candidate = (last && last.toLowerCase() !== 'direto' ? last : '')
+    || (first && first.toLowerCase() !== 'direto' ? first : '')
+
+  if (candidate) return candidate
+  if (u.gclid || u.gbraid || u.wbraid) return 'google'
+  if (u.fbc || u.ctwa_clid) return 'facebook'
+  if (u.ttclid) return 'tiktok'
+  return last || first
+})
+
+const effectiveUtmMedium = computed(() => {
+  const u = props.trackedUser
+  if (!u) return ''
+  return cleanUtmValue(u.last_utm_medium) || cleanUtmValue(u.first_utm_medium)
+})
+
+const effectiveUtmCampaign = computed(() => {
+  const u = props.trackedUser
+  if (!u) return ''
+  return cleanUtmValue(u.last_utm_campaign) || cleanUtmValue(u.first_utm_campaign)
+})
+
+const trafficLabel = computed(() => {
+  const u = props.trackedUser
+  if (!u) return ''
+  if (u.traffic_type === 'bot') return 'Provável Robô'
+  if (u.traffic_score && u.traffic_score > 0) return `Humano (+${u.traffic_score})`
+  return 'Humano'
+})
 
 const availableTags = computed(() => {
   const assignedIds = new Set((props.tags || []).map((t) => t.id))
@@ -112,12 +156,19 @@ const availableTags = computed(() => {
 </script>
 
 <style scoped>
+.journey-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-width: 0;
+}
+
 .info-card-box {
   background: var(--surface-deep);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.875rem;
-  margin-bottom: 0.875rem;
+  min-width: 0;
 }
 
 .box-subtitle {
@@ -133,13 +184,14 @@ const availableTags = computed(() => {
 
 .tracking-meta-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem 0.75rem;
+  min-width: 0;
 }
 
 .meta-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .meta-lbl { font-size: var(--fs-xs); color: var(--text-3); }
-.meta-val { font-size: var(--fs-sm); color: var(--text-1); font-weight: var(--fw-semibold); }
+.meta-val { font-size: var(--fs-sm); color: var(--text-1); font-weight: var(--fw-semibold); min-width: 0; }
 .truncate-val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .text-danger-val { color: var(--danger); }
 .text-brand-val { color: var(--brand); }
@@ -168,7 +220,8 @@ const availableTags = computed(() => {
 
 .empty-tags-hint { font-size: var(--fs-sm); color: var(--text-3); font-style: italic; }
 
-.add-tag-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+.add-tag-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; min-width: 0; }
+.tag-select-wrap { flex: 1; min-width: 0; }
 
 .delete-tag-icon-btn {
   width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border);
