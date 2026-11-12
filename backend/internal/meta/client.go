@@ -130,7 +130,9 @@ func buildPayload(in domain.SendEventInput, testCode, partnerAgent string) map[s
 	setIfNotEmpty(userData, "client_user_agent", in.ClientUserAgent)
 	setIfNotEmpty(userData, "fbp", in.FBP)
 	setIfNotEmpty(userData, "fbc", in.FBC)
-	setIfNotEmpty(userData, "subscription_id", in.IDWpp)
+	if in.ActionSource != "business_messaging" {
+		setIfNotEmpty(userData, "subscription_id", in.IDWpp)
+	}
 	setIfNotEmpty(userData, "ctwa_clid", in.CtwaClid)
 	setIfNotEmpty(userData, "page_id", in.PageID)
 
