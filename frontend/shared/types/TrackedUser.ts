@@ -82,6 +82,7 @@ export interface TrackedUserUpdateInput {
   pixel_name?: string
   fbp?: string
   fbc?: string
+  ctwa_clid?: string
   gclid?: string
   wbraid?: string
   gbraid?: string

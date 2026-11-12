@@ -121,6 +121,7 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 			r.Get("/admin/sent-events", h.adminSent.List)
 			r.Get("/admin/sent-events/grouped", h.adminSent.ListGrouped)
 			r.Get("/admin/sent-events/by-event-id/{event_id}", h.adminSent.GetByEventID)
+			r.Get("/admin/sent-events/by-event-id", h.adminSent.GetByEventID)
 			r.Get("/admin/webhook-logs", h.adminWebhookLogs.List)
 
 			r.Get("/admin/tracked-users", h.adminTrackedUsers.List)

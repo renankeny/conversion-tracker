@@ -3,15 +3,20 @@ package repo
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 )
 
 // FindByEventID retorna todas as linhas de sent_events com aquele
 // event_id + pixel_name (1 por canal). Usado pelo modal de detalhes
-// pra mostrar payload + response de cada canal.
+// pra mostrar payload + response de cada canal. Tolera event_id codificado ou decodificado.
 func (r *SentEventRepo) FindByEventID(ctx context.Context, eventID, pixelName string, accountID int64) ([]SentEvent, error) {
-	args := []any{eventID}
-	where := "WHERE event_id = $1"
+	unescaped, _ := url.PathUnescape(eventID)
+	if unescaped == "" {
+		unescaped = eventID
+	}
+	args := []any{eventID, unescaped}
+	where := "WHERE (event_id = $1 OR event_id = $2)"
 	if pixelName != "" {
 		args = append(args, pixelName)
 		where += fmt.Sprintf(" AND pixel_name = $%d", len(args))

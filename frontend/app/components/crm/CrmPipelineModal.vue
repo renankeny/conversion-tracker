@@ -27,8 +27,11 @@
         </div>
 
         <div class="stage-item-actions">
-          <span v-if="st.trigger_event" class="stage-trigger-tag">
-            {{ st.trigger_event }}
+          <span v-if="st.trigger_event" class="stage-trigger-tag" title="Disparo Web">
+            Web: {{ st.trigger_event }}
+          </span>
+          <span v-if="st.trigger_event_ctwa" class="stage-trigger-ctwa-tag" title="Disparo WhatsApp / CTWA">
+            WPP: {{ st.trigger_event_ctwa }}
           </span>
           <button
             type="button"
@@ -169,6 +172,16 @@ const emit = defineEmits<{
   font-weight: var(--fw-semibold);
   color: var(--brand);
   background: var(--brand-soft);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+.stage-trigger-ctwa-tag {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--success);
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
 }

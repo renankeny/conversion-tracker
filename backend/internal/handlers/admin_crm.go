@@ -92,6 +92,7 @@ type StageReq struct {
 	Name               string `json:"name"`
 	Color              string `json:"color"`
 	TriggerEvent       string `json:"trigger_event"`
+	TriggerEventCTWA   string `json:"trigger_event_ctwa"`
 	GoogleAdsAccountID *int64 `json:"google_ads_account_id"`
 	GoogleAdsActionID  string `json:"google_ads_action_id"`
 }
@@ -125,7 +126,7 @@ func (h *AdminCRM) CreateStage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.crmRepo.CreateStage(ctx, accountID, req.Name, req.Color, req.TriggerEvent, req.GoogleAdsAccountID, req.GoogleAdsActionID); err != nil {
+	if err := h.crmRepo.CreateStage(ctx, accountID, req.Name, req.Color, req.TriggerEvent, req.TriggerEventCTWA, req.GoogleAdsAccountID, req.GoogleAdsActionID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create stage")
 		return
 	}
@@ -167,7 +168,7 @@ func (h *AdminCRM) UpdateStage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.crmRepo.UpdateStage(ctx, stageID, accountID, req.Name, req.Color, req.TriggerEvent, req.GoogleAdsAccountID, req.GoogleAdsActionID); err != nil {
+	if err := h.crmRepo.UpdateStage(ctx, stageID, accountID, req.Name, req.Color, req.TriggerEvent, req.TriggerEventCTWA, req.GoogleAdsAccountID, req.GoogleAdsActionID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update stage")
 		return
 	}

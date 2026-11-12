@@ -13,6 +13,7 @@
         <div class="cookie-card-fields">
           <UserField label="FBP" v-model="form.fbp" :editing="editing" :original="user.fbp" mono small />
           <UserField label="FBC" v-model="form.fbc" :editing="editing" :original="user.fbc" mono small />
+          <UserField v-if="user.ctwa_clid || editing" label="CTWA Clid" v-model="form.ctwa_clid" :editing="editing" :original="user.ctwa_clid" mono small />
         </div>
       </div>
 

@@ -92,6 +92,35 @@ func (r *WhatsAppRepo) FindPageIDByCtwaClid(ctx context.Context, accountID int64
 	return pageID
 }
 
+func (r *WhatsAppRepo) FindPageIDByTrackedUserID(ctx context.Context, accountID, trackedUserID int64) string {
+	if trackedUserID <= 0 {
+		return ""
+	}
+	var pageID string
+	_ = r.db.QueryRow(ctx, `
+		SELECT c.page_id FROM whatsapp_chats c
+		JOIN whatsapp_instances i ON c.instance_id = i.id
+		WHERE i.account_id = $1 AND c.tracked_user_id = $2 AND c.page_id <> ''
+		ORDER BY c.updated_at DESC LIMIT 1
+	`, accountID, trackedUserID).Scan(&pageID)
+	return pageID
+}
+
+func (r *WhatsAppRepo) FindPixelNameByTrackedUserID(ctx context.Context, accountID, trackedUserID int64) string {
+	if trackedUserID <= 0 {
+		return ""
+	}
+	var pxName string
+	_ = r.db.QueryRow(ctx, `
+		SELECT p.name FROM whatsapp_chats c
+		JOIN whatsapp_instances i ON c.instance_id = i.id
+		JOIN pixels p ON i.pixel_id = p.id
+		WHERE i.account_id = $1 AND c.tracked_user_id = $2 AND p.enabled = TRUE
+		ORDER BY c.last_message_time DESC LIMIT 1
+	`, accountID, trackedUserID).Scan(&pxName)
+	return pxName
+}
+
 func (r *WhatsAppRepo) ResolveCurrencyForLead(ctx context.Context, accountID, trackedUserID, pixelID int64) string {
 	var curr string
 	if trackedUserID > 0 {

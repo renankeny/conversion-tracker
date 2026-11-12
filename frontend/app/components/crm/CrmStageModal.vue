@@ -34,10 +34,20 @@
     <div class="form-group">
       <BaseDropdown
         v-model="stage.trigger_event"
-        label="Evento de Disparo (Trigger Automático)"
+        label="Evento Web / Site (Trigger Automático)"
         placeholder="Nenhum"
-        :options="triggerEventOptions"
-        hint="Um evento de conversão será disparado automaticamente quando o lead entrar nesta coluna."
+        :options="CRM_WEB_TRIGGER_EVENTS"
+        hint="Disparado quando um visitante do site entrar nesta etapa."
+      />
+    </div>
+
+    <div class="form-group">
+      <BaseDropdown
+        v-model="stage.trigger_event_ctwa"
+        label="Evento WhatsApp / CTWA (Business Messaging)"
+        placeholder="Nenhum"
+        :options="CRM_CTWA_TRIGGER_EVENTS"
+        hint="Disparado via Meta Business Messaging CAPI para leads de anúncios de WhatsApp."
       />
     </div>
 
@@ -98,6 +108,7 @@
 
 <script setup lang="ts">
 import type { CrmStageForm, GoogleAdsAccount } from '#shared/types'
+import { CRM_WEB_TRIGGER_EVENTS, CRM_CTWA_TRIGGER_EVENTS } from '~/utils/crmEventOptions'
 
 withDefaults(defineProps<{
   modelValue: boolean
@@ -128,24 +139,6 @@ const onModalUpdate = (val: boolean) => {
   }
   emit('update:modelValue', val)
 }
-
-const triggerEventOptions = [
-  { value: '', label: 'Nenhum' },
-  { value: 'PageView', label: 'PageView' },
-  { value: 'ViewContent', label: 'ViewContent' },
-  { value: 'Search', label: 'Search' },
-  { value: 'AddToCart', label: 'AddToCart' },
-  { value: 'AddToWishlist', label: 'AddToWishlist' },
-  { value: 'InitiateCheckout', label: 'InitiateCheckout' },
-  { value: 'AddPaymentInfo', label: 'AddPaymentInfo' },
-  { value: 'Purchase', label: 'Purchase (Venda Fechada)' },
-  { value: 'Lead', label: 'Lead (Contato Qualificado)' },
-  { value: 'Subscribe', label: 'Subscribe' },
-  { value: 'CompleteRegistration', label: 'CompleteRegistration' },
-  { value: 'Contact', label: 'Contact' },
-  { value: 'Schedule', label: 'Schedule' },
-  { value: 'StartTrial', label: 'StartTrial' },
-]
 
 const colorPresets = [
   '#3B82F6',

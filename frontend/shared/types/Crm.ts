@@ -7,6 +7,7 @@ export interface CrmStage {
   color: string
   order_index: number
   trigger_event: string
+  trigger_event_ctwa?: string
   google_ads_account_id: number | null
   google_ads_action_id: string
   created_at?: string
@@ -18,6 +19,7 @@ export interface CrmStageForm {
   name: string
   color: string
   trigger_event: string
+  trigger_event_ctwa: string
   google_ads_account_id: number | null
   google_ads_action_id: string
 }

@@ -90,9 +90,9 @@ export const useCrmHelpers = () => {
     return 'other'
   }
 
-  const isWonStage = (stage?: Pick<CrmStage, 'name' | 'trigger_event'> | null): boolean => {
+  const isWonStage = (stage?: Pick<CrmStage, 'name' | 'trigger_event' | 'trigger_event_ctwa'> | null): boolean => {
     if (!stage) return false
-    if (stage.trigger_event === 'Purchase') return true
+    if (stage.trigger_event === 'Purchase' || stage.trigger_event_ctwa === 'Purchase') return true
     const name = stage.name || ''
     if (PRE_POST_SALE_REGEX.test(name)) return false
     return WON_STAGE_REGEX.test(name)

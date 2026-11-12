@@ -7,8 +7,9 @@ type CRMStage struct {
 	AccountID    int64     `json:"account_id"`
 	Name         string    `json:"name"`
 	Color        string    `json:"color"`
-	OrderIndex   int       `json:"order_index"`
+	OrderIndex              int       `json:"order_index"`
 	TriggerEvent            string    `json:"trigger_event"`
+	TriggerEventCTWA        string    `json:"trigger_event_ctwa"`
 	GoogleAdsAccountID      *int64    `json:"google_ads_account_id,omitempty"`
 	GoogleAdsActionID       string    `json:"google_ads_action_id,omitempty"`
 	CreatedAt               time.Time `json:"created_at"`

@@ -58,7 +58,7 @@ func (r *CRMRepo) EnsureDefaultStages(ctx context.Context, accountID int64) erro
 
 func (r *CRMRepo) GetStages(ctx context.Context, accountID int64) ([]domain.CRMStage, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, account_id, name, color, order_index, trigger_event, google_ads_account_id, google_ads_action_id, created_at, updated_at
+		SELECT id, account_id, name, color, order_index, trigger_event, COALESCE(trigger_event_ctwa, ''), google_ads_account_id, google_ads_action_id, created_at, updated_at
 		FROM crm_stages
 		WHERE account_id = $1
 		ORDER BY order_index ASC, id ASC
@@ -71,7 +71,7 @@ func (r *CRMRepo) GetStages(ctx context.Context, accountID int64) ([]domain.CRMS
 	var stages []domain.CRMStage
 	for rows.Next() {
 		var s domain.CRMStage
-		if err := rows.Scan(&s.ID, &s.AccountID, &s.Name, &s.Color, &s.OrderIndex, &s.TriggerEvent, &s.GoogleAdsAccountID, &s.GoogleAdsActionID, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.AccountID, &s.Name, &s.Color, &s.OrderIndex, &s.TriggerEvent, &s.TriggerEventCTWA, &s.GoogleAdsAccountID, &s.GoogleAdsActionID, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, err
 		}
 		stages = append(stages, s)
@@ -82,11 +82,11 @@ func (r *CRMRepo) GetStages(ctx context.Context, accountID int64) ([]domain.CRMS
 func (r *CRMRepo) GetFirstStage(ctx context.Context, accountID int64) (*domain.CRMStage, error) {
 	var s domain.CRMStage
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, account_id, name, color, order_index, trigger_event, google_ads_account_id, google_ads_action_id, created_at, updated_at
+		SELECT id, account_id, name, color, order_index, trigger_event, COALESCE(trigger_event_ctwa, ''), google_ads_account_id, google_ads_action_id, created_at, updated_at
 		FROM crm_stages
 		WHERE account_id = $1
 		ORDER BY order_index ASC, id ASC LIMIT 1
-	`, accountID).Scan(&s.ID, &s.AccountID, &s.Name, &s.Color, &s.OrderIndex, &s.TriggerEvent, &s.GoogleAdsAccountID, &s.GoogleAdsActionID, &s.CreatedAt, &s.UpdatedAt)
+	`, accountID).Scan(&s.ID, &s.AccountID, &s.Name, &s.Color, &s.OrderIndex, &s.TriggerEvent, &s.TriggerEventCTWA, &s.GoogleAdsAccountID, &s.GoogleAdsActionID, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -96,34 +96,34 @@ func (r *CRMRepo) GetFirstStage(ctx context.Context, accountID int64) (*domain.C
 func (r *CRMRepo) GetStageByID(ctx context.Context, id, accountID int64) (*domain.CRMStage, error) {
 	var s domain.CRMStage
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, account_id, name, color, order_index, trigger_event, google_ads_account_id, google_ads_action_id, created_at, updated_at
+		SELECT id, account_id, name, color, order_index, trigger_event, COALESCE(trigger_event_ctwa, ''), google_ads_account_id, google_ads_action_id, created_at, updated_at
 		FROM crm_stages
 		WHERE id = $1 AND account_id = $2
-	`, id, accountID).Scan(&s.ID, &s.AccountID, &s.Name, &s.Color, &s.OrderIndex, &s.TriggerEvent, &s.GoogleAdsAccountID, &s.GoogleAdsActionID, &s.CreatedAt, &s.UpdatedAt)
+	`, id, accountID).Scan(&s.ID, &s.AccountID, &s.Name, &s.Color, &s.OrderIndex, &s.TriggerEvent, &s.TriggerEventCTWA, &s.GoogleAdsAccountID, &s.GoogleAdsActionID, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &s, nil
 }
 
-func (r *CRMRepo) CreateStage(ctx context.Context, accountID int64, name, color, triggerEvent string, googleAdsAccountID *int64, googleAdsActionID string) error {
+func (r *CRMRepo) CreateStage(ctx context.Context, accountID int64, name, color, triggerEvent, triggerEventCTWA string, googleAdsAccountID *int64, googleAdsActionID string) error {
 	var maxOrder int
 	if err := r.pool.QueryRow(ctx, "SELECT COALESCE(MAX(order_index), -1) FROM crm_stages WHERE account_id = $1", accountID).Scan(&maxOrder); err != nil {
 		return err
 	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO crm_stages (account_id, name, color, order_index, trigger_event, google_ads_account_id, google_ads_action_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, accountID, name, color, maxOrder+1, triggerEvent, googleAdsAccountID, googleAdsActionID)
+		INSERT INTO crm_stages (account_id, name, color, order_index, trigger_event, trigger_event_ctwa, google_ads_account_id, google_ads_action_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, accountID, name, color, maxOrder+1, triggerEvent, triggerEventCTWA, googleAdsAccountID, googleAdsActionID)
 	return err
 }
 
-func (r *CRMRepo) UpdateStage(ctx context.Context, id, accountID int64, name, color, triggerEvent string, googleAdsAccountID *int64, googleAdsActionID string) error {
+func (r *CRMRepo) UpdateStage(ctx context.Context, id, accountID int64, name, color, triggerEvent, triggerEventCTWA string, googleAdsAccountID *int64, googleAdsActionID string) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE crm_stages
-		SET name = $3, color = $4, trigger_event = $5, google_ads_account_id = $6, google_ads_action_id = $7, updated_at = NOW()
+		SET name = $3, color = $4, trigger_event = $5, trigger_event_ctwa = $6, google_ads_account_id = $7, google_ads_action_id = $8, updated_at = NOW()
 		WHERE id = $1 AND account_id = $2
-	`, id, accountID, name, color, triggerEvent, googleAdsAccountID, googleAdsActionID)
+	`, id, accountID, name, color, triggerEvent, triggerEventCTWA, googleAdsAccountID, googleAdsActionID)
 	return err
 }
 

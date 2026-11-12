@@ -40,6 +40,7 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
     name: '',
     color: '#3B82F6',
     trigger_event: '',
+    trigger_event_ctwa: '',
     google_ads_account_id: null,
     google_ads_action_id: '',
   })
@@ -144,7 +145,14 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
     reopenPipelineAfterStage = fromPipeline || showPipelineModal.value
     showPipelineModal.value = false
     isCreatingStage.value = true
-    selectedStage.value = { name: '', color: '#3B82F6', trigger_event: '', google_ads_account_id: null, google_ads_action_id: '' }
+    selectedStage.value = {
+      name: '',
+      color: '#3B82F6',
+      trigger_event: '',
+      trigger_event_ctwa: '',
+      google_ads_account_id: null,
+      google_ads_action_id: '',
+    }
     remoteGadsActions.value = []
     showStageModal.value = true
   }
@@ -158,6 +166,7 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
       name: stage.name,
       color: stage.color || '#3B82F6',
       trigger_event: stage.trigger_event || '',
+      trigger_event_ctwa: stage.trigger_event_ctwa || '',
       google_ads_account_id: stage.google_ads_account_id ?? null,
       google_ads_action_id: stage.google_ads_action_id || '',
     }

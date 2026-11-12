@@ -29,6 +29,7 @@ const (
 	// "Lead" não é um evento suportado nessa superfície; o nome correto
 	// documentado pela Meta é "LeadSubmitted".
 	EventLeadSubmitted = "LeadSubmitted"
+	EventSchedule      = "Schedule"
 
 	// Custom (Meta CAPI trackCustom)
 	EventScroll25    = "Scroll_25"
@@ -51,6 +52,7 @@ func IsValidEventType(name string) bool {
 		EventPageView, EventViewContent, EventLead, EventContact,
 		EventInitiateCheckout, EventAddPaymentInfo, EventAddShippingInfo, EventAddToCart,
 		EventAddToWishlist, EventCompleteRegistration, EventPurchase,
+		EventLeadSubmitted, EventSchedule,
 		EventScroll25, EventScroll50, EventScroll75, EventScroll90,
 		EventTimer1Min, EventPlayVideo,
 		EventViewVideo25, EventViewVideo50, EventViewVideo75, EventViewVideo90:

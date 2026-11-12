@@ -91,7 +91,16 @@ export const useCrmDragDrop = (deps: UseCrmDragDropDeps) => {
     if (!movedLead) return
     const targetStage = deps.stages.value.find((s) => String(s.id) === String(toStageId))
 
-    if (targetStage && targetStage.trigger_event === 'Purchase' && (!movedLead.value || movedLead.value <= 0)) {
+    const isCtwa = Boolean(
+      movedLead.tracked_user?.ctwa_clid ||
+      movedLead.tracked_user?.id_wpp ||
+      (movedLead.tracked_user?.external_id && movedLead.tracked_user.external_id.startsWith('wpp:'))
+    )
+    const effectiveEvent = isCtwa
+      ? (targetStage?.trigger_event_ctwa || targetStage?.trigger_event)
+      : targetStage?.trigger_event
+
+    if (effectiveEvent === 'Purchase' && (!movedLead.value || movedLead.value <= 0)) {
       pendingMoveEvent = {
         lead: movedLead,
         from: String(fromStageId),

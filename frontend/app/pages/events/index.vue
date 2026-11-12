@@ -195,7 +195,7 @@ let liveRefreshTimer: ReturnType<typeof setTimeout> | null = null
 watch(() => liveStore.lastEventSeq, () => {
   if (offset.value > 0 || selectedIds.value.length > 0 || modalOpen.value) return
   if (liveRefreshTimer) clearTimeout(liveRefreshTimer)
-  liveRefreshTimer = setTimeout(fetchEvents, 2000)
+  liveRefreshTimer = setTimeout(fetchEvents, 500)
 })
 
 const loadAccountFilterAndEvents = async () => {

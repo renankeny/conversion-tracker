@@ -21,7 +21,7 @@ export const useEvents = () => {
 
   /** Detalhes completos de um evento (todos canais com payload + response). */
   const findByEventID = (eventId: string, pixelName: string): Promise<EventDetail> => {
-    const qs = buildQuery({ pixel: pixelName })
+    const qs = buildQuery({ pixel: pixelName, event_id: eventId })
     return api.get<EventDetail>(`/admin/sent-events/by-event-id/${encodeURIComponent(eventId)}${qs}`)
   }
 
@@ -47,7 +47,7 @@ export const useEvents = () => {
   return { list, listGrouped, findByEventID, find, deleteByEventIDs, retryByEventIDs }
 }
 
-const buildQuery = (params: Record<string, string | number | boolean | undefined>): string => {
+const buildQuery = (params: Record<string, any>): string => {
   const entries = Object.entries(params).filter(
     ([, v]) => v !== undefined && v !== '' && v !== null
   )

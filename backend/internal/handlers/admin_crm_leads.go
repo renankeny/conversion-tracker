@@ -48,7 +48,17 @@ func (h *AdminCRM) MoveLead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if stage.TriggerEvent == domain.EventPurchase && req.Value <= 0 {
+	isCTWALead := false
+	if lead.TrackedUser != nil {
+		tu := lead.TrackedUser
+		isCTWALead = tu.CtwaClid != "" || tu.WaAdID != "" || (tu.IDWpp != "" && strings.HasPrefix(tu.ExternalID, "wpp:"))
+	}
+	targetEvent := stage.TriggerEvent
+	if isCTWALead && stage.TriggerEventCTWA != "" {
+		targetEvent = stage.TriggerEventCTWA
+	}
+
+	if targetEvent == domain.EventPurchase && req.Value <= 0 {
 		writeError(w, http.StatusBadRequest, "value required for purchase event")
 		return
 	}
@@ -58,7 +68,8 @@ func (h *AdminCRM) MoveLead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if stage.TriggerEvent != "" && (lead.StageID == nil || *lead.StageID != req.StageID) {
+	hasTrigger := stage.TriggerEvent != "" || stage.TriggerEventCTWA != ""
+	if hasTrigger && (lead.StageID == nil || *lead.StageID != req.StageID) {
 		h.dispatchCRMStageTrigger(ctx, accountID, stage, lead.TrackedUser, req.Value)
 	}
 

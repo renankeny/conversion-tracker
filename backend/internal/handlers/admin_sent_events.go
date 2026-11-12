@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -128,22 +129,38 @@ func (h *AdminSentEvents) ListGrouped(w http.ResponseWriter, r *http.Request) {
 
 // GetByEventID retorna todas as linhas (1 por canal) com payload + response_body completos.
 func (h *AdminSentEvents) GetByEventID(w http.ResponseWriter, r *http.Request) {
-	eventID := chi.URLParam(r, "event_id")
-	if eventID == "" {
-		writeError(w, http.StatusBadRequest, "event_id obrigatorio na URL")
-		return
+	rawEventID := chi.URLParam(r, "event_id")
+	if rawEventID == "" {
+		rawEventID = r.URL.Query().Get("event_id")
 	}
-	pixelName := r.URL.Query().Get("pixel")
-	if pixelName == "" {
-		writeError(w, http.StatusBadRequest, "query param 'pixel' obrigatorio")
+	if rawEventID == "" {
+		writeError(w, http.StatusBadRequest, "event_id obrigatorio")
 		return
 	}
 
+	eventID := rawEventID
+	if unescaped, err := url.PathUnescape(rawEventID); err == nil && unescaped != "" {
+		eventID = unescaped
+	}
+
+	pixelName := r.URL.Query().Get("pixel")
 	scope := TenantFromContext(r.Context())
+
 	rows, err := h.repo.FindByEventID(r.Context(), eventID, pixelName, scope.AccountID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "load error: "+err.Error())
 		return
+	}
+	// Fallback 1: se não achou e eventID original difere, tenta com rawEventID
+	if len(rows) == 0 && eventID != rawEventID {
+		rows, _ = h.repo.FindByEventID(r.Context(), rawEventID, pixelName, scope.AccountID)
+	}
+	// Fallback 2: se passou pixelName e não achou, busca sem filtro de pixel (event_id é único)
+	if len(rows) == 0 && pixelName != "" {
+		rows, _ = h.repo.FindByEventID(r.Context(), eventID, "", scope.AccountID)
+		if len(rows) == 0 && eventID != rawEventID {
+			rows, _ = h.repo.FindByEventID(r.Context(), rawEventID, "", scope.AccountID)
+		}
 	}
 	if len(rows) == 0 {
 		writeError(w, http.StatusNotFound, "evento nao encontrado")
@@ -151,7 +168,7 @@ func (h *AdminSentEvents) GetByEventID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"event_id":    eventID,
+		"event_id":    rows[0].EventID,
 		"event_name":  rows[0].EventName,
 		"pixel_name":  rows[0].PixelName,
 		"external_id": rows[0].ExternalID,

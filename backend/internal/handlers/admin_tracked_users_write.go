@@ -20,6 +20,7 @@ type trackedUserUpdateInput struct {
 	PixelName       *string `json:"pixel_name"`
 	FBP             *string `json:"fbp"`
 	FBC             *string `json:"fbc"`
+	CtwaClid        *string `json:"ctwa_clid"`
 	GCLID           *string `json:"gclid"`
 	WBraid          *string `json:"wbraid"`
 	GBraid          *string `json:"gbraid"`
@@ -97,6 +98,7 @@ func (h *AdminTrackedUsers) Update(w http.ResponseWriter, r *http.Request) {
 	applyStr(&existing.PixelName, in.PixelName, strings.TrimSpace)
 	applyStr(&existing.FBP, in.FBP, strings.TrimSpace)
 	applyStr(&existing.FBC, in.FBC, strings.TrimSpace)
+	applyStr(&existing.CtwaClid, in.CtwaClid, strings.TrimSpace)
 	applyStr(&existing.GCLID, in.GCLID, strings.TrimSpace)
 	applyStr(&existing.WBraid, in.WBraid, strings.TrimSpace)
 	applyStr(&existing.GBraid, in.GBraid, strings.TrimSpace)

@@ -36,7 +36,8 @@ export const useCrmLeadActions = (
       return
     }
     const targetStage = stages.value.find((s) => Number(s.id) === Number(f.stage_id))
-    if (targetStage?.trigger_event === 'Purchase' && (!Number(f.value) || Number(f.value) <= 0)) {
+    const isPurchaseTrigger = targetStage?.trigger_event === 'Purchase' || targetStage?.trigger_event_ctwa === 'Purchase'
+    if (isPurchaseTrigger && (!Number(f.value) || Number(f.value) <= 0)) {
       toast.error('Valor obrigatório', 'Informe um valor maior que R$ 0,00 para cadastrar na etapa de Venda (Purchase).')
       return
     }
@@ -131,7 +132,8 @@ export const useCrmLeadActions = (
 
     if (isMovingStage) {
       const targetStage = stages.value.find((s) => Number(s.id) === Number(modals.leadEdit.stage_id))
-      if (targetStage?.trigger_event === 'Purchase' && nextValue <= 0) {
+      const isPurchaseTrigger = targetStage?.trigger_event === 'Purchase' || targetStage?.trigger_event_ctwa === 'Purchase'
+      if (isPurchaseTrigger && nextValue <= 0) {
         toast.error('Valor obrigatório', 'Defina um valor maior que R$ 0,00 antes de mover o lead para a etapa de Venda (Purchase).')
         return
       }

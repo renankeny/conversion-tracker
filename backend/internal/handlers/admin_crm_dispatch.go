@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -77,10 +78,23 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 	tu *domain.TrackedUser,
 	eventVal float64,
 ) {
-	if h.queue == nil || stage == nil || stage.TriggerEvent == "" || tu == nil {
+	if h.queue == nil || stage == nil || tu == nil {
 		return
 	}
-	if stage.TriggerEvent == domain.EventPurchase && eventVal <= 0 {
+
+	isCTWALead := tu.CtwaClid != "" || tu.WaAdID != "" || (tu.IDWpp != "" && strings.HasPrefix(tu.ExternalID, "wpp:"))
+	targetEvent := stage.TriggerEvent
+	if isCTWALead {
+		if stage.TriggerEventCTWA != "" {
+			targetEvent = stage.TriggerEventCTWA
+		} else if targetEvent == domain.EventLead {
+			targetEvent = domain.EventLeadSubmitted
+		}
+	}
+	if targetEvent == "" {
+		return
+	}
+	if targetEvent == domain.EventPurchase && eventVal <= 0 {
 		return
 	}
 
@@ -92,6 +106,14 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 				resolvedPixel = px
 			} else {
 				pixelName = ""
+			}
+		}
+		if (pixelName == "" || pixelName == "api_import") && h.whatsapp != nil && tu.ID > 0 {
+			if pxName := h.whatsapp.FindPixelNameByTrackedUserID(ctx, accountID, tu.ID); pxName != "" {
+				if px, err := RequireAccountPixel(ctx, h.pixels, accountID, pxName); err == nil {
+					resolvedPixel = px
+					pixelName = pxName
+				}
 			}
 		}
 		if pixelName == "" || pixelName == "api_import" {
@@ -128,12 +150,15 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 	msgChannel := ""
 	pageID := ""
 	sourceURL := util.FirstNonEmpty(tu.URL, tu.FirstURL)
-	if tu.CtwaClid != "" {
+	if isCTWALead {
 		actionSource = "business_messaging"
 		msgChannel = "whatsapp"
 		sourceURL = ""
-		if h.whatsapp != nil {
+		if tu.CtwaClid != "" && h.whatsapp != nil {
 			pageID = h.whatsapp.FindPageIDByCtwaClid(ctx, accountID, tu.CtwaClid)
+		}
+		if pageID == "" && h.whatsapp != nil {
+			pageID = h.whatsapp.FindPageIDByTrackedUserID(ctx, accountID, tu.ID)
 		}
 		if pageID == "" && h.metaAcc != nil {
 			if resolvedPixel != nil && resolvedPixel.MetaAccountID != nil && *resolvedPixel.MetaAccountID > 0 {
@@ -160,7 +185,7 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 
 	in := domain.SendEventInput{
 		PixelName:             pixelName,
-		EventName:             stage.TriggerEvent,
+		EventName:             targetEvent,
 		EventID:               util.GenerateID10(),
 		EventTime:             time.Now().Unix(),
 		SourceURL:             sourceURL,
@@ -195,5 +220,9 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 		OverrideGadsActionID:  stage.GoogleAdsActionID,
 	}
 
-	_ = h.queue.EnqueueSendEvent(ctx, in)
+	if err := h.queue.EnqueueSendEvent(ctx, in); err != nil {
+		slog.Error("dispatch crm stage trigger enqueue failed", "err", err, "pixel", pixelName, "event", targetEvent)
+	} else {
+		slog.Info("dispatch crm stage trigger enqueued ok", "pixel", pixelName, "event", targetEvent, "event_id", in.EventID)
+	}
 }

@@ -36,6 +36,13 @@
       <p>Carregando detalhes do evento…</p>
     </div>
 
+    <div v-else-if="errorMessage" class="error-block">
+      <AlertCircle class="w-8 h-8 error-icon" />
+      <p class="error-title">Não foi possível carregar os detalhes</p>
+      <p class="error-desc">{{ errorMessage }}</p>
+      <BaseButton variant="outline" size="sm" class="mt-3" @click="fetchDetails">Tentar novamente</BaseButton>
+    </div>
+
     <div v-else-if="event" class="event-details">
       <EventUserMatchCard
         :external-id="event.external_id"
@@ -79,7 +86,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { Clock } from 'lucide-vue-next'
+import { Clock, AlertCircle } from 'lucide-vue-next'
 import ChannelCard from '~/components/events/EventChannelCard.vue'
 import EventUserMatchCard from '~/components/events/EventUserMatchCard.vue'
 import EventSummaryStrip from '~/components/events/EventSummaryStrip.vue'
@@ -100,6 +107,7 @@ const trackedUsersApi = useTrackedUsers()
 const event = ref<EventDetail | null>(null)
 const trackedUser = ref<TrackedUser | null>(null)
 const loading = ref(false)
+const errorMessage = ref('')
 const expandedChannel = ref<Channel | null>(null)
 const userModalOpen = ref(false)
 
@@ -148,6 +156,7 @@ const eventCategoryClass = computed(() => CATEGORY_MAP[event.value?.event_name |
 const fetchDetails = async () => {
   if (!props.source) return
   loading.value = true
+  errorMessage.value = ''
   expandedChannel.value = null
   trackedUser.value = null
   try {
@@ -162,6 +171,7 @@ const fetchDetails = async () => {
     trackedUser.value = tu
   } catch (e: any) {
     console.error('Erro ao carregar detalhes', e)
+    errorMessage.value = e?.data?.error || e?.message || 'Erro ao carregar detalhes do evento'
     event.value = null
   } finally {
     loading.value = false
@@ -181,7 +191,10 @@ const formatTime = (iso: string): string =>
 </script>
 
 <style scoped>
-.loading-block { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 3.5rem 1rem; color: var(--text-3); }
+.loading-block, .error-block { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 3.5rem 1rem; color: var(--text-3); text-align: center; }
+.error-icon { color: var(--danger); }
+.error-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-1); margin: 0; }
+.error-desc { font-size: var(--fs-sm); color: var(--text-3); margin: 0; }
 .spinner { width: 1.75rem; height: 1.75rem; border: 3px solid var(--border); border-top-color: var(--brand); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

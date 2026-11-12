@@ -25,6 +25,7 @@ export const useUserEditForm = (
     pixel_name: '',
     fbp: '',
     fbc: '',
+    ctwa_clid: '',
     gclid: '',
     wbraid: '',
     gbraid: '',
@@ -59,7 +60,7 @@ export const useUserEditForm = (
   const resetForm = (u: TrackedUser | null) => {
     if (!u) return
     const fields: (keyof TrackedUserUpdateInput)[] = [
-      'id_wpp', 'pixel_name', 'fbp', 'fbc', 'gclid',
+      'id_wpp', 'pixel_name', 'fbp', 'fbc', 'ctwa_clid', 'gclid',
       'wbraid', 'gbraid', 'ttclid', 'ttp', 'ga4_client_id', 'ga4_session_id',
       'client_ip', 'client_user_agent',
       'country', 'state', 'city', 'postal_code',
