@@ -82,17 +82,19 @@ func (c *Client) sendOne(ctx context.Context, pixelID, token, testCode string, i
 	}
 	res.RequestBody = string(raw)
 
-	url := fmt.Sprintf("%s/%s/%s/events?access_token=%s", baseURL, c.apiVersion, pixelID, token)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(raw))
+	endpoint := fmt.Sprintf("%s/%s/%s/events", baseURL, c.apiVersion, pixelID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
 	if err != nil {
 		res.Err = err
 		return res
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Token via header (nunca na URL) para não vazar em logs de *url.Error.
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		res.Err = err
+		res.Err = fmt.Errorf("meta request failed: %s", util.RedactSecrets(err.Error()))
 		return res
 	}
 	defer resp.Body.Close()
@@ -130,11 +132,22 @@ func buildPayload(in domain.SendEventInput, testCode, partnerAgent string) map[s
 	setIfNotEmpty(userData, "client_user_agent", in.ClientUserAgent)
 	setIfNotEmpty(userData, "fbp", in.FBP)
 	setIfNotEmpty(userData, "fbc", in.FBC)
-	if in.ActionSource != "business_messaging" {
+
+	// business_messaging (CTWA) só é válido com ctwa_clid + page_id. Fora disso, ctwa_clid/page_id
+	// não são enviados e o action_source original é mantido (evita 400 permanente da Meta).
+	actionSrc := validActionSource(in.ActionSource)
+	isMessaging := in.CtwaClid != "" && in.PageID != "" &&
+		(actionSrc == "business_messaging" || in.ActionSource == "")
+	if isMessaging {
+		actionSrc = "business_messaging"
+		setIfNotEmpty(userData, "ctwa_clid", in.CtwaClid)
+		setIfNotEmpty(userData, "page_id", in.PageID)
+	} else {
+		if actionSrc == "business_messaging" {
+			actionSrc = "system_generated"
+		}
 		setIfNotEmpty(userData, "subscription_id", in.IDWpp)
 	}
-	setIfNotEmpty(userData, "ctwa_clid", in.CtwaClid)
-	setIfNotEmpty(userData, "page_id", in.PageID)
 
 	customData := map[string]any{}
 	if in.ContentID != "" {
@@ -166,14 +179,10 @@ func buildPayload(in domain.SendEventInput, testCode, partnerAgent string) map[s
 		customData["num_items"] = in.AggregatedCount
 	}
 
-	actionSrc := validActionSource(in.ActionSource)
-	if in.CtwaClid != "" && actionSrc != "business_messaging" {
-		actionSrc = "business_messaging"
-	}
 	eventName := in.EventName
-	if (actionSrc == "business_messaging" || in.CtwaClid != "") && eventName == domain.EventLead {
+	if isMessaging && eventName == domain.EventLead {
 		eventName = domain.EventLeadSubmitted
-	} else if actionSrc == "website" && eventName == domain.EventLeadSubmitted && in.CtwaClid == "" {
+	} else if !isMessaging && eventName == domain.EventLeadSubmitted {
 		eventName = domain.EventLead
 	}
 
@@ -184,10 +193,9 @@ func buildPayload(in domain.SendEventInput, testCode, partnerAgent string) map[s
 		"action_source": actionSrc,
 		"user_data":     userData,
 	}
-	if in.MessagingChannel != "" {
-		event["messaging_channel"] = in.MessagingChannel
-	}
-	if in.SourceURL != "" {
+	if isMessaging {
+		event["messaging_channel"] = orDefault(in.MessagingChannel, "whatsapp")
+	} else if in.SourceURL != "" {
 		event["event_source_url"] = in.SourceURL
 	}
 	if len(customData) > 0 {

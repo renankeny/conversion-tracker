@@ -16,6 +16,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/service"
 	"github.com/renankeny/conversion-tracker/backend/internal/tiktok"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
 
@@ -183,7 +184,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 			if !isPermanentHTTPStatus(r.StatusCode) {
 				hasRetryableErr = true
 			}
-			slog.Error("send failed", "channel", r.Channel, "pixel_id", r.PixelID, "event", in.EventName, "event_id", in.EventID, "status", r.StatusCode, "err", r.Err)
+			slog.Error("send failed", "channel", r.Channel, "pixel_id", r.PixelID, "event", in.EventName, "event_id", in.EventID, "status", r.StatusCode, "err", util.RedactSecrets(r.Err.Error()))
 		} else {
 			hasSuccess = true
 			slog.Info("send ok", "channel", r.Channel, "pixel_id", r.PixelID, "event", in.EventName, "event_id", in.EventID, "status", r.StatusCode)

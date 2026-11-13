@@ -20,6 +20,9 @@ import (
 //  2. external_id (vindo do utm_source no formato `userId<id>`)
 //  3. email (fallback)
 func (h *Webhooks) findUser(ctx context.Context, in purchaseInput) (*domain.TrackedUser, error) {
+	if in.AccountID <= 0 {
+		return nil, errors.New("account context required")
+	}
 	// 1. Busca por telefone PRIMEIRO (melhor match rate - tem cookies)
 	if in.Phone != "" {
 		variants := util.PhoneVariants(in.Phone)
@@ -91,7 +94,8 @@ func (h *Webhooks) logWebhook(
 		return
 	}
 	if accountID == 0 {
-		accountID = 1
+		slog.Warn("webhook_log skipped: no account context", "gateway", in.GatewayName, "status", status, "error", errMsg)
+		return
 	}
 	eventName := in.EventName
 	if eventName == "" {

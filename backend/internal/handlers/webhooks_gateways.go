@@ -24,14 +24,10 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 	in.Phone = util.NormalizePhone(in.Phone)
 	in.Email = util.NormalizeEmail(in.Email)
 
-	var resolvedQueryPixel *domain.Pixel
-	if in.PixelQuery != "" && h.pixels != nil {
-		if p, perr := h.pixels.FindByNameOrToken(ctx, in.PixelQuery); perr == nil && p != nil && p.Enabled {
-			resolvedQueryPixel = p
-			if in.AccountID <= 0 {
-				in.AccountID = p.AccountID
-			}
-		}
+	resolvedQueryPixel, status, reason := h.resolveWebhookAccount(ctx, &in)
+	if status != 0 {
+		h.logWebhook(ctx, in, rawInput, in.AccountID, "", in.ExternalID, "", "failed", reason)
+		return map[string]any{"received": true, "error": reason}, status
 	}
 
 	user, err := h.findUser(ctx, in)
@@ -64,10 +60,7 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 			}, http.StatusOK
 		}
 
-		targetAccountID := in.AccountID
-		if targetAccountID == 0 {
-			targetAccountID = fallbackPixel.AccountID
-		}
+		targetAccountID := fallbackPixel.AccountID
 		if !h.verifyDeferredWebhookAuth(ctx, targetAccountID) {
 			return map[string]any{"reason": "invalid platform token"}, http.StatusUnauthorized
 		}
@@ -123,7 +116,7 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 			"error":    "pixel not found: " + user.PixelName,
 		}, http.StatusInternalServerError
 	}
-	if !pixel.Enabled {
+	if !pixel.Enabled || pixel.AccountID != user.AccountID {
 		return map[string]any{
 			"received":     true,
 			"matched_user": true,
@@ -143,7 +136,6 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 	}
 
 	val := in.Value
-	eventID := util.FirstNonEmpty(in.OrderID, util.GenerateID10())
 	sourceURL := h.urlMapper.ApplyForAccount(pixel.AccountID, user.URL)
 
 	itemType := in.OfferType
@@ -154,6 +146,7 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 			itemType = "upsell"
 		}
 	}
+	eventID := webhookEventID(in.OrderID, itemType, in.ProductID)
 	dedupItemKey := util.FirstNonEmpty(itemType, "main") + ":" + in.ProductID
 	if !in.IsReplay && in.OrderID != "" {
 		if claimed, ok := cache.ClaimWebhookDedup(ctx, h.rdb, pixel.AccountID, in.GatewayName, in.OrderID, in.EventName, dedupItemKey); ok && !claimed {
@@ -161,17 +154,7 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 		}
 	}
 
-	actionSource := "website"
-	msgChannel := ""
-	ctwaClid := user.CtwaClid
-	pageID := ""
-	if ctwaClid != "" && linked.FBC == "" && sourceURL == "" {
-		actionSource = "business_messaging"
-		msgChannel = "whatsapp"
-		if h.whatsapp != nil {
-			pageID = h.whatsapp.FindPageIDByCtwaClid(ctx, pixel.AccountID, ctwaClid)
-		}
-	}
+	actionSource, msgChannel, ctwaClid, pageID := h.ctwaAttribution(ctx, pixel.AccountID, user, linked.FBC, sourceURL)
 
 	send := domain.SendEventInput{
 		PixelName:        pixel.Name,

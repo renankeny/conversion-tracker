@@ -28,7 +28,7 @@ func resolvePixelMetaOAuth(ctx context.Context, deps Deps, pixel *domain.Pixel) 
 
 func dispatchMetaWithOAuthFallback(ctx context.Context, deps Deps, pixel *domain.Pixel, in domain.SendEventInput, skip func(string) bool) []meta.SendResult {
 	oauthAcc := resolvePixelMetaOAuth(ctx, deps, pixel)
-	if oauthAcc != nil && in.PageID == "" && oauthAcc.DefaultPageID != "" && in.ActionSource == "business_messaging" {
+	if oauthAcc != nil && in.PageID == "" && oauthAcc.DefaultPageID != "" && (in.ActionSource == "business_messaging" || in.CtwaClid != "") {
 		in.PageID = oauthAcc.DefaultPageID
 	}
 	results := make([]meta.SendResult, 0, len(pixel.PixelIDs))

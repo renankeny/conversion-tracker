@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -123,7 +125,12 @@ func (h *Webhooks) verifyAttemptAgainstAccount(ctx context.Context, accountID in
 		return true
 	}
 	tokenInfo, err := h.tokens.FindByPlatform(ctx, accountID, att.platform)
-	if err != nil || tokenInfo == nil || tokenInfo.TokenSecret == "" {
+	if err != nil && !errors.Is(err, repo.ErrNotFound) {
+		// Fail-closed: erro de banco não pode desligar a autenticação.
+		slog.Error("platform token lookup failed", "platform", att.platform, "account_id", accountID, "error", err)
+		return false
+	}
+	if tokenInfo == nil || tokenInfo.TokenSecret == "" {
 		return true
 	}
 	if matchWebhookAttemptAgainstSecret(tokenInfo.TokenSecret, att) {

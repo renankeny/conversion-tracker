@@ -215,3 +215,24 @@ func formatDuration(d time.Duration) string {
 	}
 	return strings.Join(parts, ", ")
 }
+
+// SoleAccountID retorna o ID da conta quando a instalação possui exatamente uma conta.
+// Usado por webhooks legados sem ?acc= / ?pixel= para evitar busca cross-account.
+func (r *UserRepo) SoleAccountID(ctx context.Context) (int64, bool) {
+	rows, err := r.pool.Query(ctx, `SELECT id FROM accounts ORDER BY id LIMIT 2`)
+	if err != nil {
+		return 0, false
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) != 1 {
+		return 0, false
+	}
+	return ids[0], true
+}

@@ -57,6 +57,7 @@ func TestBuildCAPIPayload_BusinessMessagingLeadMapsToLeadSubmitted(t *testing.T)
 		EventID:   "evt-3",
 		EventTime: 1700000000,
 		CtwaClid:  "ctwa_auto_map",
+		PageID:    "1078850378653366",
 		Phone:     "5511999998888",
 	}, "", "")
 	if err != nil {
