@@ -22,6 +22,7 @@ CLAUDE.md
 *.md
 **/*.md
 /docs/
+/BANCO DE DADOS.sql
 
 # =============================================================================
 # Projetos separados no workspace (não fazem parte deste repositório)
@@ -35,6 +36,7 @@ CLAUDE.md
 /documentações api/
 /landing page trackeado/
 /banners/
+/setup/
 
 # =============================================================================
 # Sistema operacional & IDEs
@@ -85,15 +87,6 @@ frontend/.data/
 frontend/.cache/
 frontend/node_modules/
 frontend/dist/
-setup/.nuxt/
-setup/.output/
-setup/.data/
-setup/.cache/
-setup/node_modules/
-setup/dist/
-setup/.env
-setup/.env.*
-!setup/.env.example
 
 # =============================================================================
 # Logs, pacotes, certificados, chaves privadas e infra privada
@@ -112,13 +105,4 @@ api_response2.js
 datalayers
 script
 script outro.js
-deploy/vps-trackeado/
-deploy/easypanel.schema.json
-deploy/easypanel.schema.local.json
-deploy/easypanel.template.json
-deploy/credentials.txt
-deploy/portainer.env
-deploy/portainer-swarm-stack.yml
-deploy/portainer-swarm-stack.ready.yml
-deploy/generate-portainer-env.sh
-deploy/*.ready.yml
+/deploy/
