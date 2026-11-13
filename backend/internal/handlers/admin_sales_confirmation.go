@@ -3,12 +3,14 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
@@ -19,10 +21,15 @@ type AdminSalesConfirmation struct {
 	sentEventsRepo *repo.SentEventRepo
 	usersRepo      *repo.UserRepo
 	enqueuer       *queue.Enqueuer
+	rdb            *redis.Client
 }
 
 func NewAdminSalesConfirmation(s *repo.SentEventRepo, u *repo.UserRepo, q *queue.Enqueuer) *AdminSalesConfirmation {
 	return &AdminSalesConfirmation{sentEventsRepo: s, usersRepo: u, enqueuer: q}
+}
+
+func (h *AdminSalesConfirmation) SetRedis(rdb *redis.Client) {
+	h.rdb = rdb
 }
 
 // List GET /api/v1/admin/sales-confirmations
@@ -102,10 +109,6 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if err := h.sentEventsRepo.MarkAsConfirmed(r.Context(), req.EventID, pixelName, scopedAccountID); err != nil {
-		slog.Warn("failed to mark sales event as confirmed in db", "err", err, "event_id", req.EventID)
-	}
-
 	val := originalEvent.PurchaseValue
 	input := domain.SendEventInput{
 		PixelName:       pixelName,
@@ -145,6 +148,7 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "failed to enqueue event")
 		return
 	}
+	cache.BumpDashboardVersion(r.Context(), h.rdb, effAccountID)
 
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "event_id": purchaseEventID})
 }

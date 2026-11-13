@@ -3,8 +3,8 @@ import { useDashboardStore } from '~/stores/useDashboardStore'
 import { useDashboardFetch } from '~/composables/useDashboardFetch'
 import {
   EVENT_CATALOG, FULL_CARD_CATALOG, ALL_CARD_IDS, DEFAULT_ENABLED_CARDS, CATALOG_IDS,
-  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon,
-  type CardFormat, type EventCatalogEntry,
+  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon, resolvePanelLeads,
+  type CardFormat, type DashboardMetricsContext, type EventCatalogEntry,
 } from '~/utils/dashboardEventCatalog'
 import { computeCardRichDetails, type CardRichDetails } from '~/utils/dashboardCardDetails'
 import type { CounterSummaryRow, DashboardConfig, GroupedEvent } from '#shared/types'
@@ -35,25 +35,21 @@ export const useDashboardView = () => {
   })
 
   const {
-    loading, adsLoading, summaryData, seriesData, trafficQuality, sourceBreakdown,
+    loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, sourceBreakdown,
     panelAudit, previousPeriod, heatmap, metaInsights, googleInsights, metaCreatives,
-    googleKeywords, eventsFilterMap, recentPurchases, geoData, totalRevenue, refresh,
+    googleKeywords, recentPurchases, geoData, totalRevenue, refresh,
   } = useDashboardFetch(selectedPixel)
 
   const purchaseModalOpen = ref(false)
   const purchaseSelected = ref<GroupedEvent | null>(null)
   const onPurchaseSelect = (ev: GroupedEvent) => { purchaseSelected.value = ev; purchaseModalOpen.value = true }
 
-  const filteredSeriesPoints = computed(() => {
-    const allowedList = eventsFilterMap.value[selectedPixel.value] || []
-    if (!allowedList.length) return seriesData.value?.points || []
-    const allowed = new Set(allowedList)
-    return (seriesData.value?.points || []).filter((p) => allowed.has(p.event_name))
-  })
+  const filteredSeriesPoints = computed(() => seriesData.value?.points || [])
 
   const summaryByEvent = computed(() => new Map((summaryData.value?.events || []).map((r) => [r.event_name, r])))
   const sumOf = (event: string, field: 'count_total' | 'count_sent' | 'count_failed' = 'count_total'): number =>
     summaryByEvent.value.get(event)?.[field] ?? 0
+  const sentOf = (event: string): number => sumOf(event, 'count_sent')
   const failedTotal = computed(() => (summaryData.value?.events || []).reduce((s: number, r: CounterSummaryRow) => s + r.count_failed, 0))
 
   const headerSubtitle = computed(() => `Visão executiva e auditoria de conversões — ${PERIOD_LABELS[dashboardStore.period]}`)
@@ -61,6 +57,7 @@ export const useDashboardView = () => {
   const funnelSubtitle = computed(() => `Eventos do funil no período — ${PERIOD_LABELS[dashboardStore.period]}`)
   const purchasesSubtitle = computed(() => `${recentPurchases.value.length} compras recentes`)
   const selectedPixelObj = computed(() => pixelStore.pixels.find((p) => p.name === selectedPixel.value) || null)
+  const activeCurrency = computed(() => selectedPixelObj.value?.tracker_config?.product_currency || 'BRL')
 
   const cardsEditorOpen = ref(false)
   const savingCardsPrefs = ref(false)
@@ -73,7 +70,21 @@ export const useDashboardView = () => {
   const eventLabelOverrides = ref<Record<string, string>>({})
 
   const eventLabel = (id: string, fallback: string): string => eventLabelOverrides.value[id] || fallback
-  const hasCustomCardPrefs = computed(() => Boolean(selectedPixelObj.value?.dashboard_config?.enabled_cards?.length))
+
+  const hasCustomCardPrefs = computed(() => {
+    const cfg = selectedPixelObj.value?.dashboard_config
+    if (!cfg) return false
+    if (cfg.event_labels && Object.values(cfg.event_labels).some(Boolean)) return true
+    if (cfg.enabled_cards?.length) {
+      if (cfg.enabled_cards.length !== DEFAULT_ENABLED_CARDS.length) return true
+      if (cfg.enabled_cards.some((id) => !DEFAULT_ENABLED_CARDS.includes(id))) return true
+    }
+    if (cfg.card_order?.length) {
+      const activeSaved = cfg.card_order.filter((id) => DEFAULT_ENABLED_CARDS.includes(id))
+      if (activeSaved.some((id, idx) => id !== DEFAULT_ENABLED_CARDS[idx])) return true
+    }
+    return false
+  })
 
   watch(selectedPixelObj, (p) => {
     const cfg = p?.dashboard_config
@@ -89,14 +100,26 @@ export const useDashboardView = () => {
     FULL_CARD_CATALOG.map((e) => ({ id: e.id, label: eventLabel(e.id, e.label), category: e.category })),
   )
 
+  const metricsCtx = computed<DashboardMetricsContext>(() => ({
+    sumOf,
+    sentOf,
+    failedTotal: failedTotal.value,
+    totalRevenue: totalRevenue.value,
+    currency: activeCurrency.value,
+    trafficSource: dashboardStore.trafficSource,
+    privacyMode: dashboardStore.privacyMode,
+    metaInsights: metaInsights.value,
+    googleInsights: googleInsights.value,
+    sourceBreakdown: sourceBreakdown.value,
+    panelAudit: panelAudit.value,
+    previousPeriod: previousPeriod.value,
+  }))
+
+  const panelLeadsTotal = computed(() => resolvePanelLeads(metricsCtx.value))
+
   const visibleCards = computed<DashboardVisibleCard[]>(() => {
     const cards: DashboardVisibleCard[] = []
-    const ctx = {
-      sumOf, failedTotal: failedTotal.value, totalRevenue: totalRevenue.value,
-      trafficSource: dashboardStore.trafficSource, privacyMode: dashboardStore.privacyMode,
-      metaInsights: metaInsights.value, googleInsights: googleInsights.value,
-      sourceBreakdown: sourceBreakdown.value, panelAudit: panelAudit.value, previousPeriod: previousPeriod.value,
-    }
+    const ctx = metricsCtx.value
     for (const id of cardOrder.value) {
       if (!enabledCardIds.value.includes(id)) continue
       const e = catalogById.get(id)
@@ -139,7 +162,7 @@ export const useDashboardView = () => {
   }
 
   const onResetCardsDefault = () =>
-    onSaveCards({ ids: [...DEFAULT_ENABLED_CARDS], order: Array.from(new Set([...DEFAULT_ENABLED_CARDS, ...ALL_CARD_IDS])), labels: eventLabelOverrides.value })
+    onSaveCards({ ids: [...DEFAULT_ENABLED_CARDS], order: Array.from(new Set([...DEFAULT_ENABLED_CARDS, ...ALL_CARD_IDS])), labels: {} })
 
   const onSaveFunnelEvents = async (payload: { ids: string[]; order: string[] }) => {
     savingFunnelPrefs.value = true
@@ -152,11 +175,11 @@ export const useDashboardView = () => {
   }
 
   return {
-    dashboardStore, loading, adsLoading, summaryData, seriesData, trafficQuality, heatmap, filteredSeriesPoints,
+    dashboardStore, loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, heatmap, filteredSeriesPoints,
     metaCreatives, googleKeywords, recentPurchases, geoData, purchaseModalOpen, purchaseSelected, onPurchaseSelect,
-    headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, selectedPixelObj, hasCustomCardPrefs,
-    cardsEditorOpen, savingCardsPrefs, enabledCardIds, cardOrder, cardPickerOptions, visibleCards, onSaveCards, onResetCardsDefault,
-    funnelEditorOpen, savingFunnelPrefs, enabledFunnelEvents, funnelOrder, funnelPickerOptions, funnelSteps, onSaveFunnelEvents,
-    eventLabelOverrides, refresh,
+    headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, selectedPixelObj, activeCurrency, panelLeadsTotal,
+    hasCustomCardPrefs, cardsEditorOpen, savingCardsPrefs, enabledCardIds, cardOrder, cardPickerOptions, visibleCards,
+    onSaveCards, onResetCardsDefault, funnelEditorOpen, savingFunnelPrefs, enabledFunnelEvents, funnelOrder,
+    funnelPickerOptions, funnelSteps, onSaveFunnelEvents, eventLabelOverrides, refresh,
   }
 }

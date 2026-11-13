@@ -109,9 +109,10 @@ type instanceUpsertInput struct {
 	LeadTrigger        string `json:"lead_trigger"`
 	CustomEventName    string `json:"custom_event_name"`
 	CustomEventTrigger string `json:"custom_event_trigger"`
-	AutoCreateCRMLead  *bool  `json:"auto_create_crm_lead"`
-	DefaultCRMStageID  *int64 `json:"default_crm_stage_id"`
-	Enabled            *bool  `json:"enabled"`
+	AutoCreateCRMLead      *bool  `json:"auto_create_crm_lead"`
+	DefaultCRMStageID      *int64 `json:"default_crm_stage_id"`
+	CtwaMinInboundMessages *int   `json:"ctwa_min_inbound_messages"`
+	Enabled                *bool  `json:"enabled"`
 }
 
 func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) {
@@ -184,29 +185,34 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 	if in.AutoCreateCRMLead != nil {
 		autoCRM = *in.AutoCreateCRMLead
 	}
+	ctwaMin := 1
+	if in.CtwaMinInboundMessages != nil {
+		ctwaMin = domain.NormalizeCtwaMinMessages(*in.CtwaMinInboundMessages)
+	}
 
 	inst := &domain.WhatsAppInstance{
-		AccountID:          accID,
-		PixelID:            pixel.ID,
-		PixelName:          pixel.Name,
-		ServerID:           srvID,
-		Provider:           provider,
-		ExternalAPIURL:     strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/"),
-		Currency:           domain.NormalizeWhatsAppCurrency(in.Currency),
-		Name:               strings.TrimSpace(in.Name),
-		InstanceName:       evoName,
-		EvolutionUUID:      evoUUID,
-		InstanceToken:      instToken,
-		WebhookSecret:      webhookSecret,
-		ShareToken:         &shareToken,
-		ConnectionStatus:   "CONNECTING",
-		PurchaseTrigger:    strings.TrimSpace(in.PurchaseTrigger),
-		LeadTrigger:        strings.TrimSpace(in.LeadTrigger),
-		CustomEventName:    strings.TrimSpace(in.CustomEventName),
-		CustomEventTrigger: strings.TrimSpace(in.CustomEventTrigger),
-		AutoCreateCRMLead:  autoCRM,
-		DefaultCRMStageID:  in.DefaultCRMStageID,
-		Enabled:            true,
+		AccountID:              accID,
+		PixelID:                pixel.ID,
+		PixelName:              pixel.Name,
+		ServerID:               srvID,
+		Provider:               provider,
+		ExternalAPIURL:         strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/"),
+		Currency:               domain.NormalizeWhatsAppCurrency(in.Currency),
+		Name:                   strings.TrimSpace(in.Name),
+		InstanceName:           evoName,
+		EvolutionUUID:          evoUUID,
+		InstanceToken:          instToken,
+		WebhookSecret:          webhookSecret,
+		ShareToken:             &shareToken,
+		ConnectionStatus:       "CONNECTING",
+		PurchaseTrigger:        strings.TrimSpace(in.PurchaseTrigger),
+		LeadTrigger:            strings.TrimSpace(in.LeadTrigger),
+		CustomEventName:        strings.TrimSpace(in.CustomEventName),
+		CustomEventTrigger:     strings.TrimSpace(in.CustomEventTrigger),
+		AutoCreateCRMLead:      autoCRM,
+		DefaultCRMStageID:      in.DefaultCRMStageID,
+		CtwaMinInboundMessages: ctwaMin,
+		Enabled:                true,
 	}
 
 	if err := h.repo.CreateInstance(ctx, inst); err != nil {

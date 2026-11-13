@@ -1,48 +1,56 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"time"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
-// AdminCounters expõe agregados de eventos a partir de event_counters.
-// É a fonte do dashboard "1300 visitas, 900 InitiateCheckout, 30 Purchases".
+// AdminCounters expõe agregados de eventos a partir de event_counters e sent_events.
 type AdminCounters struct {
-	repo *repo.EventCounterRepo
+	repo   *repo.EventCounterRepo
+	qcache *cache.QueryCache
 }
 
 func NewAdminCounters(r *repo.EventCounterRepo) *AdminCounters {
 	return &AdminCounters{repo: r}
 }
 
-// Summary retorna totais por evento dentro do intervalo.
-//   GET /admin/counters/summary?from=ISO&to=ISO&pixel=NAME&event=NAME
-//
-// Padrão (sem from/to): últimos 30 dias.
+func (h *AdminCounters) SetQueryCache(qc *cache.QueryCache) {
+	h.qcache = qc
+}
+
+// Summary GET /admin/counters/summary?from=ISO&to=ISO&pixel=NAME&event=NAME
 func (h *AdminCounters) Summary(w http.ResponseWriter, r *http.Request) {
 	f, err := parseSummaryFilters(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	rows, err := h.repo.SummaryByEvent(r.Context(), f)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "summary error: "+err.Error())
-		return
+	var toVal time.Time
+	if f.To != nil {
+		toVal = *f.To
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"from":   f.From,
-		"to":     f.To,
-		"pixel":  f.PixelName,
-		"event":  f.EventName,
-		"events": rows,
+	ttl := dashboardCacheTTL(toVal, 30*time.Second, 5*time.Minute)
+	writeDashboardCachedJSON(w, r, h.qcache, f.AccountID, "counters_summary", ttl, "summary error", func(ctx context.Context) (any, error) {
+		rows, lerr := h.repo.SummaryByEvent(ctx, f)
+		if lerr != nil {
+			return nil, lerr
+		}
+		return map[string]any{
+			"from":   f.From,
+			"to":     f.To,
+			"pixel":  f.PixelName,
+			"event":  f.EventName,
+			"events": rows,
+		}, nil
 	})
 }
 
-// TimeSeries retorna a evolução temporal por hora ou dia.
-//   GET /admin/counters/series?from=ISO&to=ISO&pixel=NAME&event=NAME&granularity=hour|day
+// TimeSeries GET /admin/counters/series?from=ISO&to=ISO&pixel=NAME&event=NAME&granularity=hour|day
 func (h *AdminCounters) TimeSeries(w http.ResponseWriter, r *http.Request) {
 	f, err := parseSummaryFilters(r)
 	if err != nil {
@@ -50,18 +58,24 @@ func (h *AdminCounters) TimeSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	daily := r.URL.Query().Get("granularity") == "day"
-	pts, err := h.repo.TimeSeries(r.Context(), f, daily)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "series error: "+err.Error())
-		return
+	var toVal time.Time
+	if f.To != nil {
+		toVal = *f.To
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"from":        f.From,
-		"to":          f.To,
-		"pixel":       f.PixelName,
-		"event":       f.EventName,
-		"granularity": granularityLabel(daily),
-		"points":      pts,
+	ttl := dashboardCacheTTL(toVal, 30*time.Second, 5*time.Minute)
+	writeDashboardCachedJSON(w, r, h.qcache, f.AccountID, "counters_series", ttl, "series error", func(ctx context.Context) (any, error) {
+		pts, lerr := h.repo.TimeSeries(ctx, f, daily)
+		if lerr != nil {
+			return nil, lerr
+		}
+		return map[string]any{
+			"from":        f.From,
+			"to":          f.To,
+			"pixel":       f.PixelName,
+			"event":       f.EventName,
+			"granularity": granularityLabel(daily),
+			"points":      pts,
+		}, nil
 	})
 }
 
@@ -71,11 +85,8 @@ func parseSummaryFilters(r *http.Request) (repo.SummaryFilters, error) {
 		PixelName:     q.Get("pixel"),
 		EventName:     q.Get("event"),
 		TrafficSource: q.Get("traffic_source"),
+		AccountID:     TenantFromContext(r.Context()).AccountID,
 	}
-
-	// Aplica filtro multi-tenant
-	scope := TenantFromContext(r.Context())
-	f.AccountID = scope.AccountID
 
 	if v := q.Get("from"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
@@ -91,11 +102,12 @@ func parseSummaryFilters(r *http.Request) (repo.SummaryFilters, error) {
 		}
 		f.To = &t
 	}
-	// Defaults razoáveis: últimos 30 dias se nada informado.
-	if f.From == nil && f.To == nil {
-		now := time.Now()
+	now := time.Now()
+	if f.From == nil {
 		then := now.AddDate(0, 0, -30)
 		f.From = &then
+	}
+	if f.To == nil {
 		f.To = &now
 	}
 	return f, nil

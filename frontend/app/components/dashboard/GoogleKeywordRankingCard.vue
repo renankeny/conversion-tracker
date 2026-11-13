@@ -11,7 +11,12 @@
       </span>
     </div>
 
-    <div v-if="!topKeywords.length" class="empty-state">
+    <div v-if="loading && !topKeywords.length" class="empty-state">
+      <div class="loading-spinner" />
+      <p>Carregando ranking de palavras-chave do Google Ads…</p>
+    </div>
+
+    <div v-else-if="!topKeywords.length" class="empty-state">
       <Search :size="20" class="empty-icon" />
       <p>Nenhuma palavra-chave com cliques registrada neste período para a conta Google Ads vinculada.</p>
     </div>
@@ -44,11 +49,11 @@
           </div>
           <div class="metric-col hide-xs">
             <span class="metric-lbl">CPC</span>
-            <span class="metric-val">{{ formatBRL(item.cpc) }}</span>
+            <span class="metric-val blur-target">{{ formatCurrency(item.cpc) }}</span>
           </div>
           <div class="metric-col">
             <span class="metric-lbl">Gasto</span>
-            <span class="metric-val val-brand blur-target">{{ formatBRL(item.spend) }}</span>
+            <span class="metric-val val-brand blur-target">{{ formatCurrency(item.spend) }}</span>
           </div>
         </div>
       </div>
@@ -59,19 +64,22 @@
 <script setup lang="ts">
 import { Search } from 'lucide-vue-next'
 import { GoogleAdsIcon } from '~/utils/adIcons'
+import { formatMoney } from '~/utils/dashboardCardDetails'
 import type { GoogleKeywordInsight } from '#shared/types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   keywords: GoogleKeywordInsight[]
   loading?: boolean
   blurred?: boolean
-}>()
+  currency?: string
+}>(), {
+  currency: 'BRL',
+})
 
 const topKeywords = computed(() => (props.keywords || []).slice(0, 5))
 
 const formatInt = (n: number) => new Intl.NumberFormat('pt-BR').format(n || 0)
-const formatBRL = (n: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n || 0)
+const formatCurrency = (n: number) => formatMoney(n || 0, props.currency)
 
 const formatMatchType = (mt: string) => {
   switch (mt?.toUpperCase()) {
@@ -92,6 +100,8 @@ const formatMatchType = (mt: string) => {
 .badge-google { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 0.5rem; padding: 2.25rem 1rem; color: var(--text-3); font-size: var(--fs-sm); background: var(--surface-deep); border: 1px dashed var(--border); border-radius: 10px; flex: 1; }
 .empty-icon { color: var(--text-3); opacity: 0.7; }
+.loading-spinner { width: 1.35rem; height: 1.35rem; border: 2px solid var(--border); border-top-color: var(--brand); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .kw-list { display: flex; flex-direction: column; gap: 0.55rem; }
 .kw-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.7rem 0.85rem; background: var(--surface-deep); border: 1px solid var(--border-soft); border-radius: 10px; transition: border-color 0.15s ease; }
 .kw-row:hover { border-color: var(--border); }

@@ -15,57 +15,93 @@ type SeriesPoint struct {
 	CountFailed int64     `json:"count_failed"`
 }
 
-// TimeSeries devolve evolução temporal por bucket (já está em hora).
-// Se WantDaily for true, agrupa por dia em vez de hora.
+// TimeSeries devolve evolução temporal por bucket (hora ou dia).
 func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, daily bool) ([]SeriesPoint, error) {
 	if f.TrafficSource != "" && f.TrafficSource != "all" {
-		bucketExpr := "date_trunc('hour', e.created_at)"
+		unit := "hour"
 		if daily {
-			bucketExpr = "date_trunc('day', e.created_at)"
+			unit = "day"
 		}
-		q := `
-			SELECT ` + bucketExpr + ` AS bucket,
+		args := []any{}
+		idx := 1
+
+		qEvents := `
+			SELECT date_trunc('` + unit + `', e.created_at) AS bucket,
 			       e.event_name,
 			       COUNT(DISTINCT e.event_id) AS total,
 			       COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.event_id END) AS sent,
 			       COUNT(DISTINCT CASE WHEN e.status = 'failed' THEN e.event_id END) AS failed
 			FROM sent_events e
 			JOIN tracked_users u ON e.external_id = u.external_id AND e.account_id = u.account_id
-			WHERE 1=1
+			WHERE e.status <> 'contested'
+			  AND e.event_name NOT IN ('PageView', 'ViewContent')
 		`
-		args := []any{}
-		idx := 1
 		if f.From != nil {
-			q += " AND e.created_at >= $" + strconv.Itoa(idx)
+			qEvents += " AND e.created_at >= $" + strconv.Itoa(idx)
 			args = append(args, f.From.UTC())
 			idx++
 		}
 		if f.To != nil {
-			q += " AND e.created_at < $" + strconv.Itoa(idx)
+			qEvents += " AND e.created_at < $" + strconv.Itoa(idx)
 			args = append(args, f.To.UTC())
 			idx++
 		}
 		if f.PixelName != "" {
-			q += " AND e.pixel_name = $" + strconv.Itoa(idx)
+			qEvents += " AND e.pixel_name = $" + strconv.Itoa(idx)
 			args = append(args, f.PixelName)
 			idx++
 		}
 		if f.EventName != "" {
-			q += " AND e.event_name = $" + strconv.Itoa(idx)
+			qEvents += " AND e.event_name = $" + strconv.Itoa(idx)
 			args = append(args, f.EventName)
 			idx++
 		}
 		if f.AccountID != 0 {
-			q += " AND e.account_id = $" + strconv.Itoa(idx)
+			qEvents += " AND e.account_id = $" + strconv.Itoa(idx)
 			args = append(args, f.AccountID)
 			idx++
 		}
-
-		if srcCond := trafficSourceUserCond(f.TrafficSource, "u."); srcCond != "" {
-			q += " AND " + srcCond
+		srcCond := trafficSourceUserCond(f.TrafficSource, "u.")
+		if srcCond != "" {
+			qEvents += " AND " + srcCond
 		}
+		qEvents += " GROUP BY bucket, e.event_name"
 
-		q += " GROUP BY bucket, e.event_name ORDER BY bucket ASC"
+		q := qEvents
+		if (f.EventName == "" || f.EventName == "PageView") && srcCond != "" {
+			tsExpr := "COALESCE(u.last_seen_at, u.created_at)"
+			pvWhere := "WHERE " + srcCond
+			if f.PixelName != "" {
+				pvWhere += " AND u.pixel_name = $" + strconv.Itoa(idx)
+				args = append(args, f.PixelName)
+				idx++
+			}
+			if f.AccountID != 0 {
+				pvWhere += " AND u.account_id = $" + strconv.Itoa(idx)
+				args = append(args, f.AccountID)
+				idx++
+			}
+			if f.From != nil && f.To != nil {
+				fromIdx := strconv.Itoa(idx)
+				toIdx := strconv.Itoa(idx + 1)
+				args = append(args, f.From.UTC(), f.To.UTC())
+				idx += 2
+				tsExpr = "CASE WHEN u.last_seen_at >= $" + fromIdx + " AND u.last_seen_at < $" + toIdx + " THEN u.last_seen_at ELSE u.created_at END"
+				pvWhere += " AND ((u.last_seen_at >= $" + fromIdx + " AND u.last_seen_at < $" + toIdx + ") OR (u.created_at >= $" + fromIdx + " AND u.created_at < $" + toIdx + "))"
+			}
+			qPV := `
+				SELECT date_trunc('` + unit + `', ` + tsExpr + `) AS bucket,
+				       'PageView' AS event_name,
+				       COUNT(*) AS total,
+				       COUNT(*) AS sent,
+				       0::bigint AS failed
+				FROM tracked_users u
+				` + pvWhere + `
+				GROUP BY bucket
+			`
+			q = qPV + " UNION ALL " + qEvents
+		}
+		q += " ORDER BY bucket ASC"
 
 		rows, err := r.pool.Query(ctx, q, args...)
 		if err != nil {
@@ -107,11 +143,14 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 		       COUNT(DISTINCT CASE WHEN status = 'failed' THEN event_id END) AS failed
 		FROM sent_events
 		WHERE event_name NOT IN ('PageView', 'ViewContent')
+		  AND status <> 'contested'
 	`
 	args := []any{}
 	idx := 1
 	if f.From != nil {
 		q1 += " AND bucket_at >= $" + strconv.Itoa(idx)
+		args = append(args, f.From.UTC().Truncate(time.Hour))
+		idx++
 		q2 += " AND created_at >= $" + strconv.Itoa(idx)
 		args = append(args, f.From.UTC())
 		idx++
@@ -145,7 +184,6 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 	q2 += " GROUP BY bucket, event_name"
 
 	q := q1 + " UNION ALL " + q2 + " ORDER BY bucket ASC"
-
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -168,24 +206,28 @@ func (r *EventCounterRepo) countVisitorsBySource(ctx context.Context, f SummaryF
 	if srcCond == "" {
 		return 0
 	}
-	q := "SELECT COUNT(*) FROM tracked_users u WHERE " + srcCond
 	args := []any{}
 	idx := 1
+	selectExpr := "COUNT(*)"
+	conds := "WHERE " + srcCond
 	if f.PixelName != "" {
-		q += " AND u.pixel_name = $" + strconv.Itoa(idx)
+		conds += " AND u.pixel_name = $" + strconv.Itoa(idx)
 		args = append(args, f.PixelName)
 		idx++
 	}
 	if f.AccountID != 0 {
-		q += " AND u.account_id = $" + strconv.Itoa(idx)
+		conds += " AND u.account_id = $" + strconv.Itoa(idx)
 		args = append(args, f.AccountID)
 		idx++
 	}
 	if f.From != nil && f.To != nil {
-		q += " AND ((u.last_seen_at >= $" + strconv.Itoa(idx) + " AND u.last_seen_at < $" + strconv.Itoa(idx+1) + ") OR (u.created_at >= $" + strconv.Itoa(idx) + " AND u.created_at < $" + strconv.Itoa(idx+1) + "))"
+		fromIdx := strconv.Itoa(idx)
+		toIdx := strconv.Itoa(idx + 1)
+		selectExpr = "COALESCE(SUM(CASE WHEN u.created_at >= $" + fromIdx + " THEN GREATEST(u.pageview_count, 1) ELSE 1 END), 0)"
+		conds += " AND ((u.last_seen_at >= $" + fromIdx + " AND u.last_seen_at < $" + toIdx + ") OR (u.created_at >= $" + fromIdx + " AND u.created_at < $" + toIdx + "))"
 		args = append(args, f.From.UTC(), f.To.UTC())
 	}
 	var cnt int64
-	_ = r.pool.QueryRow(ctx, q, args...).Scan(&cnt)
+	_ = r.pool.QueryRow(ctx, "SELECT "+selectExpr+" FROM tracked_users u "+conds, args...).Scan(&cnt)
 	return cnt
 }

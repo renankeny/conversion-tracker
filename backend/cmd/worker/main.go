@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
@@ -20,6 +21,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/storage"
 	"github.com/renankeny/conversion-tracker/backend/internal/tiktok"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
+	"github.com/renankeny/conversion-tracker/backend/internal/whatsappai"
 	"github.com/renankeny/conversion-tracker/backend/internal/ga4"
 )
 
@@ -133,6 +135,22 @@ func main() {
 		MinuteSP:               0,
 	}
 	go scheduler.Run(ctx)
+
+	aiScheduler := &whatsappai.Scheduler{
+		Analyzer: &whatsappai.Analyzer{
+			AI:       repo.NewWhatsAppAIRepo(pool),
+			WhatsApp: repo.NewWhatsAppRepo(pool),
+			Pixels:   pixelRepo,
+			Users:    repo.NewUserRepo(pool),
+			CRM:      repo.NewCRMRepo(pool),
+			MetaAcc:  repo.NewMetaAccountRepo(pool),
+			Storage:  mediaStorage,
+			Enqueuer: enq,
+			Redis:    rdb,
+		},
+		Interval: 15 * time.Minute,
+	}
+	go aiScheduler.Run(ctx)
 
 	slog.Info("worker starting", "redis", cfg.RedisAddr)
 	if err := srv.Run(); err != nil {

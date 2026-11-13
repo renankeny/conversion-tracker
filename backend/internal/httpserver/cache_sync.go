@@ -28,6 +28,7 @@ type routeHandlers struct {
 	adminWAInstances    *handlers.AdminWhatsAppInstances
 	adminWAChats        *handlers.AdminWhatsAppChats
 	adminWAStats        *handlers.AdminWhatsAppStats
+	adminWhatsAppAI     *handlers.AdminWhatsAppAI
 	customWebhook       *handlers.CustomWebhookHandler
 	publicDashboard     *handlers.PublicDashboard
 	adminAuth           *handlers.AdminAuth

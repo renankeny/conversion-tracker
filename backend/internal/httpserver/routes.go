@@ -64,6 +64,7 @@ func registerRoutes(r *chi.Mux, deps Deps, h routeHandlers) {
 				r.Use(rlPublicDash)
 				r.Route("/public/dashboard/{token}", func(r chi.Router) {
 					r.Get("/meta", h.publicDashboard.Meta)
+					r.Get("/ads-summary", h.publicDashboard.AdsSummary)
 					r.Get("/summary", h.publicDashboard.Summary)
 					r.Get("/series", h.publicDashboard.Series)
 					r.Get("/geo", h.publicDashboard.Geo)

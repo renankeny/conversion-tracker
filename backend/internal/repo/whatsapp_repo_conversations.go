@@ -15,7 +15,7 @@ const selectChatColumns = `
 	c.phone, c.lid_jid, c.push_name, c.contact_name, c.profile_pic,
 	c.origin_type, c.ctwa_clid, c.source_id, c.page_id, c.source_app,
 	c.ad_name, c.adset_id, c.adset_name, c.campaign_id, c.campaign_name, c.ad_thumbnail_url,
-	c.unread_count, c.last_message_time, c.metadata, c.created_at, c.updated_at
+	c.unread_count, c.ai_qualified, c.last_message_time, c.metadata, c.created_at, c.updated_at
 `
 
 func scanWhatsAppChat(scanner pgx.Row, c *domain.WhatsAppChat) error {
@@ -25,7 +25,7 @@ func scanWhatsAppChat(scanner pgx.Row, c *domain.WhatsAppChat) error {
 		&c.Phone, &c.LidJid, &c.PushName, &c.ContactName, &c.ProfilePic,
 		&c.OriginType, &c.CtwaClid, &c.SourceID, &c.PageID, &c.SourceApp,
 		&c.AdName, &c.AdsetID, &c.AdsetName, &c.CampaignID, &c.CampaignName, &c.AdThumbnailURL,
-		&c.UnreadCount, &c.LastMessageTime, &c.Metadata, &c.CreatedAt, &c.UpdatedAt,
+		&c.UnreadCount, &c.AIQualified, &c.LastMessageTime, &c.Metadata, &c.CreatedAt, &c.UpdatedAt,
 	); err != nil {
 		return err
 	}

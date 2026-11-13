@@ -47,6 +47,7 @@ func parseListFilter(r *http.Request) (repo.ListFilter, error) {
 		ExternalID:         q.Get("external_id"),
 		Status:             q.Get("status"),
 		IncludeLTV:         q.Get("include_ltv") == "true",
+		IncludeBuyer:       q.Get("include_buyer") == "true" || q.Get("include_ltv") == "true",
 		IncludeUserContext: q.Get("include_user_context") == "true",
 		TrafficSource:      q.Get("traffic_source"),
 	}

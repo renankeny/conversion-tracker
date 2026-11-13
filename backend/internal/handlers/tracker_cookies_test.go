@@ -69,3 +69,4 @@ func TestSetFirstPartyTrackingCookiesCNAME(t *testing.T) {
 		t.Fatalf("expected 0 cookies on cross-site origin, got %d", len(recCross.Result().Cookies()))
 	}
 }
+

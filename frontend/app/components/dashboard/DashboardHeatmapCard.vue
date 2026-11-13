@@ -57,6 +57,7 @@
 
 <script setup lang="ts">
 import { Flame } from 'lucide-vue-next'
+import { useDashboardStore } from '~/stores/useDashboardStore'
 import type { DashboardHeatmap, HeatmapBucket } from '#shared/types'
 
 const props = defineProps<{
@@ -64,7 +65,11 @@ const props = defineProps<{
 }>()
 
 type ModeKey = 'messages' | 'leads' | 'sales'
-const activeMode = ref<ModeKey>('leads')
+const dashboardStore = useDashboardStore()
+const activeMode = computed<ModeKey>({
+  get: () => dashboardStore.heatmapMode,
+  set: (v) => { dashboardStore.heatmapMode = v },
+})
 
 const tabs: Array<{ key: ModeKey; label: string }> = [
   { key: 'messages', label: 'Mensagens' },

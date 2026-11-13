@@ -58,6 +58,11 @@ type GroupedEvent struct {
 	FirstUTMSource string `json:"first_utm_source,omitempty"`
 	LastUTMSource  string `json:"last_utm_source,omitempty"`
 
+	// Dados do comprador (preenchidos quando ListFilter.IncludeBuyer=true).
+	BuyerFirstName string `json:"buyer_first_name,omitempty"`
+	BuyerLastName  string `json:"buyer_last_name,omitempty"`
+	BuyerPhone     string `json:"buyer_phone,omitempty"`
+
 	// Agrupamento de Conversões (Order Bump & Upsell)
 	AggregatedCount int                     `json:"aggregated_count"`
 	AggregatedItems []domain.AggregatedItem `json:"aggregated_items,omitempty"`

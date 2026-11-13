@@ -70,6 +70,9 @@ func (h *AdminWhatsAppInstances) Update(w http.ResponseWriter, r *http.Request) 
 		inst.AutoCreateCRMLead = *in.AutoCreateCRMLead
 	}
 	inst.DefaultCRMStageID = in.DefaultCRMStageID
+	if in.CtwaMinInboundMessages != nil {
+		inst.CtwaMinInboundMessages = domain.NormalizeCtwaMinMessages(*in.CtwaMinInboundMessages)
+	}
 	if in.Enabled != nil {
 		inst.Enabled = *in.Enabled
 	}

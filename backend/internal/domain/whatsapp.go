@@ -57,6 +57,13 @@ func NormalizeWhatsAppCurrency(c string) string {
 	return "BRL"
 }
 
+func NormalizeCtwaMinMessages(n int) int {
+	if n == 3 {
+		return 3
+	}
+	return 1
+}
+
 // WhatsAppServer representa o servidor Evolution Go configurado por uma conta/cliente.
 type WhatsAppServer struct {
 	ID        int64     `json:"id"`
@@ -96,9 +103,10 @@ type WhatsAppInstance struct {
 	LeadTrigger        string    `json:"lead_trigger"`
 	CustomEventName    string    `json:"custom_event_name"`
 	CustomEventTrigger string    `json:"custom_event_trigger"`
-	AutoCreateCRMLead  bool      `json:"auto_create_crm_lead"`
-	DefaultCRMStageID  *int64    `json:"default_crm_stage_id"`
-	Enabled            bool      `json:"enabled"`
+	AutoCreateCRMLead      bool      `json:"auto_create_crm_lead"`
+	DefaultCRMStageID      *int64    `json:"default_crm_stage_id"`
+	CtwaMinInboundMessages int       `json:"ctwa_min_inbound_messages"`
+	Enabled                bool      `json:"enabled"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 
@@ -108,6 +116,13 @@ type WhatsAppInstance struct {
 
 func (i *WhatsAppInstance) IsExternalUazapi() bool {
 	return i != nil && (i.Provider == WhatsAppProviderAPIPremium || i.Provider == WhatsAppProviderUazapi)
+}
+
+func (i *WhatsAppInstance) EffectiveCtwaMinMessages() int {
+	if i == nil {
+		return 1
+	}
+	return NormalizeCtwaMinMessages(i.CtwaMinInboundMessages)
 }
 
 // WhatsAppChat representa uma conversa elegível (CTWA ou Protocolo Web) vinculada a um lead.
@@ -136,6 +151,7 @@ type WhatsAppChat struct {
 	CampaignName    string    `json:"campaign_name"`
 	AdThumbnailURL  string    `json:"ad_thumbnail_url"`
 	UnreadCount     int       `json:"unread_count"`
+	AIQualified     bool      `json:"ai_qualified"`
 	LastMessageTime time.Time `json:"last_message_time"`
 	Metadata        []byte    `json:"metadata,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -162,6 +178,10 @@ type WhatsAppMessage struct {
 	MediaFilename     string     `json:"media_filename"`
 	MediaExpiresAt    *time.Time `json:"media_expires_at,omitempty"`
 	MediaStreamURL    string     `json:"media_stream_url,omitempty"`
+	AITranscript      string     `json:"-"`
+	CtwaClid          string     `json:"ctwa_clid,omitempty"`
+	SourceID          string     `json:"source_id,omitempty"`
+	ProtocolCode      string     `json:"protocol_code,omitempty"`
 	Timestamp         time.Time  `json:"timestamp"`
 	CreatedAt         time.Time  `json:"created_at"`
 }

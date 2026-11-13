@@ -111,16 +111,8 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 	retryCount, _ := asynq.GetRetryCount(ctx)
 
 	if len(results) == 0 && len(alreadySent) == 0 && len(doneTargets) == 0 && storeFullPayload {
-		ch := "google_ads"
-		if pixel.GA4MeasurementID != "" && !pixel.HasGoogleAds() {
-			ch = "ga4"
-		} else if pixel.HasTikTok() {
-			ch = "tiktok"
-		} else if len(pixel.PixelIDs) > 0 {
-			ch = "meta"
-		}
 		results = append(results, dispatchResult{
-			Channel:    ch,
+			Channel:    "internal",
 			PixelID:    pixel.Name,
 			StatusCode: 204,
 			Body:       `{"tracked_internally":true}`,
@@ -145,6 +137,10 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 
 	if len(results) > 0 || len(alreadySent) == 0 {
 		applyCounters(ctx, deps, pixel, in, eventTime, retryCount, hasErr, hasSuccess)
+	}
+
+	if deps.Redis != nil && storeFullPayload {
+		cache.BumpDashboardVersion(ctx, deps.Redis, pixel.AccountID)
 	}
 
 	if deps.Redis != nil && len(results) > 0 && (retryCount == 0 || !hasErr) {

@@ -3,15 +3,29 @@
     <BaseDropdown v-model="internalValue" :options="options" class="period-dropdown" />
 
     <div v-if="internalValue === 'custom'" class="custom-dates">
-      <input type="date" v-model="internalFrom" class="date-input" title="Data Inicial" />
+      <input
+        type="date"
+        :value="draftFrom"
+        class="date-input"
+        title="Data Inicial"
+        @input="onInputFrom"
+        @change="commitDates"
+      />
       <span class="date-separator">até</span>
-      <input type="date" v-model="internalTo" class="date-input" title="Data Final" />
+      <input
+        type="date"
+        :value="draftTo"
+        class="date-input"
+        title="Data Final"
+        @input="onInputTo"
+        @change="commitDates"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import BaseDropdown from '~/components/BaseDropdown.vue'
 
 export type PeriodValue = 'today' | 'yesterday' | '7d' | '30d' | '60d' | '90d' | 'custom'
@@ -28,19 +42,57 @@ const emit = defineEmits<{
   'update:customTo': [value: string]
 }>()
 
+const VALID_YMD = /^20\d{2}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
+
+const draftFrom = ref(props.customFrom || '')
+const draftTo = ref(props.customTo || '')
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(() => props.customFrom, (v) => { if ((v || '') !== draftFrom.value) draftFrom.value = v || '' })
+watch(() => props.customTo, (v) => { if ((v || '') !== draftTo.value) draftTo.value = v || '' })
+
+const clearTimer = () => {
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+}
+
+const commitDates = () => {
+  clearTimer()
+  if (!VALID_YMD.test(draftFrom.value) || !VALID_YMD.test(draftTo.value)) return
+  let from = draftFrom.value
+  let to = draftTo.value
+  if (from > to) {
+    ;[from, to] = [to, from]
+    draftFrom.value = from
+    draftTo.value = to
+  }
+  if (from !== (props.customFrom || '')) emit('update:customFrom', from)
+  if (to !== (props.customTo || '')) emit('update:customTo', to)
+}
+
+const scheduleCommit = () => {
+  clearTimer()
+  if (!VALID_YMD.test(draftFrom.value) || !VALID_YMD.test(draftTo.value)) return
+  debounceTimer = setTimeout(commitDates, 450)
+}
+
+const onInputFrom = (e: Event) => {
+  draftFrom.value = (e.target as HTMLInputElement).value
+  scheduleCommit()
+}
+
+const onInputTo = (e: Event) => {
+  draftTo.value = (e.target as HTMLInputElement).value
+  scheduleCommit()
+}
+
+onUnmounted(clearTimer)
+
 const internalValue = computed({
   get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v)
-})
-
-const internalFrom = computed({
-  get: () => props.customFrom || '',
-  set: (v) => emit('update:customFrom', v)
-})
-
-const internalTo = computed({
-  get: () => props.customTo || '',
-  set: (v) => emit('update:customTo', v)
+  set: (v) => emit('update:modelValue', v),
 })
 
 const options: Array<{ value: PeriodValue; label: string }> = [
@@ -50,7 +102,7 @@ const options: Array<{ value: PeriodValue; label: string }> = [
   { value: '30d', label: 'Últimos 30 dias' },
   { value: '60d', label: 'Últimos 60 dias' },
   { value: '90d', label: 'Últimos 90 dias' },
-  { value: 'custom', label: 'Personalizado' }
+  { value: 'custom', label: 'Personalizado' },
 ]
 </script>
 

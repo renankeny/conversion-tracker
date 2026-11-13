@@ -55,12 +55,13 @@
         v-if="event.event_name === 'Purchase'"
         :source="source"
         :tracked-user="trackedUser"
+        :currency="currency"
       />
 
       <div class="channels-section">
         <div class="flex items-center justify-between mb-1">
           <h4 class="channels-title">Canais de Transmissão</h4>
-          <span class="channels-hint">Clique no canal para ver detalhes da transmissão</span>
+          <span v-if="!publicMode" class="channels-hint">Clique no canal para ver detalhes da transmissão</span>
         </div>
         <div class="channels-grid">
           <ChannelCard
@@ -99,9 +100,15 @@ interface Props {
   modelValue: boolean
   source: GroupedEvent | null
   allowUserDetails?: boolean
+  publicMode?: boolean
+  currency?: string
 }
 
-const props = withDefaults(defineProps<Props>(), { allowUserDetails: true })
+const props = withDefaults(defineProps<Props>(), {
+  allowUserDetails: true,
+  publicMode: false,
+  currency: 'BRL',
+})
 defineEmits<{ 'update:modelValue': [value: boolean] }>()
 
 const eventsApi = useEvents()
@@ -126,6 +133,7 @@ const getChannelData = (id: Channel): SentEvent | null =>
   event.value?.channels.find((c) => c.channel === id) || null
 
 const toggleChannel = (id: Channel) => {
+  if (props.publicMode) return
   expandedChannel.value = expandedChannel.value === id ? null : id
 }
 
@@ -144,40 +152,41 @@ const syncStatusTitle = computed(() => {
 })
 
 const CATEGORY_MAP: Record<string, { label: string; cls: string }> = {
-  Purchase: { label: 'Conversão', cls: 'cat-purchase' },
-  InitiateCheckout: { label: 'Checkout', cls: 'cat-checkout' },
-  CompleteRegistration: { label: 'Cadastro', cls: 'cat-reg' },
-  Lead: { label: 'Lead', cls: 'cat-lead' },
-  Contact: { label: 'Contato', cls: 'cat-contact' },
+  Purchase: { label: 'Conversão', cls: 'cat-purchase' }, InitiateCheckout: { label: 'Checkout', cls: 'cat-checkout' },
+  CompleteRegistration: { label: 'Cadastro', cls: 'cat-reg' }, Lead: { label: 'Lead', cls: 'cat-lead' },
+  QualifiedLead: { label: 'Lead', cls: 'cat-lead' }, Contact: { label: 'Contato', cls: 'cat-contact' },
   LeadSubmitted: { label: 'Contato', cls: 'cat-contact' },
 }
-
 const eventCategoryLabel = computed(() => CATEGORY_MAP[event.value?.event_name || '']?.label || 'Evento')
 const eventCategoryClass = computed(() => CATEGORY_MAP[event.value?.event_name || '']?.cls || 'cat-default')
 
+const buildPublicDetail = (src: GroupedEvent): EventDetail => ({
+  event_id: src.event_id, event_name: src.event_name, pixel_name: src.pixel_name,
+  external_id: src.external_id, created_at: src.created_at,
+  channels: (src.channels || []).map((c) => ({
+    id: c.id, event_id: src.event_id, pixel_name: src.pixel_name, event_name: src.event_name,
+    external_id: src.external_id, channel: c.channel, status: c.status, response_code: c.response_code,
+    error: c.has_error ? 'Falha reportada pela plataforma' : '', response_body: '',
+    purchase_value: src.purchase_value, created_at: src.created_at, updated_at: src.created_at,
+  })),
+})
+
 const fetchDetails = async () => {
   if (!props.source) return
+  errorMessage.value = ''; expandedChannel.value = null; trackedUser.value = null
+  if (props.publicMode) { event.value = buildPublicDetail(props.source); loading.value = false; return }
   loading.value = true
-  errorMessage.value = ''
-  expandedChannel.value = null
-  trackedUser.value = null
   try {
     const externalId = props.source.external_id
     const [ev, tu] = await Promise.all([
       eventsApi.findByEventID(props.source.event_id, props.source.pixel_name),
-      props.allowUserDetails && externalId
-        ? trackedUsersApi.lookup({ external_id: externalId }).catch(() => null)
-        : Promise.resolve(null),
+      props.allowUserDetails && externalId ? trackedUsersApi.lookup({ external_id: externalId }).catch(() => null) : Promise.resolve(null),
     ])
-    event.value = ev
-    trackedUser.value = tu
+    event.value = ev; trackedUser.value = tu
   } catch (e: unknown) {
-    console.error('Erro ao carregar detalhes', e)
     errorMessage.value = extractErrorMessage(e, 'Erro ao carregar detalhes do evento')
     event.value = null
-  } finally {
-    loading.value = false
-  }
+  } finally { loading.value = false }
 }
 
 watch(

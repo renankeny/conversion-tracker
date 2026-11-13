@@ -1,11 +1,23 @@
 import { ref, computed, watch, onMounted, onUnmounted, shallowRef } from 'vue'
 import * as echarts from 'echarts/core'
+import { useDashboardStore } from '~/stores/useDashboardStore'
 import { countryInfo, regionFocusList, resolveCoordinates, type GeoStat, type RegionFocus } from '~/utils/geoCoordinates'
-import { projectPoint, draw3DGlobeFrame, build2DChartOption, type ProcessedGeoMarker } from '~/utils/geoGlobeScene'
+import { loadWorldGeoJson, projectPoint, draw3DGlobeFrame, build2DChartOption, type ProcessedGeoMarker } from '~/utils/geoGlobeScene'
+
+let worldMapRegistered = false
 
 export const useGeoGlobeRenderer = (getStats: () => GeoStat[]) => {
-  const viewMode = ref<'3d' | '2d'>('3d')
-  const eventType = ref<'PageView' | 'Purchase'>('PageView')
+  const dashboardStore = useDashboardStore()
+  const { isDark } = useTheme()
+
+  const viewMode = computed<'3d' | '2d'>({
+    get: () => dashboardStore.globeViewMode,
+    set: (v) => { dashboardStore.globeViewMode = v },
+  })
+  const eventType = computed<'PageView' | 'Purchase'>({
+    get: () => dashboardStore.globeEventType,
+    set: (v) => { dashboardStore.globeEventType = v },
+  })
   const isAutoRotating = ref(true)
   const activeFocus = ref<string>('all')
 
@@ -18,25 +30,20 @@ export const useGeoGlobeRenderer = (getStats: () => GeoStat[]) => {
   let worldGeoJson: unknown = null
   let animationFrameId: number | null = null
   let resizeObserver: ResizeObserver | null = null
-  let rotY = -0.9
-  let rotX = -0.2
-  let targetRotY: number | null = null
-  let targetRotX: number | null = null
-  let globeRadius = 140
-  let isDragging = false
-  let lastPointerX = 0
-  let lastPointerY = 0
-  let dragVelocityX = 0
-  let dragVelocityY = 0
+  let rotY = -0.9, rotX = -0.2
+  let targetRotY: number | null = null, targetRotX: number | null = null
+  let globeRadius = 140, isDragging = false
+  let lastPointerX = 0, lastPointerY = 0, dragVelocityX = 0, dragVelocityY = 0
 
   const activeStats = computed(() =>
-    (getStats() || []).filter(s => (s.event_name || 'PageView') === eventType.value)
+    (getStats() || []).filter((s) => (s.event_name || 'PageView') === eventType.value),
   )
 
   const processedMarkers = computed<ProcessedGeoMarker[]>(() => {
     const map = new Map<string, ProcessedGeoMarker>()
     for (const s of activeStats.value) {
-      const count = s.count || 1
+      const count = s.count ?? 0
+      if (count <= 0 || (!s.country && !s.state && !s.city)) continue
       const res = resolveCoordinates(s)
       const key = `${res.lat.toFixed(2)}_${res.lon.toFixed(2)}`
       const existing = map.get(key)
@@ -49,10 +56,12 @@ export const useGeoGlobeRenderer = (getStats: () => GeoStat[]) => {
   const topCountries = computed(() => {
     const counts: Record<string, { count: number; name: string; flag: string }> = {}
     for (const s of activeStats.value) {
-      const code = (s.country || 'BR').toUpperCase()
+      const code = (s.country || '').trim().toUpperCase()
+      const count = s.count ?? 0
+      if (!code || count <= 0) continue
       const meta = countryInfo[code] || { name: code, flag: '🌐' }
       if (!counts[code]) counts[code] = { count: 0, name: meta.name, flag: meta.flag }
-      counts[code].count += (s.count || 1)
+      counts[code].count += count
     }
     return Object.entries(counts).map(([code, data]) => ({ code, ...data })).sort((a, b) => b.count - a.count).slice(0, 6)
   })
@@ -67,25 +76,42 @@ export const useGeoGlobeRenderer = (getStats: () => GeoStat[]) => {
     })
   }
 
+  function stopLoop() {
+    if (animationFrameId !== null) { cancelAnimationFrame(animationFrameId); animationFrameId = null }
+  }
+
   function animate() {
-    if (viewMode.value === '3d') {
-      if (targetRotY !== null && targetRotX !== null) {
-        rotY += (targetRotY - rotY) * 0.08
-        rotX += (targetRotX - rotX) * 0.08
-        if (Math.abs(targetRotY - rotY) < 0.005 && Math.abs(targetRotX - rotX) < 0.005) {
-          rotY = targetRotY; rotX = targetRotX; targetRotY = null; targetRotX = null
-        }
-      } else if (isAutoRotating.value && !isDragging) {
-        rotY += 0.0035
-      }
-      if (!isDragging && (Math.abs(dragVelocityX) > 0.0001 || Math.abs(dragVelocityY) > 0.0001)) {
-        rotY += dragVelocityX
-        rotX = Math.max(-1.1, Math.min(1.1, rotX + dragVelocityY))
-        dragVelocityX *= 0.92; dragVelocityY *= 0.92
-      }
-      render3DGlobe()
+    if (viewMode.value !== '3d' || (typeof document !== 'undefined' && document.hidden)) {
+      animationFrameId = null
+      return
     }
+    if (targetRotY !== null && targetRotX !== null) {
+      rotY += (targetRotY - rotY) * 0.08
+      rotX += (targetRotX - rotX) * 0.08
+      if (Math.abs(targetRotY - rotY) < 0.005 && Math.abs(targetRotX - rotX) < 0.005) {
+        rotY = targetRotY; rotX = targetRotX; targetRotY = null; targetRotX = null
+      }
+    } else if (isAutoRotating.value && !isDragging) {
+      rotY += 0.0035
+    }
+    if (!isDragging && (Math.abs(dragVelocityX) > 0.0001 || Math.abs(dragVelocityY) > 0.0001)) {
+      rotY += dragVelocityX
+      rotX = Math.max(-1.1, Math.min(1.1, rotX + dragVelocityY))
+      dragVelocityX *= 0.92; dragVelocityY *= 0.92
+    }
+    render3DGlobe()
     animationFrameId = requestAnimationFrame(animate)
+  }
+
+  function startLoop() {
+    if (animationFrameId === null && viewMode.value === '3d' && (typeof document === 'undefined' || !document.hidden)) {
+      animationFrameId = requestAnimationFrame(animate)
+    }
+  }
+
+  function onVisibilityChange() {
+    if (typeof document !== 'undefined' && document.hidden) stopLoop()
+    else startLoop()
   }
 
   function onPointerDown(e: PointerEvent) {
@@ -98,9 +124,7 @@ export const useGeoGlobeRenderer = (getStats: () => GeoStat[]) => {
     const canvas = canvasRef.value
     if (!canvas) return
     if (isDragging) {
-      const dx = e.clientX - lastPointerX
-      const dy = e.clientY - lastPointerY
-      const sensitivity = 0.006
+      const dx = e.clientX - lastPointerX, dy = e.clientY - lastPointerY, sensitivity = 0.006
       rotY += dx * sensitivity
       rotX = Math.max(-1.1, Math.min(1.1, rotX - dy * sensitivity))
       dragVelocityX = dx * sensitivity; dragVelocityY = -dy * sensitivity
@@ -165,37 +189,39 @@ export const useGeoGlobeRenderer = (getStats: () => GeoStat[]) => {
     if (mapLoaded) chartOption.value = build2DChartOption(processedMarkers.value, eventType.value)
   }
 
-  watch(getStats, () => { if (viewMode.value === '2d') update2DChart() }, { deep: true })
-  watch(eventType, () => { if (viewMode.value === '2d') update2DChart() })
-  watch(viewMode, (v) => { setTimeout(v === '2d' ? update2DChart : resizeCanvas, 50) })
+  watch([getStats, eventType, isDark], () => { if (viewMode.value === '2d') update2DChart() }, { deep: true })
+  watch(viewMode, (v) => {
+    if (v === '2d') { stopLoop(); setTimeout(update2DChart, 50) }
+    else { setTimeout(() => { resizeCanvas(); startLoop() }, 50) }
+  })
 
   watch(topCountries, (countries) => {
     const first = countries[0]
     if (first && first.code === 'JP' && activeFocus.value === 'all') {
-      const jpRegion = regionFocusList.find(r => r.id === 'jp') || regionFocusList[0]
+      const jpRegion = regionFocusList.find((r) => r.id === 'jp') || regionFocusList[0]
       if (jpRegion) focusRegion(jpRegion)
     }
   }, { immediate: true })
 
   onMounted(async () => {
     try {
-      const resWorld = await fetch('/world-land.json')
-      worldGeoJson = await resWorld.json()
-      echarts.registerMap('world', worldGeoJson as Parameters<typeof echarts.registerMap>[1])
-      mapLoaded = true
-      update2DChart()
+      worldGeoJson = await loadWorldGeoJson()
+      if (!worldMapRegistered) {
+        echarts.registerMap('world', worldGeoJson as Parameters<typeof echarts.registerMap>[1])
+        worldMapRegistered = true
+      }
+      mapLoaded = true; update2DChart()
     } catch (e) { console.error('Falha ao carregar mapa mundial', e) }
     resizeCanvas()
-    if (containerRef.value) {
-      resizeObserver = new ResizeObserver(resizeCanvas)
-      resizeObserver.observe(containerRef.value)
-    }
-    animate()
+    if (containerRef.value) { resizeObserver = new ResizeObserver(resizeCanvas); resizeObserver.observe(containerRef.value) }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    startLoop()
   })
 
   onUnmounted(() => {
-    if (animationFrameId) cancelAnimationFrame(animationFrameId)
-    if (resizeObserver) resizeObserver.disconnect()
+    stopLoop()
+    resizeObserver?.disconnect()
+    document.removeEventListener('visibilitychange', onVisibilityChange)
   })
 
   return {

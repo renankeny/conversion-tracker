@@ -86,6 +86,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
   const selectedPixel = ref('')
   const trafficSource = ref<DashboardTrafficSource>('all')
   const privacyMode = ref(false)
+  const heatmapMode = ref<'messages' | 'leads' | 'sales'>('leads')
+  const globeViewMode = ref<'3d' | '2d'>('3d')
+  const globeEventType = ref<'PageView' | 'Purchase'>('PageView')
   const hydrated = ref(false)
 
   function hydrate(init: {
@@ -93,11 +96,17 @@ export const useDashboardStore = defineStore('dashboard', () => {
     customFrom?: string | null
     customTo?: string | null
     selectedPixel?: string | null
+    trafficSource?: DashboardTrafficSource | string | null
+    privacyMode?: boolean | null
   }): void {
     if (init.period) period.value = init.period
     if (typeof init.customFrom === 'string') customFrom.value = init.customFrom
     if (typeof init.customTo === 'string') customTo.value = init.customTo
     if (typeof init.selectedPixel === 'string') selectedPixel.value = init.selectedPixel
+    if (init.trafficSource === 'all' || init.trafficSource === 'meta' || init.trafficSource === 'google') {
+      trafficSource.value = init.trafficSource
+    }
+    if (typeof init.privacyMode === 'boolean') privacyMode.value = init.privacyMode
     hydrated.value = true
   }
 
@@ -111,6 +120,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     watch(customFrom, (v) => setBrowserCookie('tf_dashboard_custom_from', v || null, COOKIE_MAX_AGE))
     watch(customTo, (v) => setBrowserCookie('tf_dashboard_custom_to', v || null, COOKIE_MAX_AGE))
     watch(selectedPixel, (v) => setBrowserCookie('tf_dashboard_selected_pixel', v || null, COOKIE_MAX_AGE))
+    watch(trafficSource, (v) => setBrowserCookie('tf_dashboard_source', v, COOKIE_MAX_AGE))
   }
 
   function getDateRange(): { from: string; to: string } {
@@ -142,6 +152,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
     selectedPixel,
     trafficSource,
     privacyMode,
+    heatmapMode,
+    globeViewMode,
+    globeEventType,
     togglePrivacyMode,
     hydrated,
     hydrate,

@@ -60,6 +60,7 @@ export interface WhatsAppInstance {
   custom_event_trigger: string
   auto_create_crm_lead: boolean
   default_crm_stage_id?: number | null
+  ctwa_min_inbound_messages?: number
   enabled: boolean
   created_at: string
   updated_at: string
@@ -78,6 +79,7 @@ export interface WhatsAppInstanceInput {
   custom_event_trigger?: string
   auto_create_crm_lead?: boolean
   default_crm_stage_id?: number | null
+  ctwa_min_inbound_messages?: number
   enabled?: boolean
 }
 
@@ -108,6 +110,7 @@ export interface WhatsAppChat {
   source?: string
   metadata?: Record<string, unknown>
   unread_count: number
+  ai_qualified?: boolean
   last_message_time: string
   created_at: string
   updated_at: string
@@ -133,9 +136,69 @@ export interface WhatsAppMessage {
   created_at: string
 }
 
+export interface AILearnedRule {
+  id: string
+  event_type: 'qualified' | 'purchase' | string
+  rule: string
+  author_email?: string
+  created_at: string
+}
+
+export interface AccountAISettings {
+  account_id: number
+  enabled: boolean
+  has_openai_key: boolean
+  model: string
+  qualified_stage_id?: number | null
+  sale_stage_id?: number | null
+  base_prompt: string
+  default_prompt?: string
+  learned_rules: AILearnedRule[]
+  last_run_at?: string | null
+  updated_at: string
+}
+
+export interface AccountAISettingsInput {
+  enabled: boolean
+  model?: string
+  qualified_stage_id?: number | null
+  sale_stage_id?: number | null
+  base_prompt: string
+  learned_rules?: AILearnedRule[]
+}
+
+export interface WhatsAppAIEvent {
+  id: number
+  account_id: number
+  chat_id: number
+  crm_lead_id?: number | null
+  tracked_user_id?: number | null
+  event_type: 'qualified' | 'purchase' | string
+  evidence_message_id?: number | null
+  amount: number
+  currency: string
+  ai_reason: string
+  crm_prev_stage_id?: number | null
+  crm_new_stage_id?: number | null
+  crm_prev_value: number
+  dispatched_event_id?: string
+  deduplicated: boolean
+  status: 'active' | 'contested' | string
+  contest_reason?: string
+  contested_at?: string | null
+  created_at: string
+}
+
+export interface WhatsAppAIRunSummary {
+  analyzed_chats: number
+  qualifications: number
+  sales: number
+}
+
 export interface WhatsAppChatWithMessages {
   chat: WhatsAppChat | null
   messages: WhatsAppMessage[]
+  ai_events?: WhatsAppAIEvent[]
   has_more?: boolean
   next_before_id?: number | null
 }

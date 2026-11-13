@@ -14,10 +14,14 @@ import (
 
 type AdminOpenAI struct {
 	users *repo.AdminUserRepo
+	ai    *repo.WhatsAppAIRepo
 }
 
 func NewAdminOpenAI(pool *pgxpool.Pool) *AdminOpenAI {
-	return &AdminOpenAI{users: repo.NewAdminUserRepo(pool)}
+	return &AdminOpenAI{
+		users: repo.NewAdminUserRepo(pool),
+		ai:    repo.NewWhatsAppAIRepo(pool),
+	}
 }
 
 type GenerateMappingInput struct {
@@ -38,6 +42,10 @@ func (h *AdminOpenAI) GenerateMapping(w http.ResponseWriter, r *http.Request) {
 	}
 
 	apiKey := loadDecryptedOpenAIKey(r.Context(), h.users, claims.UserID)
+	if apiKey == "" && h.ai != nil {
+		accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
+		apiKey = h.ai.ResolveOpenAIKey(r.Context(), accID, claims.UserID)
+	}
 	if apiKey == "" {
 		writeError(w, http.StatusBadRequest, "Chave da OpenAI não configurada. Vá em Configurações > Meu Perfil para configurar.")
 		return

@@ -1,4 +1,4 @@
-import type { FetchOptions } from 'ofetch'
+import type { $Fetch, FetchOptions } from 'ofetch'
 
 type ApiRequestOptions = FetchOptions<'json'>
 
@@ -7,15 +7,15 @@ export const useAPI = () => {
   const config = useRuntimeConfig()
   const apiBase = config.public.apiUrl as string
 
-  const client = nuxtApp.$api
-  const publicClient = nuxtApp.$publicApi
+  const client = nuxtApp.$api as $Fetch
+  const publicClient = nuxtApp.$publicApi as $Fetch
 
   const request = async <T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> => {
-    return client<T>(endpoint, options)
+    return client<T, 'json'>(endpoint, options)
   }
 
   const publicRequest = async <T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> => {
-    return publicClient<T>(endpoint, options)
+    return publicClient<T, 'json'>(endpoint, options)
   }
 
   return {

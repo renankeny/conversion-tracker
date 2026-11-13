@@ -59,6 +59,13 @@
       </div>
 
       <div class="crm-box">
+        <BaseDropdown
+          :model-value="form.ctwa_min_inbound_messages"
+          label="Disparo de LeadSubmitted (Anúncios CTWA)"
+          :options="ctwaLeadModeOptions"
+          hint="Na opção de 3 mensagens, o anúncio já é identificado na 1ª mensagem, mas o LeadSubmitted só vai para a Meta quando o lead responder e der continuidade."
+          @update:model-value="form.ctwa_min_inbound_messages = Number($event) === 3 ? 3 : 1"
+        />
         <BaseCheckbox
           v-model="form.auto_create_crm_lead"
           label="Criar card automaticamente no CRM quando entrar novo lead rastreado"
@@ -72,20 +79,12 @@
         />
       </div>
 
-      <div class="triggers-box">
-        <p class="box-title">Gatilhos automáticos por mensagem na conversa</p>
-        <p class="box-hint">
-          Separe múltiplos termos por vírgula. Qualquer valor na mensagem (ex: <code>R$ 1.500,00</code>, <code>350 reais</code>, <code>valor 347</code>, <code>1,5 mil</code>, <code>3x de 150</code>) é extraído automaticamente e enviado junto com a conversão.
-        </p>
-        <div class="grid-2">
-          <BaseInput v-model="form.lead_trigger" label="Gatilho de Lead Qualificado" placeholder="Ex: proposta enviada, orçamento" />
-          <BaseInput v-model="form.purchase_trigger" label="Gatilho de Venda (Purchase)" placeholder="Ex: pagamento confirmado, pix recebido" />
-        </div>
-        <div class="grid-2">
-          <BaseInput v-model="form.custom_event_name" label="Evento Personalizado (opcional)" placeholder="Ex: Schedule" />
-          <BaseInput v-model="form.custom_event_trigger" label="Gatilho do Evento Personalizado" placeholder="Ex: reunião agendada, horário marcado" />
-        </div>
-      </div>
+      <WhatsAppInstanceTriggersBox
+        v-model:lead-trigger="form.lead_trigger"
+        v-model:purchase-trigger="form.purchase_trigger"
+        v-model:custom-event-name="form.custom_event_name"
+        v-model:custom-event-trigger="form.custom_event_trigger"
+      />
 
       <BaseCheckbox
         v-if="editing"
@@ -106,6 +105,7 @@
 <script setup lang="ts">
 import type { Pixel, WhatsAppInstance, WhatsAppInstanceInput, WhatsAppProvider } from '#shared/types'
 import { META_CURRENCY_OPTIONS } from '~/utils/metaCurrencies'
+import WhatsAppInstanceTriggersBox from '~/components/whatsapp/WhatsAppInstanceTriggersBox.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -130,6 +130,7 @@ const form = reactive({
   provider: 'evolution_go' as WhatsAppProvider,
   pixel_id: 0 as number,
   currency: 'BRL',
+  ctwa_min_inbound_messages: 1 as number,
   auto_create_crm_lead: true,
   default_crm_stage_id: 0 as number,
   lead_trigger: '',
@@ -143,6 +144,11 @@ const providerOptions = [
   { value: 'evolution_go', label: 'Conexão Direta — QR Code' },
   { value: 'api_premium', label: 'API Premium (Webhook)' },
   { value: 'uazapi', label: 'Uazapi (Webhook)' },
+]
+
+const ctwaLeadModeOptions = [
+  { value: 1, label: 'Na 1ª mensagem recebida do lead (Imediato)' },
+  { value: 3, label: 'Após 3 mensagens recebidas do lead (Engajamento)' },
 ]
 
 const isExternalProvider = computed(() => form.provider === 'api_premium' || form.provider === 'uazapi')
@@ -176,6 +182,7 @@ watch(
       form.provider = inst.provider || 'evolution_go'
       form.pixel_id = inst.pixel_id
       form.currency = inst.currency || 'BRL'
+      form.ctwa_min_inbound_messages = inst.ctwa_min_inbound_messages === 3 ? 3 : 1
       form.auto_create_crm_lead = inst.auto_create_crm_lead
       form.default_crm_stage_id = inst.default_crm_stage_id || 0
       form.lead_trigger = inst.lead_trigger || ''
@@ -188,6 +195,7 @@ watch(
       form.provider = props.hasEvolutionServer === false ? 'api_premium' : 'evolution_go'
       form.pixel_id = props.pixels[0]?.id || 0
       form.currency = 'BRL'
+      form.ctwa_min_inbound_messages = 1
       form.auto_create_crm_lead = true
       form.default_crm_stage_id = 0
       form.lead_trigger = ''
@@ -209,6 +217,7 @@ const onSubmit = () => {
     provider: form.provider,
     pixel_id: Number(form.pixel_id),
     currency: form.currency || 'BRL',
+    ctwa_min_inbound_messages: Number(form.ctwa_min_inbound_messages) === 3 ? 3 : 1,
     auto_create_crm_lead: form.auto_create_crm_lead,
     default_crm_stage_id: form.default_crm_stage_id > 0 ? Number(form.default_crm_stage_id) : null,
     lead_trigger: form.lead_trigger.trim(),
@@ -222,7 +231,7 @@ const onSubmit = () => {
 
 <style scoped>
 .inst-form { display: flex; flex-direction: column; gap: 1rem; }
-.crm-box, .triggers-box, .provider-box { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.875rem; background: var(--surface-deep); border: 1px solid var(--border-soft); border-radius: 10px; }
+.crm-box, .provider-box { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.875rem; background: var(--surface-deep); border: 1px solid var(--border-soft); border-radius: 10px; }
 .box-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
 .box-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-1); margin: 0; }
 .filter-pill { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--success); background: var(--surface-soft); border: 1px solid var(--border-soft); padding: 0.2rem 0.55rem; border-radius: 999px; }
@@ -231,7 +240,6 @@ const onSubmit = () => {
 .wh-url-label { font-size: var(--fs-2xs); color: var(--text-3); font-weight: var(--fw-medium); }
 .wh-url-val { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--brand); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .box-hint { font-size: var(--fs-sm); color: var(--text-3); margin: -0.2rem 0 0; line-height: 1.45; }
-.box-hint code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); background: var(--surface-2); padding: 0.1rem 0.3rem; border-radius: 4px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
 </style>

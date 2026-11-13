@@ -21,11 +21,8 @@ type ListFilter struct {
 	To          time.Time // created_at < To (zero = sem filtro)
 	Limit       int       // default 50, max 500
 	Offset      int
-	// IncludeLTV preenche GroupedEvent.LTV (só usado por ListGrouped). Fica
-	// opt-in porque exige uma query extra — a página de Eventos não precisa.
-	IncludeLTV bool
-	// IncludeUserContext preenche GroupedEvent.FirstUTMSource/LastUTMSource
-	// (usado pela página de Eventos). Fica opt-in porque exige uma query extra.
+	IncludeLTV         bool
+	IncludeBuyer       bool
 	IncludeUserContext bool
 	TrafficSource      string
 }
@@ -69,6 +66,8 @@ func (r *SentEventRepo) ListGrouped(ctx context.Context, f ListFilter) ([]Groupe
 	}
 	if f.Status != "" {
 		add("status = $N", f.Status)
+	} else {
+		conds = append(conds, "status <> 'contested'")
 	}
 	if !f.From.IsZero() {
 		add("created_at >= $N", f.From)
@@ -130,11 +129,13 @@ func (r *SentEventRepo) ListGrouped(ctx context.Context, f ListFilter) ([]Groupe
 		pixelNames[i] = k.pixelName
 	}
 	detailQ := `SELECT id, event_id, event_name, pixel_name, external_id, channel, status,
-		response_code, error, purchase_value, created_at, COALESCE(aggregated_count, 1), COALESCE(aggregated_items::text, '')
+		response_code, error, purchase_value, created_at, COALESCE(aggregated_count, 1), COALESCE(aggregated_items::text, ''),
+		COALESCE(input_json->>'first_name', ''), COALESCE(input_json->>'last_name', ''), COALESCE(input_json->>'phone', '')
 		FROM sent_events
 		WHERE event_id = ANY($1::text[]) AND pixel_name = ANY($2::text[])
+		  AND ($3::bigint = 0 OR account_id = $3) AND ($4::text <> '' OR status <> 'contested')
 		ORDER BY id DESC`
-	drows, err := r.pool.Query(ctx, detailQ, eventIDs, pixelNames)
+	drows, err := r.pool.Query(ctx, detailQ, eventIDs, pixelNames, f.AccountID, f.Status)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -165,9 +166,13 @@ func (r *SentEventRepo) ListGrouped(ctx context.Context, f ListFilter) ([]Groupe
 			createdAt     time.Time
 			aggCount      int
 			aggItemsJSON  string
+			buyerFirst    string
+			buyerLast     string
+			buyerPhone    string
 		)
 		if err := drows.Scan(&id, &eventID, &eventName, &pixelName, &externalID,
-			&channel, &status, &responseCode, &errMsg, &purchaseValue, &createdAt, &aggCount, &aggItemsJSON); err != nil {
+			&channel, &status, &responseCode, &errMsg, &purchaseValue, &createdAt,
+			&aggCount, &aggItemsJSON, &buyerFirst, &buyerLast, &buyerPhone); err != nil {
 			return nil, 0, err
 		}
 		idx, ok := keysSet[key{eventID, pixelName}]
@@ -178,6 +183,17 @@ func (r *SentEventRepo) ListGrouped(ctx context.Context, f ListFilter) ([]Groupe
 			out[idx].EventName = eventName
 			out[idx].ExternalID = externalID
 			out[idx].CreatedAt = createdAt
+		}
+		if f.IncludeBuyer {
+			if out[idx].BuyerFirstName == "" && buyerFirst != "" {
+				out[idx].BuyerFirstName = strings.TrimSpace(buyerFirst)
+			}
+			if out[idx].BuyerLastName == "" && buyerLast != "" {
+				out[idx].BuyerLastName = strings.TrimSpace(buyerLast)
+			}
+			if out[idx].BuyerPhone == "" && buyerPhone != "" {
+				out[idx].BuyerPhone = strings.TrimSpace(buyerPhone)
+			}
 		}
 		if purchaseValue > out[idx].PurchaseValue {
 			out[idx].PurchaseValue = purchaseValue
@@ -214,6 +230,11 @@ func (r *SentEventRepo) ListGrouped(ctx context.Context, f ListFilter) ([]Groupe
 
 	if f.IncludeLTV {
 		if err := r.populateLTV(ctx, f.AccountID, out); err != nil {
+			return nil, 0, err
+		}
+	}
+	if f.IncludeBuyer {
+		if err := r.populateBuyerInfo(ctx, f.AccountID, out); err != nil {
 			return nil, 0, err
 		}
 	}

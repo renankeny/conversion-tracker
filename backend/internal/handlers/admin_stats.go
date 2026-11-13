@@ -1,130 +1,92 @@
 package handlers
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
 // AdminStats expõe o GET /admin/stats pra dashboard do painel.
 type AdminStats struct {
-	repo *repo.StatsRepo
+	repo   *repo.StatsRepo
+	qcache *cache.QueryCache
 }
 
 func NewAdminStats(r *repo.StatsRepo) *AdminStats {
 	return &AdminStats{repo: r}
 }
 
-// Overview GET /admin/stats?from=&to=&pixel=
-//
-// `from`/`to` em RFC3339. Se omitidos, default são "últimos 30 dias".
-// `pixel` filtra por pixel_name exato.
-func (h *AdminStats) Overview(w http.ResponseWriter, r *http.Request) {
+func (h *AdminStats) SetQueryCache(qc *cache.QueryCache) {
+	h.qcache = qc
+}
+
+func parseStatsFilter(r *http.Request) (repo.StatsFilter, error) {
 	q := r.URL.Query()
+	now := time.Now()
 	f := repo.StatsFilter{
 		PixelName:     q.Get("pixel"),
 		TrafficSource: q.Get("traffic_source"),
+		AccountID:     TenantFromContext(r.Context()).AccountID,
+		From:          now.AddDate(0, 0, -30),
+		To:            now,
 	}
-
-	scope := TenantFromContext(r.Context())
-	f.AccountID = scope.AccountID
-
 	if v := q.Get("from"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'from' (RFC3339)")
-			return
+			return f, errors.New("invalid 'from' (RFC3339)")
 		}
 		f.From = t
-	} else {
-		f.From = time.Now().AddDate(0, 0, -30)
 	}
 	if v := q.Get("to"); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'to' (RFC3339)")
-			return
+			return f, errors.New("invalid 'to' (RFC3339)")
 		}
 		f.To = t
 	}
+	return f, nil
+}
 
-	overview, err := h.repo.Overview(r.Context(), f)
+// Overview GET /admin/stats?from=&to=&pixel=
+func (h *AdminStats) Overview(w http.ResponseWriter, r *http.Request) {
+	f, err := parseStatsFilter(r)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "stats error: "+err.Error())
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, overview)
+	ttl := dashboardCacheTTL(f.To, 30*time.Second, 5*time.Minute)
+	writeDashboardCachedJSON(w, r, h.qcache, f.AccountID, "stats_overview", ttl, "stats error", func(ctx context.Context) (any, error) {
+		return h.repo.Overview(ctx, f)
+	})
 }
 
 // Geo GET /admin/stats/geo?from=&to=&pixel=
 func (h *AdminStats) Geo(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	f := repo.StatsFilter{PixelName: q.Get("pixel"), TrafficSource: q.Get("traffic_source")}
-
-	scope := TenantFromContext(r.Context())
-	f.AccountID = scope.AccountID
-
-	if v := q.Get("from"); v != "" {
-		t, err := time.Parse(time.RFC3339, v)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'from' (RFC3339)")
-			return
-		}
-		f.From = t
-	} else {
-		f.From = time.Now().AddDate(0, 0, -30)
-	}
-	if v := q.Get("to"); v != "" {
-		t, err := time.Parse(time.RFC3339, v)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'to' (RFC3339)")
-			return
-		}
-		f.To = t
-	}
-
-	geo, err := h.repo.GeoDistribution(r.Context(), f)
+	f, err := parseStatsFilter(r)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "geo stats error: "+err.Error())
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, geo)
+	ttl := dashboardCacheTTL(f.To, 60*time.Second, 10*time.Minute)
+	writeDashboardCachedJSON(w, r, h.qcache, f.AccountID, "stats_geo", ttl, "geo stats error", func(ctx context.Context) (any, error) {
+		return h.repo.GeoDistribution(ctx, f)
+	})
 }
 
 // GeoByEvent GET /admin/stats/geo-by-event?from=&to=&pixel=&event=
 func (h *AdminStats) GeoByEvent(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	f := repo.StatsFilter{PixelName: q.Get("pixel"), TrafficSource: q.Get("traffic_source")}
-	eventName := q.Get("event") // PageView, Purchase, etc
-
-	scope := TenantFromContext(r.Context())
-	f.AccountID = scope.AccountID
-
-	if v := q.Get("from"); v != "" {
-		t, err := time.Parse(time.RFC3339, v)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'from' (RFC3339)")
-			return
-		}
-		f.From = t
-	} else {
-		f.From = time.Now().AddDate(0, 0, -30)
-	}
-	if v := q.Get("to"); v != "" {
-		t, err := time.Parse(time.RFC3339, v)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'to' (RFC3339)")
-			return
-		}
-		f.To = t
-	}
-
-	geo, err := h.repo.GeoDistributionByEvent(r.Context(), f, eventName)
+	f, err := parseStatsFilter(r)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "geo by event stats error: "+err.Error())
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, geo)
+	eventName := r.URL.Query().Get("event")
+	ttl := dashboardCacheTTL(f.To, 60*time.Second, 10*time.Minute)
+	writeDashboardCachedJSON(w, r, h.qcache, f.AccountID, "stats_geo_event", ttl, "geo by event stats error", func(ctx context.Context) (any, error) {
+		return h.repo.GeoDistributionByEvent(ctx, f, eventName)
+	})
 }
-

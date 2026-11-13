@@ -21,23 +21,32 @@ export function formatDateSP(
   })
 }
 
+function resolveDateTimeExtra(
+  arg: boolean | Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormatOptions {
+  if (typeof arg === 'boolean') {
+    return arg ? { second: '2-digit' } : {}
+  }
+  return arg
+}
+
 export function formatTimeSP(
   input?: string | number | Date | null,
-  withSeconds = false,
+  withSecondsOrOptions: boolean | Intl.DateTimeFormatOptions = false,
 ): string {
   const d = toValidDate(input)
   if (!d) return ''
   return d.toLocaleTimeString('pt-BR', {
     hour: '2-digit',
     minute: '2-digit',
-    ...(withSeconds ? { second: '2-digit' } : {}),
+    ...resolveDateTimeExtra(withSecondsOrOptions),
     timeZone: SP_TIMEZONE,
   })
 }
 
 export function formatDateTimeSP(
   input?: string | number | Date | null,
-  withSeconds = false,
+  withSecondsOrOptions: boolean | Intl.DateTimeFormatOptions = false,
 ): string {
   const d = toValidDate(input)
   if (!d) return ''
@@ -47,14 +56,14 @@ export function formatDateTimeSP(
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    ...(withSeconds ? { second: '2-digit' } : {}),
+    ...resolveDateTimeExtra(withSecondsOrOptions),
     timeZone: SP_TIMEZONE,
   })
 }
 
 export function formatShortDateTimeSP(
   input?: string | number | Date | null,
-  withSeconds = false,
+  withSecondsOrOptions: boolean | Intl.DateTimeFormatOptions = false,
 ): string {
   const d = toValidDate(input)
   if (!d) return ''
@@ -63,7 +72,7 @@ export function formatShortDateTimeSP(
     month: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    ...(withSeconds ? { second: '2-digit' } : {}),
+    ...resolveDateTimeExtra(withSecondsOrOptions),
     timeZone: SP_TIMEZONE,
   })
 }

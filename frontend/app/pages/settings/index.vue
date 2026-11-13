@@ -22,6 +22,7 @@
     </div>
 
     <SettingsProfileTab v-if="activeTab === 'account'" />
+    <SettingsWhatsAppAiTab v-else-if="activeTab === 'whatsapp-ai'" @go-profile="activeTab = 'account'" />
     <SettingsAdminsTab v-else-if="activeTab === 'admins'" />
     <SettingsApiKeysTab v-else-if="activeTab === 'api-keys'" />
     <SettingsRetentionTab v-else-if="activeTab === 'retention'" />
@@ -32,6 +33,7 @@
 
 <script setup lang="ts">
 import SettingsProfileTab from '~/components/settings/SettingsProfileTab.vue'
+import SettingsWhatsAppAiTab from '~/components/settings/SettingsWhatsAppAiTab.vue'
 import SettingsAdminsTab from '~/components/settings/SettingsAdminsTab.vue'
 import SettingsApiKeysTab from '~/components/settings/SettingsApiKeysTab.vue'
 import SettingsRetentionTab from '~/components/settings/SettingsRetentionTab.vue'
@@ -53,7 +55,7 @@ const isAdmin = computed(() => user.value?.role === 'admin' || user.value?.role 
 const isEmployee = computed(() => user.value?.role === 'employee')
 const canManageBranding = computed(() => isOwner.value || isAdmin.value)
 
-type TabValue = 'account' | 'admins' | 'api-keys' | 'retention' | 'branding' | 'geoip'
+type TabValue = 'account' | 'whatsapp-ai' | 'admins' | 'api-keys' | 'retention' | 'branding' | 'geoip'
 
 const tabs = computed(() => {
   const allTabs: { value: TabValue; label: string }[] = [
@@ -62,7 +64,7 @@ const tabs = computed(() => {
   ]
 
   if (!isEmployee.value) {
-    allTabs.splice(1, 0, { value: 'admins', label: 'Usuários' })
+    allTabs.splice(1, 0, { value: 'whatsapp-ai', label: 'IA WhatsApp' }, { value: 'admins', label: 'Usuários' })
   }
 
   if (canManageAccounts.value) {

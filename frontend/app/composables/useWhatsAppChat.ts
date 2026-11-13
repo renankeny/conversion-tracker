@@ -1,11 +1,12 @@
-import type { WhatsAppChat, WhatsAppMessage } from '#shared/types'
+import type { WhatsAppAIEvent, WhatsAppChat, WhatsAppMessage } from '#shared/types'
 import { dateKeySP } from '~/utils/formatDate'
 
 export interface ChatFeedItem {
   key: string
-  type: 'date' | 'message'
+  type: 'date' | 'message' | 'ai'
   date?: string
   message?: WhatsAppMessage
+  aiEvent?: WhatsAppAIEvent
 }
 
 export const useWhatsAppChat = () => {
@@ -15,6 +16,7 @@ export const useWhatsAppChat = () => {
   const loadingMore = ref(false)
   const chat = ref<WhatsAppChat | null>(null)
   const messages = ref<WhatsAppMessage[]>([])
+  const aiEvents = ref<WhatsAppAIEvent[]>([])
   const hasMore = ref(false)
   const nextBeforeId = ref<number | null>(null)
 
@@ -43,6 +45,7 @@ export const useWhatsAppChat = () => {
     if (!leadId && !userId) {
       chat.value = null
       messages.value = []
+      aiEvents.value = []
       hasMore.value = false
       nextBeforeId.value = null
       canAutoLoadOlder.value = false
@@ -59,12 +62,14 @@ export const useWhatsAppChat = () => {
       if (seq !== loadSeq) return
       chat.value = res.chat || null
       messages.value = res.messages || []
+      aiEvents.value = res.ai_events || []
       hasMore.value = Boolean(res.has_more)
       nextBeforeId.value = res.next_before_id ?? null
     } catch {
       if (seq !== loadSeq) return
       chat.value = null
       messages.value = []
+      aiEvents.value = []
       hasMore.value = false
       nextBeforeId.value = null
     } finally {
@@ -103,6 +108,7 @@ export const useWhatsAppChat = () => {
       const fresh = older.filter((m) => !existingIds.has(m.id))
 
       messages.value = [...fresh, ...messages.value]
+      if (res.ai_events) aiEvents.value = res.ai_events
       hasMore.value = Boolean(res.has_more)
       nextBeforeId.value = res.next_before_id ?? null
 
@@ -154,48 +160,60 @@ export const useWhatsAppChat = () => {
     }
   }
 
+  const upsertAIEvent = (ev: WhatsAppAIEvent) => {
+    const idx = aiEvents.value.findIndex((e) => e.id === ev.id)
+    if (idx >= 0) {
+      aiEvents.value[idx] = ev
+    } else {
+      aiEvents.value.push(ev)
+      scrollToBottom(true)
+    }
+  }
 
   const feedItems = computed<ChatFeedItem[]>(() => {
     const items: ChatFeedItem[] = []
     let lastDateStr = ''
+    const byMsg = new Map<number, WhatsAppAIEvent[]>()
+    const placedIds = new Set<number>()
+
+    for (const ev of aiEvents.value) {
+      if (ev.evidence_message_id) {
+        const arr = byMsg.get(ev.evidence_message_id) || []
+        arr.push(ev)
+        byMsg.set(ev.evidence_message_id, arr)
+      }
+    }
 
     for (const msg of messages.value) {
       if (msg.timestamp) {
         const dateStr = dateKeySP(msg.timestamp)
         if (dateStr && dateStr !== lastDateStr) {
-          items.push({
-            key: `date-${dateStr}`,
-            type: 'date',
-            date: msg.timestamp,
-          })
+          items.push({ key: `date-${dateStr}`, type: 'date', date: msg.timestamp })
           lastDateStr = dateStr
         }
       }
-      items.push({
-        key: `msg-${msg.id}`,
-        type: 'message',
-        message: msg,
-      })
+      items.push({ key: `msg-${msg.id}`, type: 'message', message: msg })
+      const attached = byMsg.get(msg.id)
+      if (attached) {
+        for (const ev of attached) {
+          placedIds.add(ev.id)
+          items.push({ key: `ai-${ev.id}`, type: 'ai', aiEvent: ev })
+        }
+      }
+    }
+
+    for (const ev of aiEvents.value) {
+      if (!placedIds.has(ev.id)) {
+        items.push({ key: `ai-${ev.id}`, type: 'ai', aiEvent: ev })
+      }
     }
     return items
   })
 
   return {
-    loading,
-    loadingMore,
-    canAutoLoadOlder,
-    chat,
-    messages,
-    hasMore,
-    scrollBox,
-    showScrollBottom,
-    unreadBelow,
-    feedItems,
-    loadInitial,
-    loadOlder,
-    scrollToBottom,
-    onScroll,
-    appendLiveMessage,
-    updateMessageMedia,
+    loading, loadingMore, canAutoLoadOlder, chat, messages, aiEvents, hasMore,
+    scrollBox, showScrollBottom, unreadBelow, feedItems,
+    loadInitial, loadOlder, scrollToBottom, onScroll,
+    appendLiveMessage, updateMessageMedia, upsertAIEvent,
   }
 }

@@ -1,6 +1,9 @@
 package repo
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // populateLTV preenche GroupedEvent.LTV com o valor total histórico de compras
 // da pessoa dona de cada external_id presente em `out`, filtrando estritamente
@@ -156,6 +159,72 @@ func (r *SentEventRepo) populateUserContext(ctx context.Context, accountID int64
 				out[i].FirstUTMSource = info.first
 				out[i].LastUTMSource = info.last
 			}
+		}
+	}
+	return nil
+}
+
+func (r *SentEventRepo) populateBuyerInfo(ctx context.Context, accountID int64, out []GroupedEvent) error {
+	extIDs := uniqueGroupedExtIDs(out)
+	if len(extIDs) == 0 {
+		return nil
+	}
+	gkeyByExtID, err := r.groupKeysFor(ctx, accountID, extIDs)
+	if err != nil {
+		return err
+	}
+	rows, err := r.pool.Query(ctx, `
+		WITH keys AS (
+			SELECT DISTINCT account_id, COALESCE(group_id, id) AS gkey
+			FROM tracked_users
+			WHERE external_id = ANY($1::text[]) AND ($2::bigint = 0 OR account_id = $2)
+		),
+		members AS (
+			SELECT t.account_id, t.first_name, t.last_name, t.phone, t.updated_at, COALESCE(t.group_id, t.id) AS gkey
+			FROM tracked_users t
+			JOIN keys k ON k.gkey = COALESCE(t.group_id, t.id) AND k.account_id = t.account_id
+		)
+		SELECT k.gkey,
+			COALESCE((SELECT m.first_name FROM members m WHERE m.gkey = k.gkey AND m.first_name <> '' ORDER BY m.updated_at DESC LIMIT 1), ''),
+			COALESCE((SELECT m.last_name FROM members m WHERE m.gkey = k.gkey AND m.last_name <> '' ORDER BY m.updated_at DESC LIMIT 1), ''),
+			COALESCE((SELECT m.phone FROM members m WHERE m.gkey = k.gkey AND m.phone <> '' ORDER BY m.updated_at DESC LIMIT 1), '')
+		FROM keys k
+	`, extIDs, accountID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type buyerInfo struct{ first, last, phone string }
+	byGKey := make(map[int64]buyerInfo, len(extIDs))
+	for rows.Next() {
+		var gkey int64
+		var b buyerInfo
+		if err := rows.Scan(&gkey, &b.first, &b.last, &b.phone); err != nil {
+			return err
+		}
+		byGKey[gkey] = b
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range out {
+		gkey, ok := gkeyByExtID[out[i].ExternalID]
+		if !ok {
+			continue
+		}
+		b, ok := byGKey[gkey]
+		if !ok {
+			continue
+		}
+		if out[i].BuyerFirstName == "" {
+			out[i].BuyerFirstName = strings.TrimSpace(b.first)
+		}
+		if out[i].BuyerLastName == "" {
+			out[i].BuyerLastName = strings.TrimSpace(b.last)
+		}
+		if out[i].BuyerPhone == "" {
+			out[i].BuyerPhone = strings.TrimSpace(b.phone)
 		}
 	}
 	return nil

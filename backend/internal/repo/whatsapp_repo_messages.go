@@ -14,7 +14,8 @@ const selectMessageColumns = `
 	m.content, m.has_media, m.media_url, m.media_mime_type,
 	COALESCE(m.media_object_key, ''), m.media_status, m.media_size_bytes,
 	m.media_duration_sec, m.media_filename, m.media_expires_at,
-	m.timestamp, m.created_at
+	COALESCE(m.ai_transcript, ''), COALESCE(m.ctwa_clid, ''), COALESCE(m.source_id, ''),
+	COALESCE(m.protocol_code, ''), m.timestamp, m.created_at
 `
 
 func scanWhatsAppMessage(scanner pgx.Row, m *domain.WhatsAppMessage) error {
@@ -23,7 +24,8 @@ func scanWhatsAppMessage(scanner pgx.Row, m *domain.WhatsAppMessage) error {
 		&m.Content, &m.HasMedia, &m.MediaUrl, &m.MediaMimeType,
 		&m.MediaObjectKey, &m.MediaStatus, &m.MediaSizeBytes,
 		&m.MediaDurationSec, &m.MediaFilename, &m.MediaExpiresAt,
-		&m.Timestamp, &m.CreatedAt,
+		&m.AITranscript, &m.CtwaClid, &m.SourceID,
+		&m.ProtocolCode, &m.Timestamp, &m.CreatedAt,
 	)
 }
 
@@ -107,16 +109,16 @@ func (r *WhatsAppRepo) CreateMessage(ctx context.Context, msg *domain.WhatsAppMe
 			chat_id, whatsapp_message_id, from_me, is_from_me, message_type,
 			content, has_media, media_url, media_mime_type,
 			media_status, media_size_bytes, media_duration_sec, media_filename, media_expires_at,
-			timestamp
+			ctwa_clid, source_id, protocol_code, timestamp
 		)
-		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
 		ON CONFLICT (chat_id, whatsapp_message_id) DO NOTHING
 		RETURNING id, created_at
 	`,
 		msg.ChatID, msg.WhatsAppMessageID, msg.IsFromMe, msg.MessageType,
 		msg.Content, msg.HasMedia, msg.MediaUrl, msg.MediaMimeType,
 		msg.MediaStatus, msg.MediaSizeBytes, msg.MediaDurationSec, msg.MediaFilename, msg.MediaExpiresAt,
-		msg.Timestamp,
+		msg.CtwaClid, msg.SourceID, msg.ProtocolCode, msg.Timestamp,
 	).Scan(&msg.ID, &msg.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
@@ -166,4 +168,23 @@ func (r *WhatsAppRepo) GetMessageForMediaStream(ctx context.Context, accountID, 
 		return nil, err
 	}
 	return &m, nil
+}
+
+func (r *WhatsAppRepo) CountInboundMessages(ctx context.Context, chatID int64) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM whatsapp_messages
+		WHERE chat_id = $1 AND is_from_me = FALSE
+	`, chatID).Scan(&count)
+	return count, err
+}
+
+func (r *WhatsAppRepo) SaveMessageAITranscript(ctx context.Context, messageID int64, transcript string) error {
+	if messageID <= 0 || transcript == "" {
+		return nil
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE whatsapp_messages SET ai_transcript = $1 WHERE id = $2
+	`, transcript, messageID)
+	return err
 }

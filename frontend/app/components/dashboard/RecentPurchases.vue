@@ -17,6 +17,8 @@
         v-for="ev in pagedPurchases"
         :key="ev.event_id"
         :event="ev"
+        :currency="currency"
+        :blurred="blurred"
         @select="$emit('select', $event)"
       />
     </div>
@@ -31,7 +33,7 @@
           <ChevronRight :size="14" />
         </button>
       </div>
-      <NuxtLink to="/events" class="see-all">Ver todos os eventos →</NuxtLink>
+      <NuxtLink v-if="!publicMode" to="/events" class="see-all">Ver todos os eventos →</NuxtLink>
     </div>
   </div>
 </template>
@@ -46,10 +48,16 @@ const PAGE_SIZE = 5
 interface Props {
   purchases: GroupedEvent[]
   subtitle?: string
+  currency?: string
+  blurred?: boolean
+  publicMode?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   subtitle: '',
+  currency: 'BRL',
+  blurred: false,
+  publicMode: false,
 })
 
 defineEmits<{ select: [event: GroupedEvent] }>()

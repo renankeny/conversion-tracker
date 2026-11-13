@@ -59,7 +59,7 @@
 import type { Component } from 'vue'
 import { TrendingDown, TrendingUp } from 'lucide-vue-next'
 import { MetaAdsIcon, GoogleAdsIcon } from '~/utils/adIcons'
-import type { CardComparisonChip, CardDeliveryAudit } from '~/utils/dashboardCardDetails'
+import { formatMoney, type CardComparisonChip, type CardDeliveryAudit } from '~/utils/dashboardCardDetails'
 
 interface Props {
   label: string
@@ -105,7 +105,7 @@ const formatted = computed(() => {
     return `${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(props.value)}x`
   }
   if (props.format === 'currency') {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: props.currency }).format(props.value)
+    return formatMoney(props.value, props.currency)
   }
   if (props.format === 'percent') {
     return new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(props.value)
@@ -129,13 +129,17 @@ const changeToneClass = computed(() => {
 .kpi-card { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 0.55rem; padding: 0.95rem 1.05rem 0.95rem 1.15rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; transition: border-color 0.18s ease, transform 0.18s ease; height: 100%; box-sizing: border-box; overflow: hidden; }
 .kpi-card:hover { border-color: var(--brand-border); transform: translateY(-1px); }
 .kpi-side-accent { position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--brand); opacity: 0.9; }
+.variant-danger .kpi-side-accent { background: var(--danger); }
+.variant-warning .kpi-side-accent { background: var(--warning); }
+.variant-danger .kpi-icon { background: var(--danger-soft); color: var(--danger); }
+.variant-warning .kpi-icon { background: var(--warning-soft); color: var(--warning); }
 
 .kpi-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .kpi-label { font-size: var(--fs-xs); color: var(--text-3); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: 0.04em; margin: 0; line-height: 1.25; }
 .kpi-header-right { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
 .kpi-change-pill { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.12rem 0.42rem; border-radius: 999px; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); font-family: var(--font-mono); white-space: nowrap; }
 .change-up { background: var(--brand-soft); color: var(--brand); }
-.change-down { background: var(--surface-deep); color: var(--text-2); border: 1px solid var(--border-soft); }
+.change-down { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-border); }
 .change-neutral { background: var(--surface-soft); color: var(--text-3); }
 
 .kpi-icon { flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; background: var(--brand-soft); color: var(--brand); }

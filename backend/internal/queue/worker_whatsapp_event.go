@@ -8,6 +8,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
@@ -78,7 +79,8 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	}
 
 	protocolCode := ExtractProtocolCode(parsed.Content)
-	hasPortal := parsed.CtwaClid != "" || parsed.SourceID != "" || protocolCode != ""
+	msgCtwaClid, msgSourceID, msgProto := resolveMessagePortalFields(parsed, existingChat, protocolCode)
+	hasPortal := msgCtwaClid != "" || msgSourceID != "" || msgProto != ""
 
 	var trackedUser *domain.TrackedUser
 	originType := ""
@@ -172,9 +174,12 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		return fmt.Errorf("upsert whatsapp chat: %w", err)
 	}
 
+	var ctwaPixel *domain.Pixel
+	var ctwaPageID string
 	if effCtwaClid != "" || effSourceID != "" {
-		if err := enrichAndDispatchCTWALead(ctx, deps, inst, trackedUser, chatID, phone, effSourceID, effCtwaClid, !parsed.IsFromMe); err != nil {
-			return err
+		ctwaPixel, ctwaPageID = enrichCTWAAdMetadata(ctx, deps, inst, trackedUser, chatID, effSourceID)
+		if ctwaPageID == "" && existingChat != nil {
+			ctwaPageID = existingChat.PageID
 		}
 	}
 
@@ -188,7 +193,8 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		MessageType: parsed.MessageType, Content: parsed.Content, HasMedia: parsed.HasMedia,
 		MediaMimeType: mimePtr, MediaStatus: mediaStatus, MediaSizeBytes: parsed.FileLength,
 		MediaDurationSec: parsed.DurationSec, MediaFilename: parsed.Filename,
-		MediaExpiresAt: expiresAt, Timestamp: parsed.Timestamp,
+		MediaExpiresAt: expiresAt, CtwaClid: msgCtwaClid, SourceID: msgSourceID,
+		ProtocolCode: msgProto, Timestamp: parsed.Timestamp,
 	}
 	inserted, err := deps.WhatsApp.CreateMessage(ctx, dbMsg)
 	if err != nil {
@@ -200,11 +206,20 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		return nil
 	}
 
+	if effCtwaClid != "" || effSourceID != "" {
+		if err := maybeDispatchCTWALeadSubmitted(ctx, deps, inst, ctwaPixel, trackedUser, chatID, phone, effSourceID, effCtwaClid, ctwaPageID, !parsed.IsFromMe); err != nil {
+			return err
+		}
+	}
+
 	if err := evaluateAttendantTriggers(ctx, deps, inst, trackedUser, chatID, phone, parsed.MessageID, parsed.Content); err != nil {
 		return fmt.Errorf("evaluate attendant triggers: %w", err)
 	}
 	if !inserted {
 		return nil
+	}
+	if existingChat == nil || hasPortal {
+		cache.BumpDashboardVersion(ctx, deps.Redis, inst.AccountID)
 	}
 	wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_message", map[string]any{
 		"chat_id": chatID, "tracked_user_id": trackedUser.ID, "crm_lead_id": crmLeadID, "message": dbMsg,

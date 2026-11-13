@@ -23,24 +23,6 @@ type WhatsAppOverview struct {
 	BySource       map[string]int64 `json:"by_source"`
 }
 
-func attributionSource(originType, ctwaClid, fbc, gclid, gbraid, wbraid, ttclid string) string {
-	if originType != "" && originType != "unknown" {
-		return originType
-	}
-	switch {
-	case ctwaClid != "":
-		return "meta_ads_ctwa"
-	case fbc != "":
-		return "meta_ads_lp"
-	case gclid != "" || gbraid != "" || wbraid != "":
-		return "google_ads"
-	case ttclid != "":
-		return "tiktok_ads"
-	default:
-		return "website_organic"
-	}
-}
-
 func buildWhatsAppStatsConds(f WhatsAppStatsFilter, timeCol string, extraConds ...string) ([]string, []any) {
 	args := []any{f.AccountID}
 	conds := append([]string{"i.account_id = $1"}, extraConds...)
@@ -84,7 +66,8 @@ func (r *WhatsAppRepo) Overview(ctx context.Context, f WhatsAppStatsFilter) (*Wh
 		args := []any{f.AccountID}
 		conds := []string{
 			"e.account_id = $1",
-			"(e.input_json->>'gateway' = 'whatsapp' OR e.payload->'data'->0->>'action_source' = 'business_messaging' OR e.payload->'data'->0->>'messaging_channel' = 'whatsapp' OR e.event_id LIKE 'ctwa:%')",
+			"e.status <> 'contested'",
+			"(e.input_json->>'gateway' = 'whatsapp' OR e.payload->'data'->0->>'action_source' = 'business_messaging' OR e.payload->'data'->0->>'messaging_channel' = 'whatsapp' OR e.event_id LIKE 'ctwa:%' OR e.event_id LIKE 'wa_trig:%' OR e.event_id LIKE 'wpp_manual_%' OR e.event_id LIKE 'ai_%')",
 		}
 		idx := 1
 		if f.PixelName != "" {
@@ -104,7 +87,7 @@ func (r *WhatsAppRepo) Overview(ctx context.Context, f WhatsAppStatsFilter) (*Wh
 		}
 		q := `
 			SELECT
-				COUNT(*) FILTER (WHERE event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead')),
+				COUNT(*) FILTER (WHERE event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead') AND has_sent),
 				COUNT(*) FILTER (WHERE event_name = 'Purchase' AND has_sent),
 				COALESCE(SUM(max_val) FILTER (WHERE event_name = 'Purchase' AND has_sent), 0)
 			FROM (
@@ -141,17 +124,13 @@ type HeatmapBucket struct {
 
 func (r *WhatsAppRepo) Heatmap(ctx context.Context, f WhatsAppStatsFilter) ([]HeatmapBucket, error) {
 	conds, args := buildWhatsAppStatsConds(f, "m.timestamp", "m.is_from_me = FALSE")
-	q := `
-		SELECT EXTRACT(DOW FROM m.timestamp)::int AS weekday,
-		       EXTRACT(HOUR FROM m.timestamp)::int AS hour,
-		       COUNT(*)
-		FROM whatsapp_messages m
-		JOIN whatsapp_chats c ON m.chat_id = c.id
-		JOIN whatsapp_instances i ON c.instance_id = i.id
-		JOIN pixels p ON i.pixel_id = p.id
-		WHERE ` + strings.Join(conds, " AND ") + `
-		GROUP BY 1, 2
-	`
+	q := `SELECT EXTRACT(DOW FROM m.timestamp AT TIME ZONE 'America/Sao_Paulo')::int,
+	             EXTRACT(HOUR FROM m.timestamp AT TIME ZONE 'America/Sao_Paulo')::int, COUNT(*)
+	      FROM whatsapp_messages m
+	      JOIN whatsapp_chats c ON m.chat_id = c.id
+	      JOIN whatsapp_instances i ON c.instance_id = i.id
+	      JOIN pixels p ON i.pixel_id = p.id
+	      WHERE ` + strings.Join(conds, " AND ") + ` GROUP BY 1, 2`
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -170,16 +149,14 @@ func (r *WhatsAppRepo) Heatmap(ctx context.Context, f WhatsAppStatsFilter) ([]He
 }
 
 func (r *WhatsAppRepo) LeadsBySource(ctx context.Context, f WhatsAppStatsFilter) (map[string]int64, error) {
-	conds, args := buildWhatsAppStatsConds(f, "m.timestamp")
+	conds, args := buildWhatsAppPortalStatsConds(f)
 	q := `
-		SELECT DISTINCT ON (m.chat_id) c.origin_type, u.ctwa_clid, u.fbc, u.gclid, u.gbraid, u.wbraid, u.ttclid
-		FROM whatsapp_messages m
-		JOIN whatsapp_chats c ON m.chat_id = c.id
+		SELECT c.origin_type, u.ctwa_clid, u.fbc, u.gclid, u.gbraid, u.wbraid, u.ttclid
+		FROM whatsapp_chats c
 		JOIN whatsapp_instances i ON c.instance_id = i.id
 		JOIN tracked_users u ON c.tracked_user_id = u.id
 		JOIN pixels p ON i.pixel_id = p.id
 		WHERE ` + strings.Join(conds, " AND ") + `
-		ORDER BY m.chat_id
 	`
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
@@ -210,7 +187,7 @@ type CTWALead struct {
 }
 
 func (r *WhatsAppRepo) CTWALeads(ctx context.Context, f WhatsAppStatsFilter) ([]CTWALead, error) {
-	conds, args := buildWhatsAppStatsConds(f, "c.last_message_time", "(c.ctwa_clid <> '' OR u.ctwa_clid <> '')")
+	conds, args := buildWhatsAppPortalStatsConds(f, "(c.ctwa_clid <> '' OR u.ctwa_clid <> '')")
 	q := `
 		SELECT c.id, c.contact_name, c.last_message_time,
 		       COALESCE(NULLIF(c.campaign_name, ''), u.last_utm_campaign),

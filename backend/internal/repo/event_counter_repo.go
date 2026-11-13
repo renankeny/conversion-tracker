@@ -18,11 +18,7 @@ func NewEventCounterRepo(pool *pgxpool.Pool) *EventCounterRepo {
 	return &EventCounterRepo{pool: pool}
 }
 
-// Increment faz UPSERT na bucket de hora correspondente a `at`. Cria a row se
-// não existir, ou incrementa os contadores se já existir.
-//
-// O ON CONFLICT garante atomicidade — se 1000 workers chamarem em paralelo
-// pra mesma bucket, todos os deltas são aplicados sem race.
+// Increment faz UPSERT na bucket de hora correspondente a `at`.
 func (r *EventCounterRepo) Increment(
 	ctx context.Context,
 	accountID int64,
@@ -65,14 +61,13 @@ type SummaryRow struct {
 type SummaryFilters struct {
 	From          *time.Time
 	To            *time.Time
-	PixelName     string // opcional, filtra por pixel
-	EventName     string // opcional, filtra por evento
-	AccountID     int64  // opcional, 0 = todos (uso owner); >0 = filtra por conta
-	TrafficSource string // opcional, filtra por origem de tráfego
+	PixelName     string
+	EventName     string
+	AccountID     int64
+	TrafficSource string
 }
 
-// SummaryByEvent agrega por evento dentro do intervalo. Retorna { event_name → totais }.
-// Use isso para o card "PageView 1300, InitiateCheckout 900, Purchase 30".
+// SummaryByEvent agrega por evento dentro do intervalo.
 func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters) ([]SummaryRow, error) {
 	if f.TrafficSource != "" && f.TrafficSource != "all" {
 		q := `
@@ -82,7 +77,7 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 			       COUNT(DISTINCT CASE WHEN e.status = 'failed' THEN e.event_id END) AS failed
 			FROM sent_events e
 			JOIN tracked_users u ON e.external_id = u.external_id AND e.account_id = u.account_id
-			WHERE 1=1
+			WHERE e.status <> 'contested'
 		`
 		args := []any{}
 		idx := 1
@@ -111,11 +106,9 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 			args = append(args, f.AccountID)
 			idx++
 		}
-
 		if srcCond := trafficSourceUserCond(f.TrafficSource, "u."); srcCond != "" {
 			q += " AND " + srcCond
 		}
-
 		q += " GROUP BY e.event_name ORDER BY total DESC"
 
 		rows, err := r.pool.Query(ctx, q, args...)
@@ -125,24 +118,33 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 		defer rows.Close()
 
 		var out []SummaryRow
-		hasPageView := false
+		var pvSent, pvFailed int64
 		for rows.Next() {
 			var row SummaryRow
 			if err := rows.Scan(&row.EventName, &row.CountTotal, &row.CountSent, &row.CountFailed); err != nil {
 				return nil, err
 			}
 			if row.EventName == "PageView" {
-				hasPageView = true
+				pvSent += row.CountSent
+				pvFailed += row.CountFailed
+				continue
 			}
 			out = append(out, row)
 		}
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
-		// PageView não fica em sent_events; preenchemos a partir de tracked_users quando filtrado por fonte
-		if !hasPageView && (f.EventName == "" || f.EventName == "PageView") {
-			if pv := r.countVisitorsBySource(ctx, f); pv > 0 {
-				out = append([]SummaryRow{{EventName: "PageView", CountTotal: pv, CountSent: pv}}, out...)
+		if f.EventName == "" || f.EventName == "PageView" {
+			visitorsPV := r.countVisitorsBySource(ctx, f)
+			totalPV := max64(visitorsPV, pvSent+pvFailed)
+			if totalPV > 0 {
+				sentPV := max64(0, totalPV-pvFailed)
+				out = append([]SummaryRow{{
+					EventName:   "PageView",
+					CountTotal:  totalPV,
+					CountSent:   sentPV,
+					CountFailed: pvFailed,
+				}}, out...)
 			}
 		}
 		return out, nil
@@ -163,11 +165,14 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 		       COUNT(DISTINCT CASE WHEN status = 'failed' THEN event_id END) AS failed
 		FROM sent_events
 		WHERE event_name NOT IN ('PageView', 'ViewContent')
+		  AND status <> 'contested'
 	`
 	args := []any{}
 	idx := 1
 	if f.From != nil {
 		q1 += " AND bucket_at >= $" + strconv.Itoa(idx)
+		args = append(args, f.From.UTC().Truncate(time.Hour))
+		idx++
 		q2 += " AND created_at >= $" + strconv.Itoa(idx)
 		args = append(args, f.From.UTC())
 		idx++
@@ -201,7 +206,6 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 	q2 += " GROUP BY event_name"
 
 	q := q1 + " UNION ALL " + q2 + " ORDER BY total DESC"
-
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err

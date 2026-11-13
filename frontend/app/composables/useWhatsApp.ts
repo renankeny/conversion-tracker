@@ -1,4 +1,8 @@
 import type {
+  AccountAISettings,
+  AccountAISettingsInput,
+  WhatsAppAIEvent,
+  WhatsAppAIRunSummary,
   WhatsAppChatWithMessages,
   WhatsAppInstance,
   WhatsAppInstanceInput,
@@ -102,6 +106,25 @@ export const useWhatsApp = () => {
     return api.post(`/admin/whatsapp/chats/${chatId}/convert`, body)
   }
 
+  const getAISettings = (): Promise<AccountAISettings> => {
+    return api.get<AccountAISettings>('/admin/whatsapp/ai-settings')
+  }
+
+  const updateAISettings = (body: AccountAISettingsInput): Promise<AccountAISettings> => {
+    return api.put<AccountAISettings>('/admin/whatsapp/ai-settings', body)
+  }
+
+  const runAINow = (): Promise<WhatsAppAIRunSummary> => {
+    return api.post<WhatsAppAIRunSummary>('/admin/whatsapp/ai-settings/run-now', {})
+  }
+
+  const contestAIEvent = (
+    eventId: number,
+    body: { reason: string; add_to_prompt?: boolean },
+  ): Promise<WhatsAppAIEvent> => {
+    return api.post<WhatsAppAIEvent>(`/admin/whatsapp/ai-events/${eventId}/contest`, body)
+  }
+
   return {
     saveServer,
     testServer,
@@ -117,6 +140,10 @@ export const useWhatsApp = () => {
     getChatByTrackedUser,
     getChatMessages,
     convertChat,
+    getAISettings,
+    updateAISettings,
+    runAINow,
+    contestAIEvent,
   }
 }
 

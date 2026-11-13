@@ -33,6 +33,7 @@ type ParsedWhatsAppMessage struct {
 	SourceURL        string
 	SourceApp        string
 	AdThumbnailURL   string
+	HasMsgAdReferral bool
 }
 
 // StripHeavyBase64FromEventData remove data.Message.base64 antes de gravar no Redis (256MB cap).

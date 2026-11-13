@@ -6,6 +6,20 @@ export interface ProcessedGeoMarker {
   count: number
 }
 
+let cachedWorldGeoJson: unknown = null
+let worldGeoJsonPromise: Promise<unknown> | null = null
+
+export async function loadWorldGeoJson(): Promise<unknown> {
+  if (cachedWorldGeoJson) return cachedWorldGeoJson
+  if (!worldGeoJsonPromise) {
+    worldGeoJsonPromise = fetch('/world-land.json')
+      .then((res) => res.json())
+      .then((data) => { cachedWorldGeoJson = data; return data })
+      .catch((err) => { worldGeoJsonPromise = null; throw err })
+  }
+  return worldGeoJsonPromise
+}
+
 export const getCssVar = (val: string, fallback: string) => {
   if (typeof document === 'undefined') return fallback
   return getComputedStyle(document.documentElement).getPropertyValue(val).trim() || fallback

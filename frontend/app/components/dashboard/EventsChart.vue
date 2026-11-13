@@ -2,7 +2,7 @@
   <div class="events-chart">
     <div class="chart-header">
       <div>
-        <h3 class="chart-title">Eventos por dia</h3>
+        <h3 class="chart-title">{{ granularity === 'hour' ? 'Eventos por hora' : 'Eventos por dia' }}</h3>
         <p class="chart-subtitle">{{ subtitle }}</p>
       </div>
     </div>
@@ -59,6 +59,8 @@ const buildDatasets = () => {
     AddToCart: getCssVar('--chart-addtocart'),
     InitiateCheckout: getCssVar('--chart-checkout'),
     Lead: getCssVar('--chart-lead'),
+    LeadSubmitted: getCssVar('--chart-lead'),
+    QualifiedLead: getCssVar('--chart-registration'),
     Purchase: getCssVar('--chart-purchase'),
     AddPaymentInfo: getCssVar('--chart-payment'),
     Contact: getCssVar('--chart-contact'),
@@ -68,8 +70,12 @@ const buildDatasets = () => {
 
   const buckets = new Map<string, Map<string, number>>()
   for (const p of props.points) {
-    if (!buckets.has(p.event_name)) buckets.set(p.event_name, new Map())
-    buckets.get(p.event_name)!.set(p.bucket_at, p.count_total)
+    let m = buckets.get(p.event_name)
+    if (!m) {
+      m = new Map()
+      buckets.set(p.event_name, m)
+    }
+    m.set(p.bucket_at, (m.get(p.bucket_at) ?? 0) + p.count_total)
   }
 
   const allTimestamps = Array.from(new Set(props.points.map((p) => p.bucket_at))).sort()
@@ -132,11 +138,11 @@ const buildOptions = () => {
 }
 
 const render = () => {
-  if (!canvasRef.value || !hasData.value) return
   if (chart) {
     chart.destroy()
     chart = null
   }
+  if (!canvasRef.value || !hasData.value) return
   const { labels, datasets } = buildDatasets()
   chart = new Chart(canvasRef.value, {
     type: 'line',

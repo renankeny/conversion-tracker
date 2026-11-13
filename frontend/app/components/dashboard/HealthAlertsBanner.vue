@@ -21,7 +21,7 @@
       <div class="alert-content">
         <div class="alert-header">
           <span class="alert-title">{{ alert.title }}</span>
-          <span class="alert-badge">{{ alert.severity === 'danger' ? 'Crítico' : 'Atenção' }}</span>
+          <span class="alert-badge">{{ alert.severity === 'danger' ? 'Crítico' : alert.severity === 'warning' ? 'Atenção' : 'Informativo' }}</span>
         </div>
         <p class="alert-message">{{ alert.message }}</p>
       </div>
@@ -83,9 +83,9 @@ onMounted(() => {
   transition: all 0.2s ease;
 }
 
-.health-alert-card.severity-danger { background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.25); }
-.health-alert-card.severity-warning { background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.25); }
-.health-alert-card.severity-info { background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.25); }
+.health-alert-card.severity-danger { background: var(--danger-soft); border-color: var(--danger-border); }
+.health-alert-card.severity-warning { background: var(--warning-soft); border-color: var(--warning-border); }
+.health-alert-card.severity-info { background: var(--accent-sky-soft); border-color: var(--accent-sky-border); }
 
 .alert-icon-wrap {
   display: flex;
@@ -97,7 +97,7 @@ onMounted(() => {
 .alert-icon { width: 1.25rem; height: 1.25rem; }
 .severity-danger .alert-icon { color: var(--danger); }
 .severity-warning .alert-icon { color: var(--warning); }
-.severity-info .alert-icon { color: var(--info); }
+.severity-info .alert-icon { color: var(--accent-sky); }
 
 .alert-content {
   flex: 1;
@@ -128,9 +128,9 @@ onMounted(() => {
   border-radius: 4px;
 }
 
-.severity-danger .alert-badge { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
-.severity-warning .alert-badge { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
-.severity-info .alert-badge { background: rgba(56, 189, 248, 0.2); color: var(--info); }
+.severity-danger .alert-badge { background: var(--danger-soft); color: var(--danger); }
+.severity-warning .alert-badge { background: var(--warning-soft); color: var(--warning); }
+.severity-info .alert-badge { background: var(--accent-sky-soft); color: var(--accent-sky); }
 
 .alert-message {
   font-size: var(--fs-sm);

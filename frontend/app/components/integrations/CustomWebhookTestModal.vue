@@ -131,6 +131,6 @@ const formatDate = (d: string) =>
 @media (max-width: 767px) { .log-panels { grid-template-columns: 1fr; } }
 .log-panel { background: var(--surface-1); border-radius: 8px; overflow: hidden; border: 1px solid var(--border-soft); }
 .log-panel-title { padding: 0.5rem 0.75rem; font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); background: var(--surface-3); border-bottom: 1px solid var(--border-soft); }
-.log-json { padding: 0.75rem; font-family: 'Fira Code', monospace; font-size: var(--fs-sm); color: var(--brand); white-space: pre; overflow-x: auto; max-height: 300px; overflow-y: auto; margin: 0; }
+.log-json { padding: 0.75rem; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--brand); white-space: pre; overflow-x: auto; max-height: 300px; overflow-y: auto; margin: 0; }
 .log-error { margin-top: 0.75rem; padding: 0.5rem 0.75rem; background: var(--danger-soft); color: var(--danger); border-radius: 6px; font-size: var(--fs-base); }
 </style>

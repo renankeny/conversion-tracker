@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
+	"github.com/renankeny/conversion-tracker/backend/internal/googleads"
+	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
@@ -18,6 +22,8 @@ type PublicDashboard struct {
 	stats    *repo.StatsRepo
 	counters *repo.EventCounterRepo
 	sent     *repo.SentEventRepo
+	metaH    *AdminDashboardMeta
+	googleH  *AdminDashboardGoogle
 	qcache   *cache.QueryCache
 }
 
@@ -25,13 +31,17 @@ func NewPublicDashboard(pixels *repo.PixelRepo, stats *repo.StatsRepo, counters 
 	return &PublicDashboard{pixels: pixels, stats: stats, counters: counters, sent: sent}
 }
 
-func (h *PublicDashboard) SetQueryCache(qc *cache.QueryCache) {
-	h.qcache = qc
+func (h *PublicDashboard) SetQueryCache(qc *cache.QueryCache) { h.qcache = qc }
+func (h *PublicDashboard) SetAdsHandlers(metaH *AdminDashboardMeta, googleH *AdminDashboardGoogle) {
+	h.metaH = metaH
+	h.googleH = googleH
 }
 
-func (h *PublicDashboard) writeCached(w http.ResponseWriter, r *http.Request, endpoint string, p *domain.Pixel, loader func(context.Context) (any, error)) {
-	key := cache.HashQueryKey("pub:dash:"+endpoint, p.Name, r.URL.RawQuery)
-	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 30*time.Second, func(ctx context.Context) ([]byte, error) {
+func (h *PublicDashboard) writeCached(w http.ResponseWriter, r *http.Request, endpoint string, p *domain.Pixel, to time.Time, loader func(context.Context) (any, error)) {
+	ver := h.qcache.DashboardVersion(r.Context(), p.AccountID)
+	ttl := dashboardCacheTTL(to, 30*time.Second, 5*time.Minute)
+	key := cache.HashQueryKey("pub:dash:v2:"+endpoint, strconv.FormatInt(p.AccountID, 10), ver, p.Name, r.URL.RawQuery)
+	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, ttl, func(ctx context.Context) ([]byte, error) {
 		data, lerr := loader(ctx)
 		if lerr != nil {
 			return nil, lerr
@@ -46,8 +56,6 @@ func (h *PublicDashboard) writeCached(w http.ResponseWriter, r *http.Request, en
 	_, _ = w.Write(raw)
 }
 
-// resolvePixel busca o pixel pelo token do link. 404 se o token não existe,
-// foi revogado, ou o pixel foi desabilitado.
 func (h *PublicDashboard) resolvePixel(r *http.Request) (*domain.Pixel, error) {
 	token := chi.URLParam(r, "token")
 	p, err := h.pixels.FindByDashboardShareToken(r.Context(), token)
@@ -61,23 +69,16 @@ func (h *PublicDashboard) resolvePixel(r *http.Request) (*domain.Pixel, error) {
 }
 
 func parsePublicRange(r *http.Request) (time.Time, time.Time) {
-	q := r.URL.Query()
-	from := time.Now().AddDate(0, 0, -30)
-	to := time.Now()
-	if v := q.Get("from"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			from = t
-		}
+	from, to := parseDashboardTimeBounds(r)
+	if from.IsZero() {
+		from = time.Now().AddDate(0, 0, -30)
 	}
-	if v := q.Get("to"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			to = t
-		}
+	if to.IsZero() {
+		to = time.Now()
 	}
 	return from, to
 }
 
-// Meta GET /public/dashboard/{token}/meta — nome do pixel + config da dashboard.
 func (h *PublicDashboard) Meta(w http.ResponseWriter, r *http.Request) {
 	p, err := h.resolvePixel(r)
 	if err != nil {
@@ -85,12 +86,40 @@ func (h *PublicDashboard) Meta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"pixel_label":      firstNonEmpty(p.Label, p.Name),
+		"pixel_label": firstNonEmpty(p.Label, p.Name), "currency": firstNonEmpty(p.TrackerConfig.ProductCurrency, "BRL"),
 		"dashboard_config": p.DashboardConfig,
 	})
 }
 
-// Summary GET /public/dashboard/{token}/summary?from=&to=
+func (h *PublicDashboard) AdsSummary(w http.ResponseWriter, r *http.Request) {
+	p, err := h.resolvePixel(r)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "link inválido ou desativado")
+		return
+	}
+	since, until := parseSinceUntilDates(r)
+	var (
+		wg        sync.WaitGroup
+		metaSum   meta.LiveInsightsSummary
+		googleSum googleads.LiveInsightsSummary
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if h.metaH != nil {
+			metaSum = h.metaH.LoadLiveSummaryForPixel(r.Context(), p, since, until)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if h.googleH != nil {
+			googleSum = h.googleH.LoadLiveSummaryForPixel(r.Context(), p, since, until)
+		}
+	}()
+	wg.Wait()
+	writeJSON(w, http.StatusOK, map[string]any{"meta": metaSum, "google": googleSum})
+}
+
 func (h *PublicDashboard) Summary(w http.ResponseWriter, r *http.Request) {
 	p, err := h.resolvePixel(r)
 	if err != nil {
@@ -99,7 +128,7 @@ func (h *PublicDashboard) Summary(w http.ResponseWriter, r *http.Request) {
 	}
 	from, to := parsePublicRange(r)
 	src := r.URL.Query().Get("traffic_source")
-	h.writeCached(w, r, "summary", p, func(ctx context.Context) (any, error) {
+	h.writeCached(w, r, "summary", p, to, func(ctx context.Context) (any, error) {
 		rows, err := h.counters.SummaryByEvent(ctx, repo.SummaryFilters{
 			From: &from, To: &to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		})
@@ -110,7 +139,6 @@ func (h *PublicDashboard) Summary(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Series GET /public/dashboard/{token}/series?from=&to=&granularity=hour|day
 func (h *PublicDashboard) Series(w http.ResponseWriter, r *http.Request) {
 	p, err := h.resolvePixel(r)
 	if err != nil {
@@ -120,7 +148,7 @@ func (h *PublicDashboard) Series(w http.ResponseWriter, r *http.Request) {
 	from, to := parsePublicRange(r)
 	daily := r.URL.Query().Get("granularity") == "day"
 	src := r.URL.Query().Get("traffic_source")
-	h.writeCached(w, r, "series", p, func(ctx context.Context) (any, error) {
+	h.writeCached(w, r, "series", p, to, func(ctx context.Context) (any, error) {
 		pts, err := h.counters.TimeSeries(ctx, repo.SummaryFilters{
 			From: &from, To: &to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		}, daily)
@@ -131,7 +159,6 @@ func (h *PublicDashboard) Series(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Geo GET /public/dashboard/{token}/geo?from=&to=
 func (h *PublicDashboard) Geo(w http.ResponseWriter, r *http.Request) {
 	p, err := h.resolvePixel(r)
 	if err != nil {
@@ -140,14 +167,13 @@ func (h *PublicDashboard) Geo(w http.ResponseWriter, r *http.Request) {
 	}
 	from, to := parsePublicRange(r)
 	src := r.URL.Query().Get("traffic_source")
-	h.writeCached(w, r, "geo", p, func(ctx context.Context) (any, error) {
+	h.writeCached(w, r, "geo", p, to, func(ctx context.Context) (any, error) {
 		return h.stats.GeoDistribution(ctx, repo.StatsFilter{
 			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		})
 	})
 }
 
-// GeoByEvent GET /public/dashboard/{token}/geo-by-event?from=&to=&event=
 func (h *PublicDashboard) GeoByEvent(w http.ResponseWriter, r *http.Request) {
 	p, err := h.resolvePixel(r)
 	if err != nil {
@@ -157,14 +183,13 @@ func (h *PublicDashboard) GeoByEvent(w http.ResponseWriter, r *http.Request) {
 	from, to := parsePublicRange(r)
 	eventName := r.URL.Query().Get("event")
 	src := r.URL.Query().Get("traffic_source")
-	h.writeCached(w, r, "geo_event", p, func(ctx context.Context) (any, error) {
+	h.writeCached(w, r, "geo_event", p, to, func(ctx context.Context) (any, error) {
 		return h.stats.GeoDistributionByEvent(ctx, repo.StatsFilter{
 			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		}, eventName)
 	})
 }
 
-// Purchases GET /public/dashboard/{token}/purchases?from=&to=&limit=
 func (h *PublicDashboard) Purchases(w http.ResponseWriter, r *http.Request) {
 	p, err := h.resolvePixel(r)
 	if err != nil {
@@ -173,10 +198,10 @@ func (h *PublicDashboard) Purchases(w http.ResponseWriter, r *http.Request) {
 	}
 	from, to := parsePublicRange(r)
 	src := r.URL.Query().Get("traffic_source")
-	h.writeCached(w, r, "purchases", p, func(ctx context.Context) (any, error) {
+	h.writeCached(w, r, "purchases", p, to, func(ctx context.Context) (any, error) {
 		list, total, err := h.sent.ListGrouped(ctx, repo.ListFilter{
-			AccountID: p.AccountID, PixelName: p.Name, EventNames: []string{"Purchase"},
-			From: from, To: to, Limit: 50, IncludeLTV: true, TrafficSource: src,
+			AccountID: p.AccountID, PixelName: p.Name, EventNames: []string{"Purchase"}, Status: "sent",
+			From: from, To: to, Limit: 50, IncludeLTV: true, IncludeBuyer: true, TrafficSource: src,
 		})
 		if err != nil {
 			return nil, err
@@ -185,7 +210,6 @@ func (h *PublicDashboard) Purchases(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Revenue GET /public/dashboard/{token}/revenue?from=&to=
 func (h *PublicDashboard) Revenue(w http.ResponseWriter, r *http.Request) {
 	p, err := h.resolvePixel(r)
 	if err != nil {
@@ -194,7 +218,7 @@ func (h *PublicDashboard) Revenue(w http.ResponseWriter, r *http.Request) {
 	}
 	from, to := parsePublicRange(r)
 	src := r.URL.Query().Get("traffic_source")
-	h.writeCached(w, r, "revenue", p, func(ctx context.Context) (any, error) {
+	h.writeCached(w, r, "revenue", p, to, func(ctx context.Context) (any, error) {
 		overview, err := h.stats.Overview(ctx, repo.StatsFilter{
 			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
 		})

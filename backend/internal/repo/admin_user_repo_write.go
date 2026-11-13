@@ -105,3 +105,4 @@ func (r *AdminUserRepo) EnsureBootstrap(ctx context.Context, email, passwordHash
 	}
 	return nil
 }
+

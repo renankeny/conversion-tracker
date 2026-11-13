@@ -21,7 +21,7 @@
           <button
             type="button"
             class="reorder-btn"
-            :disabled="indexOfId(id) === 0"
+            :disabled="filteredOrder.indexOf(id) <= 0"
             title="Mover para cima"
             @click="moveById(id, -1)"
           >
@@ -30,7 +30,7 @@
           <button
             type="button"
             class="reorder-btn"
-            :disabled="indexOfId(id) === localOrder.length - 1"
+            :disabled="filteredOrder.indexOf(id) === filteredOrder.length - 1"
             title="Mover para baixo"
             @click="moveById(id, 1)"
           >

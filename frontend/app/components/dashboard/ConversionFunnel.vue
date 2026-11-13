@@ -58,6 +58,7 @@ interface FunnelStepDef {
 interface Props {
   events: CounterSummaryRow[]
   steps: FunnelStepDef[]
+  leadTotal?: number
   subtitle?: string
 }
 
@@ -74,10 +75,18 @@ const eventCounts = computed(() => {
 })
 
 const enrichedSteps = computed(() =>
-  props.steps.map((s) => ({
-    ...s,
-    count: eventCounts.value.get(s.event) ?? 0,
-  }))
+  props.steps.map((s) => {
+    if (s.event === 'Lead') {
+      const summed = (eventCounts.value.get('Lead') ?? 0)
+        + (eventCounts.value.get('LeadSubmitted') ?? 0)
+        + (eventCounts.value.get('QualifiedLead') ?? 0)
+      return { ...s, count: Math.max(props.leadTotal ?? 0, summed) }
+    }
+    return {
+      ...s,
+      count: eventCounts.value.get(s.event) ?? 0,
+    }
+  })
 )
 
 const hasData = computed(() => enrichedSteps.value.some((s) => s.count > 0))
@@ -87,6 +96,7 @@ const maxCount = computed(() =>
 )
 
 const relativeWidth = (count: number): number => {
+  if (count <= 0) return 0
   return Math.max(2, (count / maxCount.value) * 100)
 }
 

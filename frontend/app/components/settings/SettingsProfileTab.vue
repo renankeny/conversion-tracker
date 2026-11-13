@@ -37,7 +37,7 @@
     <div class="card">
       <h3 class="card-title">Inteligência Artificial (OpenAI)</h3>
       <p class="card-hint">
-        Configure a sua chave da OpenAI para utilizar recursos de automação com Inteligência Artificial no {{ brandName }} (ex: Auto-Mapping de Checkouts).
+        Configure a sua chave da OpenAI uma única vez para ativar todos os recursos de Inteligência Artificial no {{ brandName }} (Analista Comercial de WhatsApp, leitura de áudios/imagens/PDFs e Auto-Mapping de Checkouts).
       </p>
       <form class="form" @submit.prevent="onSavePrefs">
         <BaseInput
@@ -45,7 +45,7 @@
           type="password"
           label="OpenAI API Key (sk-...)"
           :placeholder="hasOpenAiKey ? '•••••••••••••••• (chave configurada — digite para substituir)' : 'sk-proj-...'"
-          hint="A chave fica salva em suas preferências pessoais e não é compartilhada."
+          hint="Uma única chave conectada aqui funciona automaticamente em todos os módulos de IA do sistema."
         />
         <div class="form-actions">
           <BaseButton variant="primary" type="submit" :loading="savingPrefs">

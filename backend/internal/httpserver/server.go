@@ -161,6 +161,15 @@ func New(deps Deps) (*Server, error) {
 	adminDashGoogleH := handlers.NewAdminDashboardGoogle(pixels, googleAdsAccountRepo, googleAdsClient)
 	adminDashGoogleH.SetStatsRepo(stats)
 	adminDashGoogleH.SetQueryCache(queryCache)
+	pubDashH.SetAdsHandlers(adminDashMetaH, adminDashGoogleH)
+	adminAlertsH := handlers.NewAdminAlerts(pixels, googleAdsAccountRepo, webhookLogRepo, counters)
+	adminAlertsH.SetQueryCache(queryCache)
+	adminStatsH := handlers.NewAdminStats(stats)
+	adminStatsH.SetQueryCache(queryCache)
+	adminCountersH := handlers.NewAdminCounters(counters)
+	adminCountersH.SetQueryCache(queryCache)
+	adminSalesConfirmH := handlers.NewAdminSalesConfirmation(sentEvents, users, deps.Enqueuer)
+	adminSalesConfirmH.SetRedis(rdb)
 	adminPixelTestH := handlers.NewAdminPixelTestEvent(pixels, deps.Cfg.MetaAPIVersion, deps.Cfg.MetaPartnerAgent, deps.Cfg.TikTokPartnerName)
 	adminPixelTestH.SetMetaOAuth(metaAccountRepo, metaOAuthClient)
 
@@ -172,19 +181,12 @@ func New(deps Deps) (*Server, error) {
 		setup:               setupH,
 		events:              eventsH,
 		webhooks:            webhookH,
-		webhookEvolution:    handlers.NewWebhookEvolution(whatsappRepo, deps.Enqueuer),
-		whatsappMedia:       handlers.NewWhatsAppMediaHandler(whatsappRepo, deps.MediaStorage, deps.Cfg.JWTSecret),
-		publicWhatsApp:      handlers.NewPublicWhatsApp(whatsappRepo, deps.Cfg.PublicAPIURL),
-		adminWAServers:      handlers.NewAdminWhatsAppServers(whatsappRepo),
-		adminWAInstances:    handlers.NewAdminWhatsAppInstances(whatsappRepo, pixels, deps.Cfg.PublicAPIURL),
-		adminWAChats:        handlers.NewAdminWhatsAppChats(whatsappRepo, deps.Enqueuer, deps.Cfg.PublicAPIURL, deps.Cfg.JWTSecret),
-		adminWAStats:        handlers.NewAdminWhatsAppStats(whatsappRepo),
 		customWebhook:       handlers.NewCustomWebhookHandler(customWebhooksRepo, webhookH, webhookLogRepo),
 		publicDashboard:     pubDashH,
 		adminAuth:           adminAuthH,
 		adminGoogleAds:      adminGadsH,
 		adminMetaAds:        adminMetaH,
-		adminAlerts:         handlers.NewAdminAlerts(pixels, googleAdsAccountRepo, webhookLogRepo, counters),
+		adminAlerts:         adminAlertsH,
 		adminPixels:         adminPixelH,
 		adminPixelTest:      adminPixelTestH,
 		adminOpenAI:         handlers.NewAdminOpenAI(deps.Pool),
@@ -192,7 +194,7 @@ func New(deps Deps) (*Server, error) {
 		adminMaintenance:    handlers.NewAdminMaintenance(deps.Pool, accountRepo, deps.Cfg.SentEventsRetentionDays, deps.Cfg.EventCountersRetentionDays),
 		adminCustomWebhooks: handlers.NewAdminCustomWebhooks(customWebhooksRepo, webhookLogRepo),
 		adminPlatformTokens: handlers.NewPlatformTokens(platformTokenRepo),
-		adminSalesConfirm:   handlers.NewAdminSalesConfirmation(sentEvents, users, deps.Enqueuer),
+		adminSalesConfirm:   adminSalesConfirmH,
 		adminUsers:          adminUsersH,
 		adminAccounts:       handlers.NewAdminAccounts(accountRepo),
 		adminCRM:            adminCRM,
@@ -200,9 +202,9 @@ func New(deps Deps) (*Server, error) {
 		adminSent:           handlers.NewAdminSentEvents(sentEvents, deps.Enqueuer),
 		adminWebhookLogs:    handlers.NewAdminWebhookLogs(webhookLogRepo, webhookH),
 		adminTrackedUsers:   adminTrackedUsers,
-		adminStats:          handlers.NewAdminStats(stats),
-		adminCounters:       handlers.NewAdminCounters(counters),
-		adminAPIKeys:         handlers.NewAdminAPIKeys(apiKeys),
+		adminStats:          adminStatsH,
+		adminCounters:       adminCountersH,
+		adminAPIKeys:        handlers.NewAdminAPIKeys(apiKeys),
 		adminDashboardMeta:   adminDashMetaH,
 		adminDashboardGoogle: adminDashGoogleH,
 		apiEvents:            apiEventsH,
@@ -212,6 +214,7 @@ func New(deps Deps) (*Server, error) {
 		rateLimiter:         rateLimiter,
 		calibrator:          cal,
 	}
+	attachWhatsAppHandlers(&rh, deps, rdb, queryCache, whatsappRepo, pixels, users, crmRepo, metaAccountRepo)
 
 	registerRoutes(r, deps, rh)
 	return &Server{

@@ -20,7 +20,7 @@ export const usePixelStore = defineStore('pixels', () => {
     if (!force && loaded.value && loadedAccountId.value === currentAcc) {
       return pixels.value
     }
-    if (!force && inFlightPromise && loadedAccountId.value === currentAcc) {
+    if (inFlightPromise && loadedAccountId.value === currentAcc) {
       return inFlightPromise
     }
 

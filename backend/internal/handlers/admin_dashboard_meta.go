@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
-	"github.com/renankeny/conversion-tracker/backend/internal/config"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/metaoauth"
@@ -28,7 +28,7 @@ func NewAdminDashboardMeta(pr *repo.PixelRepo) *AdminDashboardMeta {
 	return &AdminDashboardMeta{pixelRepo: pr}
 }
 
-func (h *AdminDashboardMeta) SetStatsRepo(sr *repo.StatsRepo) { h.statsRepo = sr }
+func (h *AdminDashboardMeta) SetStatsRepo(sr *repo.StatsRepo)     { h.statsRepo = sr }
 func (h *AdminDashboardMeta) SetQueryCache(qc *cache.QueryCache) { h.qcache = qc }
 func (h *AdminDashboardMeta) SetMetaOAuth(metaAccs *repo.MetaAccountRepo, metaOAuth *metaoauth.Client) {
 	h.metaAccs = metaAccs
@@ -43,27 +43,24 @@ type resolvedMetaSource struct {
 	oauthAcc    *domain.MetaAccount
 }
 
-func (h *AdminDashboardMeta) resolveMetaSource(r *http.Request) (*resolvedMetaSource, error) {
-	pixelName := strings.TrimSpace(r.URL.Query().Get("pixel_name"))
-	if pixelName == "" {
-		return nil, errors.New("pixel_name is required")
+func (s *resolvedMetaSource) credKey() string {
+	if s.oauthAcc != nil {
+		return "oauth:" + strconv.FormatInt(s.oauthAcc.ID, 10)
 	}
-	p, err := h.pixelRepo.FindByName(r.Context(), pixelName)
-	if err != nil {
-		return nil, errors.New("pixel not found")
+	if len(s.legacyToken) >= 8 {
+		return "leg:" + s.legacyToken[len(s.legacyToken)-8:]
 	}
-	scope := TenantFromContext(r.Context())
-	if !scope.IsOwner && p.AccountID != scope.AccountID {
-		return nil, errors.New("forbidden")
-	}
+	return "leg"
+}
 
+func (h *AdminDashboardMeta) resolveMetaSourceForPixel(ctx context.Context, p *domain.Pixel) (*resolvedMetaSource, error) {
 	if h.metaAccs != nil && h.metaOAuth != nil {
 		var acc *domain.MetaAccount
 		if p.MetaAccountID != nil && *p.MetaAccountID > 0 {
-			acc, _ = h.metaAccs.FindByID(r.Context(), *p.MetaAccountID)
+			acc, _ = h.metaAccs.FindByID(ctx, *p.MetaAccountID)
 		}
 		if acc == nil || !acc.IsConnected() {
-			acc, _ = h.metaAccs.FindFirstConnectedByAccount(r.Context(), p.AccountID)
+			acc, _ = h.metaAccs.FindFirstConnectedByAccount(ctx, p.AccountID)
 		}
 		if acc != nil && acc.Enabled && acc.IsConnected() {
 			adAccID := strings.TrimSpace(p.MetaAdAccountID)
@@ -88,54 +85,20 @@ func (h *AdminDashboardMeta) resolveMetaSource(r *http.Request) (*resolvedMetaSo
 	return nil, errors.New("pixel sem Conta Meta Ads OAuth ou Ad Account ID configurado")
 }
 
-func parseSinceUntilDates(r *http.Request) (string, string) {
-	fromRaw := strings.TrimSpace(r.URL.Query().Get("from"))
-	toRaw := strings.TrimSpace(r.URL.Query().Get("to"))
-	if fromRaw == "" || toRaw == "" {
-		return "", ""
+func (h *AdminDashboardMeta) resolveMetaSource(r *http.Request) (*resolvedMetaSource, error) {
+	pixelName := strings.TrimSpace(r.URL.Query().Get("pixel_name"))
+	if pixelName == "" {
+		return nil, errors.New("pixel_name is required")
 	}
-	loc, err := time.LoadLocation(config.ProjectTimezone)
+	p, err := h.pixelRepo.FindByName(r.Context(), pixelName)
 	if err != nil {
-		loc = time.FixedZone("BRT", -3*3600)
+		return nil, errors.New("pixel not found")
 	}
-	fromDate, fromTime, hasFromTime := parseDateInLocation(fromRaw, loc)
-	toDate, toTime, hasToTime := parseDateInLocation(toRaw, loc)
-	if hasFromTime && hasToTime && toTime.After(fromTime) &&
-		toTime.Hour() == 0 && toTime.Minute() == 0 && toTime.Second() == 0 && toTime.Nanosecond() == 0 {
-		toDate = toTime.Add(-time.Second).Format("2006-01-02")
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner && p.AccountID != scope.AccountID {
+		return nil, errors.New("forbidden")
 	}
-	return fromDate, toDate
-}
-
-func previousYMDWindow(since, until string) (string, string) {
-	s, err1 := time.Parse("2006-01-02", since)
-	u, err2 := time.Parse("2006-01-02", until)
-	if err1 != nil || err2 != nil || u.Before(s) {
-		return "", ""
-	}
-	days := int(u.Sub(s)/(24*time.Hour)) + 1
-	return s.AddDate(0, 0, -days).Format("2006-01-02"), s.AddDate(0, 0, -1).Format("2006-01-02")
-}
-
-func marshalMetaRange(since, until string) string {
-	if since == "" || until == "" {
-		return ""
-	}
-	b, _ := json.Marshal(map[string]string{"since": since, "until": until})
-	return string(b)
-}
-
-func parseDateInLocation(raw string, loc *time.Location) (string, time.Time, bool) {
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
-		if parsed, err := time.Parse(layout, raw); err == nil {
-			inLoc := parsed.In(loc)
-			return inLoc.Format("2006-01-02"), inLoc, true
-		}
-	}
-	if len(raw) >= 10 {
-		return raw[:10], time.Time{}, false
-	}
-	return raw, time.Time{}, false
+	return h.resolveMetaSourceForPixel(r.Context(), p)
 }
 
 func (h *AdminDashboardMeta) fetchMetaSummary(ctx context.Context, src *resolvedMetaSource, tr string) (meta.LiveInsightsSummary, error) {
@@ -145,29 +108,19 @@ func (h *AdminDashboardMeta) fetchMetaSummary(ctx context.Context, src *resolved
 	return meta.FetchLiveInsights(ctx, src.adAccountID, src.legacyToken, tr)
 }
 
-func (h *AdminDashboardMeta) LiveInsights(w http.ResponseWriter, r *http.Request) {
-	src, err := h.resolveMetaSource(r)
-	if err != nil {
-		writeJSON(w, http.StatusOK, meta.LiveInsightsSummary{Connected: false})
-		return
-	}
-	since, until := parseSinceUntilDates(r)
+func (h *AdminDashboardMeta) loadCachedSummary(ctx context.Context, src *resolvedMetaSource, since, until string) ([]byte, error) {
 	timeRange := marshalMetaRange(since, until)
-	if timeRange == "" {
-		writeError(w, http.StatusBadRequest, "missing from and to dates")
-		return
-	}
 	prevSince, prevUntil := previousYMDWindow(since, until)
 	prevRange := marshalMetaRange(prevSince, prevUntil)
 
-	key := cache.HashQueryKey("meta:insights:v3", src.adAccountID, timeRange)
-	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
-		summary, ferr := h.fetchMetaSummary(ctx, src, timeRange)
+	key := cache.HashQueryKey("meta:insights:v4", strconv.FormatInt(src.accountID, 10), src.credKey(), src.adAccountID, timeRange)
+	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte(`{"connected":false}`), func(lctx context.Context) ([]byte, error) {
+		summary, ferr := h.fetchMetaSummary(lctx, src, timeRange)
 		if ferr != nil {
 			return nil, ferr
 		}
 		if prevRange != "" {
-			if prev, perr := h.fetchMetaSummary(ctx, src, prevRange); perr == nil {
+			if prev, perr := h.fetchMetaSummary(lctx, src, prevRange); perr == nil {
 				summary.PrevSpend = prev.Spend
 				summary.PrevClicks = prev.Clicks
 			}
@@ -175,6 +128,39 @@ func (h *AdminDashboardMeta) LiveInsights(w http.ResponseWriter, r *http.Request
 		summary.Connected = true
 		return json.Marshal(summary)
 	})
+}
+
+func (h *AdminDashboardMeta) LoadLiveSummaryForPixel(ctx context.Context, p *domain.Pixel, since, until string) meta.LiveInsightsSummary {
+	if since == "" || until == "" {
+		return meta.LiveInsightsSummary{Connected: false}
+	}
+	src, err := h.resolveMetaSourceForPixel(ctx, p)
+	if err != nil {
+		return meta.LiveInsightsSummary{Connected: false}
+	}
+	raw, err := h.loadCachedSummary(ctx, src, since, until)
+	if err != nil {
+		return meta.LiveInsightsSummary{Connected: false}
+	}
+	var out meta.LiveInsightsSummary
+	if json.Unmarshal(raw, &out) != nil {
+		return meta.LiveInsightsSummary{Connected: false}
+	}
+	return out
+}
+
+func (h *AdminDashboardMeta) LiveInsights(w http.ResponseWriter, r *http.Request) {
+	src, err := h.resolveMetaSource(r)
+	if err != nil {
+		writeJSON(w, http.StatusOK, meta.LiveInsightsSummary{Connected: false})
+		return
+	}
+	since, until := parseSinceUntilDates(r)
+	if since == "" || until == "" {
+		writeError(w, http.StatusBadRequest, "missing from and to dates")
+		return
+	}
+	raw, err := h.loadCachedSummary(r.Context(), src, since, until)
 	if err != nil {
 		writeJSON(w, http.StatusOK, meta.LiveInsightsSummary{Connected: false})
 		return
@@ -195,11 +181,11 @@ func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "missing from and to dates")
 		return
 	}
-	fromTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("from")))
-	toTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("to")))
+	fromTime, toTime := parseDashboardTimeBounds(r)
+	ver := h.qcache.DashboardVersion(r.Context(), src.accountID)
 
-	key := cache.HashQueryKey("meta:creatives:v3", src.pixelName, src.adAccountID, timeRange)
-	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
+	key := cache.HashQueryKey("meta:creatives:v4", strconv.FormatInt(src.accountID, 10), ver, src.credKey(), src.pixelName, src.adAccountID, timeRange)
+	raw, err := h.qcache.GetOrLoadWithNegCache(r.Context(), key, 3*time.Minute, 20*time.Second, []byte("[]"), func(ctx context.Context) ([]byte, error) {
 		var (
 			ranking []meta.CreativeInsight
 			ferr    error

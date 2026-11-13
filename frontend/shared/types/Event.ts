@@ -32,6 +32,7 @@ export interface EventFilters {
   limit?: number
   offset?: number
   include_ltv?: boolean
+  include_buyer?: boolean
   include_user_context?: boolean
 }
 
@@ -72,6 +73,10 @@ export interface GroupedEvent {
   channels: ChannelBrief[]
   /** LTV do cliente (todas as compras, todo o histórico). Só vem preenchido quando a busca pede include_ltv. */
   ltv?: number
+  /** Identificação do comprador (preenchida no painel autenticado). */
+  buyer_first_name?: string
+  buyer_last_name?: string
+  buyer_phone?: string
   /** Origem (utm_source) do primeiro e do último acesso do cliente. Só vem preenchido com include_user_context. */
   first_utm_source?: string
   last_utm_source?: string

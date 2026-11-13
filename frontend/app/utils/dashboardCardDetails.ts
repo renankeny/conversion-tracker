@@ -29,7 +29,14 @@ export interface CardRichDetails {
 }
 
 const fmtInt = (n: number) => new Intl.NumberFormat('pt-BR').format(Math.round(n || 0))
-const fmtBRL = (n: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n || 0)
+export function formatMoney(n: number, currency = 'BRL'): string {
+  const code = (currency || 'BRL').trim().toUpperCase()
+  try {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: code }).format(n || 0)
+  } catch {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n || 0)
+  }
+}
 const fmtRoas = (n: number) => `${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0)}x`
 const fmtPct = (n: number) => `${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format((n || 0) * 100)}%`
 const safeDiv = (a: number, b: number) => (b > 0 ? a / b : 0)
@@ -55,6 +62,7 @@ function resolvePreviousSpendAndClicks(ctx: DashboardMetricsContext): { spend: n
 function computePreviousMetric(id: string, ctx: DashboardMetricsContext): { val: number | null; formatted?: string } {
   const prev = ctx.previousPeriod
   const { spend: pSpend, clicks: pClicks, hasAdsPrev } = resolvePreviousSpendAndClicks(ctx)
+  const money = (n: number) => formatMoney(n, ctx.currency)
   if (!prev) return { val: null }
 
   switch (id) {
@@ -62,23 +70,23 @@ function computePreviousMetric(id: string, ctx: DashboardMetricsContext): { val:
     case '__ad_messages__': return { val: prev.ad_messages, formatted: fmtInt(prev.ad_messages) }
     case 'Lead': return { val: prev.leads, formatted: fmtInt(prev.leads) }
     case 'Purchase': return { val: prev.purchases, formatted: fmtInt(prev.purchases) }
-    case REVENUE_CARD_ID: return { val: prev.revenue, formatted: fmtBRL(prev.revenue) }
-    case '__total_spend__': return hasAdsPrev ? { val: pSpend, formatted: fmtBRL(pSpend) } : { val: null }
+    case REVENUE_CARD_ID: return { val: prev.revenue, formatted: money(prev.revenue) }
+    case '__total_spend__': return hasAdsPrev ? { val: pSpend, formatted: money(pSpend) } : { val: null }
     case '__ad_clicks__': return hasAdsPrev ? { val: pClicks, formatted: fmtInt(pClicks) } : { val: null }
     case '__avg_cpc__': {
       if (!hasAdsPrev || pClicks <= 0) return { val: null }
       const v = safeDiv(pSpend, pClicks)
-      return { val: v, formatted: fmtBRL(v) }
+      return { val: v, formatted: money(v) }
     }
     case '__total_cpl__': {
       if (!hasAdsPrev || prev.leads <= 0) return { val: null }
       const v = safeDiv(pSpend, prev.leads)
-      return { val: v, formatted: fmtBRL(v) }
+      return { val: v, formatted: money(v) }
     }
     case '__total_cpa__': {
       if (!hasAdsPrev || prev.purchases <= 0) return { val: null }
       const v = safeDiv(pSpend, prev.purchases)
-      return { val: v, formatted: fmtBRL(v) }
+      return { val: v, formatted: money(v) }
     }
     case '__total_roas__': {
       if (!hasAdsPrev || pSpend <= 0) return { val: null }
@@ -88,7 +96,7 @@ function computePreviousMetric(id: string, ctx: DashboardMetricsContext): { val:
     case '__avg_ticket__': {
       if (prev.purchases <= 0) return { val: null }
       const v = safeDiv(prev.revenue, prev.purchases)
-      return { val: v, formatted: fmtBRL(v) }
+      return { val: v, formatted: money(v) }
     }
     case '__conv_rate__': {
       if (prev.leads <= 0) return { val: null }
@@ -104,6 +112,7 @@ export function computeCardRichDetails(id: string, currentVal: number, ctx: Dash
   const entry = catalogById.get(id)
   const blurred = Boolean(ctx.privacyMode && entry?.privateValue)
   const changeInverse = Boolean(entry?.changeInverse)
+  const money = (n: number) => formatMoney(n, ctx.currency)
   const { val: prevVal, formatted: prevFmt } = computePreviousMetric(id, ctx)
   const changePercent = pctDelta(currentVal, prevVal)
 
@@ -181,18 +190,18 @@ export function computeCardRichDetails(id: string, currentVal: number, ctx: Dash
     const sbMeta = ctx.sourceBreakdown?.meta.revenue ?? 0
     const sbGoogle = ctx.sourceBreakdown?.google.revenue ?? 0
     if (src === 'meta') {
-      comparisons.push({ label: 'Meta', value: fmtBRL(mMgrRev), tone: 'meta' })
-      comparisons.push({ label: 'Painel', value: fmtBRL(sbMeta || ctx.totalRevenue), tone: 'panel' })
+      comparisons.push({ label: 'Meta', value: money(mMgrRev), tone: 'meta' })
+      comparisons.push({ label: 'Painel', value: money(ctx.totalRevenue), tone: 'panel' })
     } else if (src === 'google') {
-      comparisons.push({ label: 'Google', value: fmtBRL(gMgrRev), tone: 'google' })
-      comparisons.push({ label: 'Painel', value: fmtBRL(sbGoogle || ctx.totalRevenue), tone: 'panel' })
+      comparisons.push({ label: 'Google', value: money(gMgrRev), tone: 'google' })
+      comparisons.push({ label: 'Painel', value: money(ctx.totalRevenue), tone: 'panel' })
     } else {
-      if (mConn || sbMeta > 0 || mMgrRev > 0) comparisons.push({ label: 'Meta', value: fmtBRL(sbMeta || mMgrRev), tone: 'meta' })
-      if (gConn || sbGoogle > 0 || gMgrRev > 0) comparisons.push({ label: 'Google', value: fmtBRL(sbGoogle || gMgrRev), tone: 'google' })
+      if (mConn || sbMeta > 0 || mMgrRev > 0) comparisons.push({ label: 'Meta', value: money(sbMeta), tone: 'meta' })
+      if (gConn || sbGoogle > 0 || gMgrRev > 0) comparisons.push({ label: 'Google', value: money(sbGoogle), tone: 'google' })
     }
   } else if (id === '__total_spend__' && src === 'all' && !blurred) {
-    if (mConn || mSpend > 0) comparisons.push({ label: 'Meta', value: fmtBRL(mSpend), tone: 'meta' })
-    if (gConn || gSpend > 0) comparisons.push({ label: 'Google', value: fmtBRL(gSpend), tone: 'google' })
+    if (mConn || mSpend > 0) comparisons.push({ label: 'Meta', value: money(mSpend), tone: 'meta' })
+    if (gConn || gSpend > 0) comparisons.push({ label: 'Google', value: money(gSpend), tone: 'google' })
   } else if (id === '__ad_clicks__' && src === 'all') {
     if (mConn || mClicks > 0) comparisons.push({ label: 'Meta', value: fmtInt(mClicks), tone: 'meta' })
     if (gConn || gClicks > 0) comparisons.push({ label: 'Google', value: fmtInt(gClicks), tone: 'google' })

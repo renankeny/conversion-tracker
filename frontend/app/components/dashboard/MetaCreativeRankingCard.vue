@@ -11,7 +11,12 @@
       </span>
     </div>
 
-    <div v-if="!topCreatives.length" class="empty-state">
+    <div v-if="loading && !topCreatives.length" class="empty-state">
+      <div class="loading-spinner" />
+      <p>Carregando ranking de criativos da Meta Ads…</p>
+    </div>
+
+    <div v-else-if="!topCreatives.length" class="empty-state">
       <Layers :size="20" class="empty-icon" />
       <p>Nenhum anúncio com investimento ativo neste período para a conta Meta Ads vinculada.</p>
     </div>
@@ -60,11 +65,11 @@
         <div class="podium-stats" :class="{ 'is-blurred': blurred }">
           <div class="p-stat">
             <span class="p-lbl">Gasto</span>
-            <span class="p-val val-brand">{{ formatBRL(Number(item.spend || 0)) }}</span>
+            <span class="p-val val-brand blur-target">{{ formatCurrency(Number(item.spend || 0)) }}</span>
           </div>
           <div class="p-stat">
             <span class="p-lbl">CPL</span>
-            <span class="p-val">{{ computeCPL(item) }}</span>
+            <span class="p-val blur-target">{{ computeCPL(item) }}</span>
           </div>
           <div class="p-stat">
             <span class="p-lbl">Cliques</span>
@@ -79,25 +84,28 @@
 <script setup lang="ts">
 import { Layers, Trophy } from 'lucide-vue-next'
 import { MetaAdsIcon } from '~/utils/adIcons'
+import { formatMoney } from '~/utils/dashboardCardDetails'
 import type { MetaCreativeInsight } from '~/composables/useDashboard'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   creatives: MetaCreativeInsight[]
   loading?: boolean
   blurred?: boolean
-}>()
+  currency?: string
+}>(), {
+  currency: 'BRL',
+})
 
 const topCreatives = computed(() => (props.creatives || []).slice(0, 3))
 
 const formatInt = (n: number) => new Intl.NumberFormat('pt-BR').format(n || 0)
-const formatBRL = (n: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n || 0)
+const formatCurrency = (n: number) => formatMoney(n || 0, props.currency)
 
 const computeCPL = (item: MetaCreativeInsight) => {
   const spend = Number(item.spend || 0)
   const leads = Number(item.leads || 0)
   if (leads <= 0 || spend <= 0) return '—'
-  return formatBRL(spend / leads)
+  return formatCurrency(spend / leads)
 }
 </script>
 
@@ -110,6 +118,8 @@ const computeCPL = (item: MetaCreativeInsight) => {
 .badge-meta { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 0.5rem; padding: 2.25rem 1rem; color: var(--text-3); font-size: var(--fs-sm); background: var(--surface-deep); border: 1px dashed var(--border); border-radius: 10px; flex: 1; }
 .empty-icon { color: var(--text-3); opacity: 0.7; }
+.loading-spinner { width: 1.35rem; height: 1.35rem; border: 2px solid var(--border); border-top-color: var(--brand); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .podium-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
 @media (max-width: 768px) { .podium-grid { grid-template-columns: 1fr; } }
@@ -135,7 +145,7 @@ const computeCPL = (item: MetaCreativeInsight) => {
 .cr-id { font-size: var(--fs-2xs); color: var(--text-3); font-family: var(--font-mono); }
 
 .podium-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.35rem; padding-top: 0.5rem; border-top: 1px solid var(--border-soft); }
-.podium-stats.is-blurred .val-brand { filter: blur(6px); user-select: none; }
+.podium-stats.is-blurred .blur-target { filter: blur(6px); user-select: none; }
 .p-stat { display: flex; flex-direction: column; gap: 0.08rem; min-width: 0; }
 .p-lbl { font-size: var(--fs-2xs); color: var(--text-3); text-transform: uppercase; }
 .p-val { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--text-2); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -77,11 +77,15 @@
 
 <script setup lang="ts">
 import type { GroupedEvent, TrackedUser, AggregatedItem } from '#shared/types'
+import { formatMoney } from '~/utils/dashboardCardDetails'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   source: GroupedEvent | null
   trackedUser: TrackedUser | null
-}>()
+  currency?: string
+}>(), {
+  currency: 'BRL',
+})
 
 const decodeUTM = (val: string | null | undefined): string => {
   if (!val) return ''
@@ -92,8 +96,7 @@ const decodeUTM = (val: string | null | undefined): string => {
   }
 }
 
-const formatCurrency = (v: number | undefined): string =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0)
+const formatCurrency = (v: number | undefined): string => formatMoney(v || 0, props.currency)
 
 const itemTypeLabel = (item: AggregatedItem, idx: number): string => {
   if (item.item_type === 'order_bump') return 'Order Bump'

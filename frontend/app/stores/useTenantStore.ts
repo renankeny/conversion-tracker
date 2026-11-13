@@ -4,6 +4,7 @@ import type { Account } from '#shared/types'
 import { setBrowserCookie } from '~/utils/cookies'
 import { useAuthStore } from '~/stores/useAuthStore'
 import { useDashboardStore } from '~/stores/useDashboardStore'
+import { useDashboardDataStore } from '~/stores/useDashboardDataStore'
 import { usePixelStore } from '~/stores/usePixelStore'
 import { useGoogleAdsStore } from '~/stores/useGoogleAdsStore'
 import { useCustomWebhooksStore } from '~/stores/customWebhooks'
@@ -118,6 +119,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
     const dashboardStore = useDashboardStore()
     dashboardStore.setSelectedPixel('')
+    useDashboardDataStore().clearAll()
     if (import.meta.client) {
       localStorage.removeItem('trackfind_selected_pixel')
     }
@@ -141,6 +143,7 @@ export const useTenantStore = defineStore('tenant', () => {
     loading.value = false
     activeAccountId.value = null
     inFlightPromise = null
+    useDashboardDataStore().clearAll()
   }
 
   return {

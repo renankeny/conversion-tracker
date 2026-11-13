@@ -107,8 +107,10 @@ export function resolveCardIcon(entry: EventCatalogEntry, trafficSource?: Dashbo
 
 export interface DashboardMetricsContext {
   sumOf: (event: string) => number
+  sentOf?: (event: string) => number
   failedTotal: number
   totalRevenue: number
+  currency?: string
   trafficSource?: DashboardTrafficSource
   privacyMode?: boolean
   metaInsights?: AdPlatformLiveInsights | null
@@ -149,6 +151,7 @@ export function computeCardMetricValue(id: string, ctx: DashboardMetricsContext)
 
   const totalLeads = resolvePanelLeads(ctx)
   const totalPurchases = resolvePanelPurchases(ctx)
+  const sentPurchases = Math.max(ctx.panelAudit?.purchases.sent ?? 0, ctx.sentOf ? ctx.sentOf('Purchase') : 0)
   const metaLeads = ctx.panelAudit?.leads.meta_total ?? ctx.sourceBreakdown?.meta.leads ?? 0
   const metaPurchases = ctx.panelAudit?.purchases.meta_total ?? ctx.sourceBreakdown?.meta.purchases ?? 0
   const metaRev = ctx.sourceBreakdown?.meta.revenue ?? 0
@@ -165,26 +168,26 @@ export function computeCardMetricValue(id: string, ctx: DashboardMetricsContext)
     case '__total_cpa__': return safeDiv(activeSpend, totalPurchases)
     case '__conv_rate__': return safeDiv(totalPurchases, totalLeads)
     case '__total_roas__': return safeDiv(ctx.totalRevenue, activeSpend)
-    case '__avg_ticket__': return safeDiv(ctx.totalRevenue, totalPurchases)
+    case '__avg_ticket__': return safeDiv(ctx.totalRevenue, sentPurchases > 0 ? sentPurchases : totalPurchases)
     case '__ad_clicks__': return activeClicks
     case '__avg_cpc__': return safeDiv(activeSpend, activeClicks)
     case '__total_profit__': return ctx.totalRevenue - activeSpend
     case '__meta_spend__': return metaSpend
     case '__meta_leads__': return metaLeads
-    case '__meta_cpl__': return safeDiv(metaSpend, metaLeads || totalLeads)
+    case '__meta_cpl__': return safeDiv(metaSpend, metaLeads)
     case '__meta_purchases__': return metaPurchases
-    case '__meta_cpa__': return safeDiv(metaSpend, metaPurchases || totalPurchases)
+    case '__meta_cpa__': return safeDiv(metaSpend, metaPurchases)
     case '__meta_revenue__': return metaRev
-    case '__meta_roas__': return safeDiv(metaRev || ctx.totalRevenue, metaSpend)
+    case '__meta_roas__': return safeDiv(metaRev, metaSpend)
     case '__meta_clicks__': return metaClicks
     case '__meta_cpc__': return safeDiv(metaSpend, metaClicks)
     case '__google_spend__': return googleSpend
     case '__google_leads__': return googleLeads
-    case '__google_cpl__': return safeDiv(googleSpend, googleLeads || totalLeads)
+    case '__google_cpl__': return safeDiv(googleSpend, googleLeads)
     case '__google_purchases__': return googlePurchases
-    case '__google_cpa__': return safeDiv(googleSpend, googlePurchases || totalPurchases)
+    case '__google_cpa__': return safeDiv(googleSpend, googlePurchases)
     case '__google_revenue__': return googleRev
-    case '__google_roas__': return safeDiv(googleRev || ctx.totalRevenue, googleSpend)
+    case '__google_roas__': return safeDiv(googleRev, googleSpend)
     case '__google_clicks__': return googleClicks
     case '__google_cpc__': return safeDiv(googleSpend, googleClicks)
     case 'Lead': return totalLeads

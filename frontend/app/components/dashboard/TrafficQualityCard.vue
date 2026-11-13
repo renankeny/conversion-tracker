@@ -63,17 +63,19 @@ const humanCount = computed(() => props.stats?.human_count || 0)
 const botCount = computed(() => props.stats?.bot_count || 0)
 const inconclusiveCount = computed(() => props.stats?.inconclusive_count || 0)
 
-const humanPercent = computed(() => (total.value === 0 ? 100 : (props.stats?.human_percent ?? 100)))
+const humanPercent = computed(() => (total.value === 0 ? 0 : (props.stats?.human_percent ?? 0)))
 const botPercent = computed(() => (total.value === 0 ? 0 : (props.stats?.bot_percent ?? 0)))
 const inconclusivePercent = computed(() => (total.value === 0 ? 0 : (props.stats?.inconclusive_percent ?? 0)))
 
 const trafficStatusLabel = computed(() => {
+  if (total.value === 0) return 'Sem tráfego no período'
   if (humanPercent.value >= 85) return 'Tráfego Altamente Humano'
   if (humanPercent.value >= 65) return 'Qualidade de Tráfego Boa'
   return 'Atenção: Alto Volume de Bots'
 })
 
 const trafficBadgeClass = computed(() => {
+  if (total.value === 0) return 'status-neutral'
   if (humanPercent.value >= 85) return 'status-safe'
   if (humanPercent.value >= 65) return 'status-warning'
   return 'status-alert'
@@ -147,6 +149,15 @@ const trafficBadgeClass = computed(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
+}
+
+.trust-pill.status-neutral {
+  background: var(--surface-soft);
+  color: var(--text-3);
+  border: 1px solid var(--border);
+}
+.trust-pill.status-neutral .trust-dot {
+  background: var(--text-3);
 }
 
 .trust-pill.status-safe {

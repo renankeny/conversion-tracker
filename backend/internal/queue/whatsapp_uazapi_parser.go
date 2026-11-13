@@ -187,9 +187,6 @@ func ParseUazapiMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage, e
 		MessageType:      "text",
 		Content:          strings.TrimSpace(util.FirstNonEmpty(env.Message.Text, env.Message.Vote, env.Message.ButtonOrListID)),
 		ExternalMediaURL: strings.TrimSpace(env.Message.FileURL),
-		CtwaClid:         strings.TrimSpace(env.Chat.LeadField10),
-		SourceID:         strings.TrimSpace(env.Chat.LeadField11),
-		SourceApp:        strings.ToLower(strings.TrimSpace(env.Chat.LeadField12)),
 	}
 	if !env.Message.FromMe {
 		out.SenderJID = util.FirstNonEmpty(phoneJID, NormalizeBareJID(env.Message.Sender))
@@ -200,6 +197,17 @@ func ParseUazapiMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage, e
 	}
 
 	extractUazapiContentAndContext(env.Message.Content, out)
+	if !env.Message.FromMe {
+		if out.CtwaClid == "" {
+			out.CtwaClid = strings.TrimSpace(env.Chat.LeadField10)
+		}
+		if out.SourceID == "" {
+			out.SourceID = strings.TrimSpace(env.Chat.LeadField11)
+		}
+		if out.SourceApp == "" {
+			out.SourceApp = strings.ToLower(strings.TrimSpace(env.Chat.LeadField12))
+		}
+	}
 	if out.Content == "" && !out.HasMedia && out.CtwaClid == "" && out.SourceID == "" {
 		return nil, nil
 	}

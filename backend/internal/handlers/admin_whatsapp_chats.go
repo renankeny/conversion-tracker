@@ -13,6 +13,7 @@ import (
 
 type AdminWhatsAppChats struct {
 	repo         *repo.WhatsAppRepo
+	aiRepo       *repo.WhatsAppAIRepo
 	enqueuer     *queue.Enqueuer
 	publicAPIURL string
 	jwtSecret    string
@@ -25,6 +26,21 @@ func NewAdminWhatsAppChats(repo *repo.WhatsAppRepo, enqueuer *queue.Enqueuer, pu
 		publicAPIURL: publicAPIURL,
 		jwtSecret:    jwtSecret,
 	}
+}
+
+func (h *AdminWhatsAppChats) SetAIRepo(ai *repo.WhatsAppAIRepo) {
+	h.aiRepo = ai
+}
+
+func (h *AdminWhatsAppChats) listAIEvents(r *http.Request, chatID int64) []*domain.WhatsAppAIEvent {
+	if h.aiRepo == nil || chatID <= 0 {
+		return []*domain.WhatsAppAIEvent{}
+	}
+	evs, err := h.aiRepo.ListAIEventsByChat(r.Context(), chatID)
+	if err != nil || evs == nil {
+		return []*domain.WhatsAppAIEvent{}
+	}
+	return evs
 }
 
 func (h *AdminWhatsAppChats) signMessages(accID int64, msgs []*domain.WhatsAppMessage) {
@@ -85,6 +101,7 @@ func (h *AdminWhatsAppChats) GetMessages(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"chat":           chat,
 		"messages":       msgs,
+		"ai_events":      h.listAIEvents(r, chat.ID),
 		"has_more":       hasMore,
 		"next_before_id": nextBeforeID,
 	})
@@ -107,6 +124,7 @@ func (h *AdminWhatsAppChats) GetByTrackedUser(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusOK, map[string]any{
 			"chat":           nil,
 			"messages":       []any{},
+			"ai_events":      []any{},
 			"has_more":       false,
 			"next_before_id": nil,
 		})
@@ -123,6 +141,7 @@ func (h *AdminWhatsAppChats) GetByTrackedUser(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]any{
 		"chat":           chat,
 		"messages":       msgs,
+		"ai_events":      h.listAIEvents(r, chat.ID),
 		"has_more":       hasMore,
 		"next_before_id": nextBeforeID,
 	})
@@ -145,6 +164,7 @@ func (h *AdminWhatsAppChats) GetByCRMLead(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, map[string]any{
 			"chat":           nil,
 			"messages":       []any{},
+			"ai_events":      []any{},
 			"has_more":       false,
 			"next_before_id": nil,
 		})
@@ -161,6 +181,7 @@ func (h *AdminWhatsAppChats) GetByCRMLead(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{
 		"chat":           chat,
 		"messages":       msgs,
+		"ai_events":      h.listAIEvents(r, chat.ID),
 		"has_more":       hasMore,
 		"next_before_id": nextBeforeID,
 	})

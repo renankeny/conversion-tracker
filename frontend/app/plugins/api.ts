@@ -1,8 +1,9 @@
 import { watch } from 'vue'
+import type { $Fetch } from 'ofetch'
 import type { AdminUser } from '#shared/types'
 import type { ServiceNoticeState } from '~/composables/useSetup'
 import { useAuthStore } from '~/stores/useAuthStore'
-import { useDashboardStore, type PeriodValue } from '~/stores/useDashboardStore'
+import { useDashboardStore, type DashboardTrafficSource, type PeriodValue } from '~/stores/useDashboardStore'
 import { useTenantStore } from '~/stores/useTenantStore'
 import { useThemeStore } from '~/stores/useThemeStore'
 import { setBrowserCookie, getBrowserCookie } from '~/utils/cookies'
@@ -41,6 +42,8 @@ export default defineNuxtPlugin({
     const dashFromCookie = useCookie<string>('tf_dashboard_custom_from', { default: () => '' })
     const dashToCookie = useCookie<string>('tf_dashboard_custom_to', { default: () => '' })
     const dashPixelCookie = useCookie<string>('tf_dashboard_selected_pixel', { default: () => '' })
+    const dashSourceCookie = useCookie<DashboardTrafficSource>('tf_dashboard_source', { default: () => 'all' })
+    const dashPrivacyCookie = useCookie<string | null>('tf_dashboard_privacy', { default: () => null })
 
     authStore.hydrate(authTokenCookie.value, authUserCookie.value)
     tenantStore.hydrate(activeAccountCookie.value)
@@ -56,6 +59,8 @@ export default defineNuxtPlugin({
       customFrom: dashFromCookie.value,
       customTo: dashToCookie.value,
       selectedPixel: dashPixelCookie.value,
+      trafficSource: dashSourceCookie.value,
+      privacyMode: dashPrivacyCookie.value === '1',
     })
 
     // Mantém os refs do useCookie sincronizados com as stores para middlewares Nuxt
@@ -171,8 +176,8 @@ export default defineNuxtPlugin({
 
     return {
       provide: {
-        api,
-        publicApi,
+        api: api as unknown as $Fetch,
+        publicApi: publicApi as unknown as $Fetch,
       },
     }
   },

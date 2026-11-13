@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,13 +31,31 @@ func NewAdminDashboardGoogle(pr *repo.PixelRepo, ga *repo.GoogleAdsAccountRepo, 
 	}
 }
 
-func (h *AdminDashboardGoogle) SetStatsRepo(sr *repo.StatsRepo)  { h.statsRepo = sr }
+func (h *AdminDashboardGoogle) SetStatsRepo(sr *repo.StatsRepo)     { h.statsRepo = sr }
 func (h *AdminDashboardGoogle) SetQueryCache(qc *cache.QueryCache) { h.qcache = qc }
 
-func (h *AdminDashboardGoogle) resolveGoogleSource(r *http.Request) (*domain.GoogleAdsAccount, *domain.Pixel, error) {
+func (h *AdminDashboardGoogle) resolveGoogleSourceForPixel(ctx context.Context, p *domain.Pixel) (*domain.GoogleAdsAccount, error) {
 	if h.gadsAccs == nil || h.gadsCli == nil {
-		return nil, nil, errors.New("google ads service not configured")
+		return nil, errors.New("google ads service not configured")
 	}
+	if p.GoogleAdsAccountID != nil && *p.GoogleAdsAccountID > 0 {
+		if acc, ferr := h.gadsAccs.FindByID(ctx, *p.GoogleAdsAccountID); ferr == nil && acc != nil && acc.Enabled && acc.IsConnected() && acc.CustomerID != "" {
+			return acc, nil
+		}
+	}
+
+	list, err := h.gadsAccs.ListByAccount(ctx, p.AccountID)
+	if err == nil {
+		for i := range list {
+			if list[i].Enabled && list[i].IsConnected() && list[i].CustomerID != "" {
+				return &list[i], nil
+			}
+		}
+	}
+	return nil, errors.New("pixel sem Conta Google Ads ativa")
+}
+
+func (h *AdminDashboardGoogle) resolveGoogleSource(r *http.Request) (*domain.GoogleAdsAccount, *domain.Pixel, error) {
 	pixelName := strings.TrimSpace(r.URL.Query().Get("pixel_name"))
 	if pixelName == "" {
 		return nil, nil, errors.New("pixel_name is required")
@@ -49,22 +68,49 @@ func (h *AdminDashboardGoogle) resolveGoogleSource(r *http.Request) (*domain.Goo
 	if !scope.IsOwner && p.AccountID != scope.AccountID {
 		return nil, nil, errors.New("forbidden")
 	}
-
-	if p.GoogleAdsAccountID != nil && *p.GoogleAdsAccountID > 0 {
-		if acc, ferr := h.gadsAccs.FindByID(r.Context(), *p.GoogleAdsAccountID); ferr == nil && acc != nil && acc.Enabled && acc.IsConnected() && acc.CustomerID != "" {
-			return acc, p, nil
-		}
+	acc, err := h.resolveGoogleSourceForPixel(r.Context(), p)
+	if err != nil {
+		return nil, nil, err
 	}
+	return acc, p, nil
+}
 
-	list, err := h.gadsAccs.ListByAccount(r.Context(), p.AccountID)
-	if err == nil {
-		for i := range list {
-			if list[i].Enabled && list[i].IsConnected() && list[i].CustomerID != "" {
-				return &list[i], p, nil
+func (h *AdminDashboardGoogle) loadCachedSummary(ctx context.Context, acc *domain.GoogleAdsAccount, since, until string) ([]byte, error) {
+	prevSince, prevUntil := previousYMDWindow(since, until)
+	key := cache.HashQueryKey("gads:insights:v3", strconv.FormatInt(acc.AccountID, 10), strconv.FormatInt(acc.ID, 10), acc.CustomerID, since, until)
+	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte(`{"connected":false}`), func(lctx context.Context) ([]byte, error) {
+		summary, ferr := h.gadsCli.FetchLiveInsights(lctx, acc, since, until)
+		if ferr != nil {
+			return nil, ferr
+		}
+		if prevSince != "" && prevUntil != "" {
+			if prev, perr := h.gadsCli.FetchLiveInsights(lctx, acc, prevSince, prevUntil); perr == nil {
+				summary.PrevSpend = prev.Spend
+				summary.PrevClicks = prev.Clicks
 			}
 		}
+		summary.Connected = true
+		return json.Marshal(summary)
+	})
+}
+
+func (h *AdminDashboardGoogle) LoadLiveSummaryForPixel(ctx context.Context, p *domain.Pixel, since, until string) googleads.LiveInsightsSummary {
+	if since == "" || until == "" {
+		return googleads.LiveInsightsSummary{Connected: false}
 	}
-	return nil, nil, errors.New("pixel sem Conta Google Ads ativa")
+	acc, err := h.resolveGoogleSourceForPixel(ctx, p)
+	if err != nil {
+		return googleads.LiveInsightsSummary{Connected: false}
+	}
+	raw, err := h.loadCachedSummary(ctx, acc, since, until)
+	if err != nil {
+		return googleads.LiveInsightsSummary{Connected: false}
+	}
+	var out googleads.LiveInsightsSummary
+	if json.Unmarshal(raw, &out) != nil {
+		return googleads.LiveInsightsSummary{Connected: false}
+	}
+	return out
 }
 
 func (h *AdminDashboardGoogle) LiveInsights(w http.ResponseWriter, r *http.Request) {
@@ -78,23 +124,7 @@ func (h *AdminDashboardGoogle) LiveInsights(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "missing from and to dates")
 		return
 	}
-	prevSince, prevUntil := previousYMDWindow(since, until)
-
-	key := cache.HashQueryKey("gads:insights:v2", acc.CustomerID, since, until)
-	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
-		summary, ferr := h.gadsCli.FetchLiveInsights(ctx, acc, since, until)
-		if ferr != nil {
-			return nil, ferr
-		}
-		if prevSince != "" && prevUntil != "" {
-			if prev, perr := h.gadsCli.FetchLiveInsights(ctx, acc, prevSince, prevUntil); perr == nil {
-				summary.PrevSpend = prev.Spend
-				summary.PrevClicks = prev.Clicks
-			}
-		}
-		summary.Connected = true
-		return json.Marshal(summary)
-	})
+	raw, err := h.loadCachedSummary(r.Context(), acc, since, until)
 	if err != nil {
 		writeJSON(w, http.StatusOK, googleads.LiveInsightsSummary{Connected: false})
 		return
@@ -114,11 +144,11 @@ func (h *AdminDashboardGoogle) KeywordRanking(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "missing from and to dates")
 		return
 	}
-	fromTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("from")))
-	toTime, _ := time.Parse(time.RFC3339, strings.TrimSpace(r.URL.Query().Get("to")))
+	fromTime, toTime := parseDashboardTimeBounds(r)
+	ver := h.qcache.DashboardVersion(r.Context(), px.AccountID)
 
-	key := cache.HashQueryKey("gads:keywords:v2", px.Name, acc.CustomerID, since, until)
-	raw, err := h.qcache.GetOrLoadBytes(r.Context(), key, 3*time.Minute, func(ctx context.Context) ([]byte, error) {
+	key := cache.HashQueryKey("gads:keywords:v3", strconv.FormatInt(px.AccountID, 10), ver, strconv.FormatInt(acc.ID, 10), px.Name, acc.CustomerID, since, until)
+	raw, err := h.qcache.GetOrLoadWithNegCache(r.Context(), key, 3*time.Minute, 20*time.Second, []byte("[]"), func(ctx context.Context) ([]byte, error) {
 		kw, ferr := h.gadsCli.FetchKeywordRanking(ctx, acc, since, until)
 		if ferr != nil {
 			return nil, ferr

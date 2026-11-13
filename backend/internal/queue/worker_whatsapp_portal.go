@@ -179,3 +179,27 @@ func splitFullName(pushName string) (string, string) {
 	}
 	return parts[0], parts[1]
 }
+
+// resolveMessagePortalFields extrai os marcadores de anúncio/protocolo pertencentes
+// especificamente à mensagem recebida (novo CTWA, referral na mensagem, ou protocolo
+// novo/repetido via cookie). Mensagens normais de continuação retornam vazio.
+func resolveMessagePortalFields(
+	parsed *ParsedWhatsAppMessage,
+	existingChat *domain.WhatsAppChat,
+	protocolCode string,
+) (ctwaClid, sourceID, proto string) {
+	if parsed == nil || parsed.IsFromMe {
+		return "", "", ""
+	}
+	proto = strings.TrimSpace(protocolCode)
+	if parsed.HasMsgAdReferral {
+		return strings.TrimSpace(parsed.CtwaClid), strings.TrimSpace(parsed.SourceID), proto
+	}
+	if parsed.CtwaClid != "" && (existingChat == nil || parsed.CtwaClid != existingChat.CtwaClid) {
+		ctwaClid = strings.TrimSpace(parsed.CtwaClid)
+	}
+	if parsed.SourceID != "" && (existingChat == nil || parsed.SourceID != existingChat.SourceID) {
+		sourceID = strings.TrimSpace(parsed.SourceID)
+	}
+	return ctwaClid, sourceID, proto
+}

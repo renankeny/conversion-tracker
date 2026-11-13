@@ -20,7 +20,7 @@
         <div>
           <div class="brand-header-row"><BrandLogo size="sm" /></div>
           <h1 class="page-title">{{ pixelLabel || 'Dashboard' }}</h1>
-          <p class="page-subtitle">Visualização pública — {{ periodLabels[period] }}</p>
+          <p class="page-subtitle">Visualização pública — {{ PUBLIC_PERIOD_LABELS[period] }}</p>
         </div>
         <div class="header-controls">
           <PeriodSelector v-model="period" v-model:customFrom="customFrom" v-model:customTo="customTo" />
@@ -40,6 +40,7 @@
           :label="c.label"
           :value="c.value"
           :format="c.format"
+          :currency="currency"
           :variant="c.variant"
           :icon="c.icon"
           :change-percent="c.changePercent"
@@ -53,16 +54,28 @@
       <DashboardHeatmapCard :heatmap="heatmap" />
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <EventsChart :points="seriesData?.points || []" :granularity="seriesData?.granularity || 'day'" subtitle="Comparativo de eventos" />
-        <ConversionFunnel :events="summaryData?.events || []" :steps="funnelSteps" subtitle="Eventos do funil no período" />
+        <EventsChart :points="seriesData?.points || []" :granularity="seriesData?.granularity || granularity" subtitle="Comparativo de eventos" />
+        <ConversionFunnel :events="summaryData?.events || []" :steps="funnelSteps" :lead-total="panelLeadsTotal" subtitle="Eventos do funil no período" />
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <GeoGlobe :stats="geoData" :from="dateRange.from" :to="dateRange.to" />
-        <RecentPurchases :purchases="recentPurchases" :subtitle="`${recentPurchases.length} compras recentes`" @select="onPurchaseSelect" />
+        <RecentPurchases
+          :purchases="recentPurchases"
+          :subtitle="`${recentPurchases.length} compras recentes`"
+          :currency="currency"
+          public-mode
+          @select="onPurchaseSelect"
+        />
       </div>
 
-      <EventDetailsModal v-model="purchaseModalOpen" :source="purchaseSelected" :allow-user-details="false" />
+      <EventDetailsModal
+        v-model="purchaseModalOpen"
+        :source="purchaseSelected"
+        :allow-user-details="false"
+        :currency="currency"
+        public-mode
+      />
     </template>
   </div>
 </template>
@@ -76,154 +89,21 @@ import GeoGlobe from '~/components/dashboard/GeoGlobe.vue'
 import RecentPurchases from '~/components/dashboard/RecentPurchases.vue'
 import PeriodSelector from '~/components/dashboard/PeriodSelector.vue'
 import EventDetailsModal from '~/components/events/EventDetailsModal.vue'
-import { computeSaoPauloRange, type PeriodValue } from '~/stores/useDashboardStore'
-import {
-  ALL_CARD_IDS, DEFAULT_ENABLED_CARDS, CATALOG_IDS,
-  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon,
-} from '~/utils/dashboardEventCatalog'
-import { computeCardRichDetails } from '~/utils/dashboardCardDetails'
-import { errorMessage } from '~/utils/errorMessage'
-import type { GeoStat } from '~/utils/geoCoordinates'
-import type { DashboardVisibleCard } from '~/composables/useDashboardView'
-import type {
-  CounterSummaryResponse, CounterSeriesResponse, CounterSummaryRow,
-  DashboardConfig, DashboardHeatmap, GroupedEvent, PanelAudit, PreviousPeriodMetrics, SourceBreakdown,
-} from '#shared/types'
+import { PUBLIC_PERIOD_LABELS, usePublicDashboardView } from '~/composables/usePublicDashboardView'
 
 definePageMeta({ layout: 'default' })
 
 const route = useRoute()
 const token = route.params.token as string
-const api = usePublicDashboard(token)
-const { formatTitle, fetchBranding } = useBranding()
+const { formatTitle } = useBranding()
 
-const period = ref<PeriodValue>('today')
-const customFrom = ref('')
-const customTo = ref('')
-const dateRange = computed(() => computeSaoPauloRange(period.value, customFrom.value, customTo.value))
-const granularity = computed<'hour' | 'day'>(() =>
-  period.value === 'today' || period.value === 'yesterday' ? 'hour' : 'day',
-)
-
-const loading = ref(false)
-const notFound = ref(false)
-const metaLoaded = ref(false)
-const loadError = ref<string | null>(null)
-const pixelLabel = ref('')
-const dashboardConfig = ref<DashboardConfig | null>(null)
+const {
+  period, customFrom, customTo, dateRange, granularity, loading, notFound, metaLoaded, loadError, pixelLabel, currency,
+  summaryData, seriesData, recentPurchases, geoData, heatmap, panelLeadsTotal, visibleCards, funnelSteps,
+  purchaseModalOpen, purchaseSelected, onPurchaseSelect, refresh, retryLoad,
+} = usePublicDashboardView(token)
 
 useHead({ title: computed(() => formatTitle(pixelLabel.value || 'Dashboard')) })
-
-const summaryData = ref<CounterSummaryResponse | null>(null)
-const seriesData = ref<CounterSeriesResponse | null>(null)
-const recentPurchases = ref<GroupedEvent[]>([])
-const geoData = ref<GeoStat[]>([])
-const totalRevenue = ref(0)
-const sourceBreakdown = ref<SourceBreakdown | null>(null)
-const panelAudit = ref<PanelAudit | null>(null)
-const previousPeriod = ref<PreviousPeriodMetrics | null>(null)
-const heatmap = ref<DashboardHeatmap | null>(null)
-
-const purchaseModalOpen = ref(false)
-const purchaseSelected = ref<GroupedEvent | null>(null)
-const onPurchaseSelect = (ev: GroupedEvent) => { purchaseSelected.value = ev; purchaseModalOpen.value = true }
-
-const periodLabels: Record<string, string> = {
-  today: 'Hoje', yesterday: 'Ontem', '7d': 'Últimos 7 dias',
-  '30d': 'Últimos 30 dias', '60d': 'Últimos 60 dias', '90d': 'Últimos 90 dias', custom: 'Personalizado',
-}
-
-const summaryByEvent = computed(() => {
-  const map = new Map<string, CounterSummaryRow>()
-  for (const row of summaryData.value?.events || []) map.set(row.event_name, row)
-  return map
-})
-const sumOf = (event: string) => summaryByEvent.value.get(event)?.count_total ?? 0
-const failedTotal = computed(() => (summaryData.value?.events || []).reduce((s, r) => s + r.count_failed, 0))
-const eventLabel = (id: string, fallback: string): string => dashboardConfig.value?.event_labels?.[id] || fallback
-
-const visibleCards = computed<DashboardVisibleCard[]>(() => {
-  const order = dashboardConfig.value?.card_order?.length
-    ? Array.from(new Set([...dashboardConfig.value.card_order, ...ALL_CARD_IDS]))
-    : Array.from(new Set([...DEFAULT_ENABLED_CARDS, ...ALL_CARD_IDS]))
-  const enabled = dashboardConfig.value?.enabled_cards?.length ? dashboardConfig.value.enabled_cards : DEFAULT_ENABLED_CARDS
-  const cards: DashboardVisibleCard[] = []
-  const ctx = {
-    sumOf, failedTotal: failedTotal.value, totalRevenue: totalRevenue.value,
-    sourceBreakdown: sourceBreakdown.value, panelAudit: panelAudit.value, previousPeriod: previousPeriod.value,
-  }
-  for (const id of order) {
-    if (!enabled.includes(id)) continue
-    const e = catalogById.get(id)
-    if (!e) continue
-    const value = computeCardMetricValue(id, ctx)
-    const rich = computeCardRichDetails(id, value, ctx)
-    cards.push({ id, label: eventLabel(id, e.label), icon: resolveCardIcon(e), variant: e.variant, value, format: e.format, ...rich })
-  }
-  return cards
-})
-
-const funnelSteps = computed(() => {
-  const order = dashboardConfig.value?.funnel_order?.length ? dashboardConfig.value.funnel_order : CATALOG_IDS
-  const enabled = dashboardConfig.value?.enabled_funnel_events?.length ? dashboardConfig.value.enabled_funnel_events : DEFAULT_FUNNEL_EVENTS
-  const steps: Array<{ event: string; label: string; color: string }> = []
-  for (const id of order) {
-    if (!enabled.includes(id)) continue
-    const e = catalogById.get(id)
-    if (e) steps.push({ event: id, label: eventLabel(id, e.label), color: e.color })
-  }
-  return steps
-})
-
-const handleApiError = (err: unknown) => {
-  const code = err && typeof err === 'object' ? (err as { statusCode?: number }).statusCode : undefined
-  if (code === 404 || code === 410) { notFound.value = true; loadError.value = null }
-  else loadError.value = errorMessage(err, 'Não foi possível carregar os dados no momento.')
-}
-
-const fetchMeta = async () => {
-  try {
-    const res = await api.meta()
-    pixelLabel.value = res.pixel_label; dashboardConfig.value = res.dashboard_config
-    metaLoaded.value = true; loadError.value = null
-  } catch (err: unknown) { handleApiError(err) }
-}
-
-const fetchAll = async () => {
-  if (notFound.value || !metaLoaded.value) return
-  loading.value = true
-  try {
-    const { from, to } = dateRange.value
-    const [summary, series, purchases, geo, geoPurchases, revenue] = await Promise.all([
-      api.summary({ from, to }), api.series({ from, to, granularity: granularity.value }),
-      api.purchases({ from, to }), api.geo({ from, to }),
-      api.geoByEvent({ from, to, event: 'Purchase' }), api.revenue({ from, to }),
-    ])
-    summaryData.value = summary; seriesData.value = series; recentPurchases.value = purchases.data || []
-    totalRevenue.value = revenue.total_revenue ?? 0
-    sourceBreakdown.value = revenue.source_breakdown || null
-    panelAudit.value = revenue.panel_audit || null
-    previousPeriod.value = revenue.previous_period || null
-    heatmap.value = revenue.heatmap || null
-    geoData.value = [...(geo || []).map((g) => ({ ...g, event_name: 'PageView' })), ...(geoPurchases || [])]
-    loadError.value = null
-  } catch (err: unknown) { handleApiError(err) }
-  finally { loading.value = false }
-}
-
-const refresh = () => fetchAll()
-const retryLoad = async () => {
-  loading.value = true
-  if (!metaLoaded.value) await fetchMeta()
-  if (!notFound.value && metaLoaded.value) await fetchAll()
-  else loading.value = false
-}
-
-watch([period, customFrom, customTo], () => {
-  if (period.value !== 'custom' || (customFrom.value && customTo.value)) refresh()
-})
-
-onMounted(async () => { void fetchBranding(); await retryLoad() })
 </script>
 
 <style scoped>

@@ -12,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
@@ -53,6 +54,7 @@ func (h *AdminCRM) notifyCRMUpdated(ctx context.Context, accountID int64, action
 	if h.rdb == nil || accountID <= 0 {
 		return
 	}
+	cache.BumpDashboardVersion(ctx, h.rdb, accountID)
 	wshub.PublishCustom(ctx, h.rdb, accountID, "crm_updated", map[string]any{"action": action})
 }
 

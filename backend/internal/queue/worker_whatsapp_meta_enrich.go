@@ -68,18 +68,17 @@ func dispatchMetaWithOAuthFallback(ctx context.Context, deps Deps, pixel *domain
 	return results
 }
 
-func enrichAndDispatchCTWALead(
+func enrichCTWAAdMetadata(
 	ctx context.Context,
 	deps Deps,
 	inst *domain.WhatsAppInstance,
 	u *domain.TrackedUser,
 	chatID int64,
-	phone, sourceID, ctwaClid string,
-	isInbound bool,
-) error {
+	sourceID string,
+) (*domain.Pixel, string) {
 	pixel, err := deps.Pixels.FindByID(ctx, inst.PixelID)
 	if err != nil || pixel == nil || !pixel.Enabled {
-		return nil
+		return nil, ""
 	}
 
 	oauthAcc := resolvePixelMetaOAuth(ctx, deps, pixel)
@@ -110,8 +109,40 @@ func enrichAndDispatchCTWALead(
 		metaInfo.PageID = oauthAcc.DefaultPageID
 	}
 
-	if !isInbound || deps.Enqueuer == nil || (ctwaClid == "" && sourceID == "") {
+	return pixel, metaInfo.PageID
+}
+
+func shouldDispatchCTWALead(minInbound, currentInbound int, isInbound bool) bool {
+	if !isInbound {
+		return false
+	}
+	req := domain.NormalizeCtwaMinMessages(minInbound)
+	return currentInbound >= req
+}
+
+func maybeDispatchCTWALeadSubmitted(
+	ctx context.Context,
+	deps Deps,
+	inst *domain.WhatsAppInstance,
+	pixel *domain.Pixel,
+	u *domain.TrackedUser,
+	chatID int64,
+	phone, sourceID, ctwaClid, pageID string,
+	isInbound bool,
+) error {
+	if pixel == nil || !isInbound || deps.Enqueuer == nil || (ctwaClid == "" && sourceID == "") {
 		return nil
+	}
+
+	minReq := inst.EffectiveCtwaMinMessages()
+	if minReq > 1 {
+		inboundCount, err := deps.WhatsApp.CountInboundMessages(ctx, chatID)
+		if err != nil {
+			return fmt.Errorf("count inbound messages for ctwa lead: %w", err)
+		}
+		if !shouldDispatchCTWALead(minReq, inboundCount, isInbound) {
+			return nil
+		}
 	}
 
 	actionSource := "business_messaging"
@@ -121,7 +152,7 @@ func enrichAndDispatchCTWALead(
 		actionSource = "system_generated"
 		messagingChannel = ""
 		eventID = fmt.Sprintf("ctwa_ad:%s:%d", sourceID, chatID)
-	} else if metaInfo.PageID == "" {
+	} else if pageID == "" {
 		actionSource = "system_generated"
 		messagingChannel = ""
 		ctwaClid = ""
@@ -145,7 +176,7 @@ func enrichAndDispatchCTWALead(
 		ActionSource:     actionSource,
 		MessagingChannel: messagingChannel,
 		CtwaClid:         ctwaClid,
-		PageID:           metaInfo.PageID,
+		PageID:           pageID,
 		ExternalID:       u.ExternalID,
 		IDWpp:            u.IDWpp,
 		ClientIP:         u.ClientIP,

@@ -4,9 +4,14 @@
       <div class="title-row">
         <div class="title-wrap">
           <h1 class="page-title">Dashboard</h1>
-          <span v-if="selectedPixelObj" class="live-pill" title="Rastreamento em tempo real ativo">
+          <span
+            v-if="selectedPixelObj"
+            class="live-pill"
+            :class="{ 'is-offline': !liveStore.connected }"
+            :title="liveStore.connected ? 'Rastreamento em tempo real ativo via WebSocket' : 'Reconectando canal em tempo real...'"
+          >
             <span class="pulse-dot" />
-            <span>LIVE</span>
+            <span>{{ liveStore.connected ? 'LIVE' : 'SYNC' }}</span>
           </span>
         </div>
 
@@ -63,6 +68,7 @@
 import { Eye, EyeOff } from 'lucide-vue-next'
 import PeriodSelector from '~/components/dashboard/PeriodSelector.vue'
 import { useDashboardStore } from '~/stores/useDashboardStore'
+import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
 import type { Pixel } from '#shared/types'
 
 const props = defineProps<{
@@ -74,13 +80,14 @@ const props = defineProps<{
 defineEmits<{ refresh: [] }>()
 
 const dashboardStore = useDashboardStore()
+const liveStore = useLiveEventsStore()
 const pixelsApi = usePixels()
 const pixelStore = usePixelStore()
 const toast = useToast()
 
 const selectedPixel = computed({
   get: () => dashboardStore.selectedPixel,
-  set: (v: string) => { dashboardStore.selectedPixel = v },
+  set: (v: string) => { dashboardStore.setSelectedPixel(v) },
 })
 
 const sourceOptions = [
@@ -94,7 +101,9 @@ const linkVisible = ref(false)
 const shareToken = computed(() => props.selectedPixelObj?.dashboard_share_token || '')
 const publicDashboardUrl = computed(() => {
   if (!shareToken.value) return ''
-  return `${useRuntimeConfig().public.appUrl}/cliente/${shareToken.value}`
+  const cfgUrl = (useRuntimeConfig().public.appUrl || '').replace(/\/$/, '')
+  const origin = import.meta.client ? window.location.origin : cfgUrl
+  return `${cfgUrl || origin}/cliente/${shareToken.value}`
 })
 
 watch(shareToken, () => { linkVisible.value = false })
@@ -115,8 +124,12 @@ const generateShareLink = async () => {
 
 const copyShareLink = async () => {
   if (!publicDashboardUrl.value) return
-  await navigator.clipboard.writeText(publicDashboardUrl.value)
-  toast.success('Copiado', 'Link copiado pra área de transferência.')
+  try {
+    await navigator.clipboard.writeText(publicDashboardUrl.value)
+    toast.success('Copiado', 'Link copiado pra área de transferência.')
+  } catch {
+    toast.error('Erro', 'Não foi possível copiar o link automaticamente.')
+  }
 }
 
 const revokeShareLink = async () => {
@@ -135,96 +148,22 @@ const revokeShareLink = async () => {
 </script>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.title-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.page-title {
-  font-family: var(--font-sans);
-  font-size: var(--fs-3xl);
-  font-weight: var(--fw-bold);
-  color: var(--text-strong);
-  letter-spacing: -0.02em;
-  margin-bottom: 0;
-}
-
-.live-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.45rem;
-  background: var(--brand-soft);
-  border: 1px solid var(--brand-border);
-  border-radius: 9999px;
-  font-size: var(--fs-2xs);
-  font-weight: var(--fw-bold);
-  color: var(--brand);
-  letter-spacing: 0.06em;
-}
-
-.pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--brand);
-  box-shadow: 0 0 6px var(--brand);
-  animation: livePulse 1.8s infinite;
-}
-
+.page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+.title-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.title-wrap { display: flex; align-items: center; gap: 0.5rem; }
+.page-title { font-family: var(--font-sans); font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); letter-spacing: -0.02em; margin-bottom: 0; }
+.live-pill { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.45rem; background: var(--brand-soft); border: 1px solid var(--brand-border); border-radius: 9999px; font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--brand); letter-spacing: 0.06em; }
+.live-pill.is-offline { background: var(--surface-soft); border-color: var(--border); color: var(--text-3); }
+.live-pill.is-offline .pulse-dot { background: var(--text-3); box-shadow: none; animation: none; }
+.pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 6px var(--brand); animation: livePulse 1.8s infinite; }
 @keyframes livePulse {
-  0% { transform: scale(0.95); opacity: 0.8; }
+  0%, 100% { transform: scale(0.95); opacity: 0.8; }
   50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 10px var(--brand); }
-  100% { transform: scale(0.95); opacity: 0.8; }
 }
-
-.page-subtitle {
-  color: var(--text-3);
-  font-size: var(--fs-base);
-  margin-top: 0.25rem;
-}
-
-.header-controls {
-  display: flex;
-  gap: 0.625rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.share-link-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.share-link-value {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: var(--fs-sm);
-  background: var(--surface-soft);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 0.25rem 0.5rem;
-  color: var(--text-1);
-  overflow-wrap: anywhere;
-}
-
+.page-subtitle { color: var(--text-3); font-size: var(--fs-base); margin-top: 0.25rem; }
+.header-controls { display: flex; gap: 0.625rem; align-items: center; flex-wrap: wrap; }
+.share-link-bar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.share-link-value { font-family: var(--font-mono); font-size: var(--fs-sm); background: var(--surface-soft); border: 1px solid var(--border-soft); border-radius: 6px; padding: 0.25rem 0.5rem; color: var(--text-1); overflow-wrap: anywhere; }
 @media (max-width: 640px) {
   .page-header { align-items: stretch; }
   .header-controls { justify-content: flex-start; }

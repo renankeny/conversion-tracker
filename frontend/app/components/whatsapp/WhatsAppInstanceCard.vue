@@ -46,9 +46,9 @@
         </div>
 
         <div class="meta-row">
-          <span class="meta-label">CRM Automático</span>
+          <span class="meta-label">CRM & Lead CTWA</span>
           <span class="meta-val" :class="instance.auto_create_crm_lead ? 'val-ok' : 'muted'">
-            {{ instance.auto_create_crm_lead ? 'Ativo' : 'Desativado' }}
+            {{ instance.auto_create_crm_lead ? 'CRM Ativo' : 'CRM Off' }} · {{ instance.ctwa_min_inbound_messages === 3 ? '3ª msg' : '1ª msg' }}
           </span>
         </div>
 

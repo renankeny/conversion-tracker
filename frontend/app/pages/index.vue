@@ -3,7 +3,7 @@
     <DashboardFilterBar
       :selected-pixel-obj="selectedPixelObj"
       :header-subtitle="headerSubtitle"
-      :loading="loading"
+      :loading="loading || isRefreshing"
       @refresh="refresh"
     />
 
@@ -36,6 +36,7 @@
         :label="card.label"
         :value="card.value"
         :format="card.format"
+        :currency="activeCurrency"
         :variant="card.variant"
         :icon="card.icon"
         :change-percent="card.changePercent"
@@ -60,12 +61,14 @@
         :creatives="metaCreatives"
         :loading="adsLoading"
         :blurred="dashboardStore.privacyMode"
+        :currency="activeCurrency"
       />
       <GoogleKeywordRankingCard
         v-if="dashboardStore.trafficSource !== 'meta'"
         :keywords="googleKeywords"
         :loading="adsLoading"
         :blurred="dashboardStore.privacyMode"
+        :currency="activeCurrency"
       />
     </div>
 
@@ -77,7 +80,7 @@
 
     <!-- Série Temporal e Funil de Conversão -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <EventsChart :points="filteredSeriesPoints" :granularity="seriesData?.granularity || 'day'" :subtitle="chartSubtitle" />
+      <EventsChart :points="filteredSeriesPoints" :granularity="seriesData?.granularity || dashboardStore.granularityFor" :subtitle="chartSubtitle" />
 
       <div class="funnel-wrapper">
         <div class="section-header">
@@ -86,18 +89,24 @@
             Editar funil
           </BaseButton>
         </div>
-        <ConversionFunnel :events="summaryData?.events || []" :steps="funnelSteps" :subtitle="funnelSubtitle" />
+        <ConversionFunnel :events="summaryData?.events || []" :steps="funnelSteps" :lead-total="panelLeadsTotal" :subtitle="funnelSubtitle" />
       </div>
     </div>
 
     <!-- Mapa de Localização + Vendas Recentes -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <GeoGlobe :stats="geoData" :from="dashboardStore.getDateRange().from" :to="dashboardStore.getDateRange().to" />
-      <RecentPurchases :purchases="recentPurchases" :subtitle="purchasesSubtitle" @select="onPurchaseSelect" />
+      <RecentPurchases
+        :purchases="recentPurchases"
+        :subtitle="purchasesSubtitle"
+        :currency="activeCurrency"
+        :blurred="dashboardStore.privacyMode"
+        @select="onPurchaseSelect"
+      />
     </div>
 
     <!-- Modais -->
-    <EventDetailsModal v-model="purchaseModalOpen" :source="purchaseSelected" />
+    <EventDetailsModal v-model="purchaseModalOpen" :source="purchaseSelected" :currency="activeCurrency" />
 
     <EventPickerModal
       v-model="cardsEditorOpen"
@@ -150,12 +159,12 @@ const { formatTitle } = useBranding()
 useHead({ title: computed(() => formatTitle('Dashboard')) })
 
 const {
-  dashboardStore, loading, adsLoading, summaryData, seriesData, trafficQuality, heatmap, filteredSeriesPoints,
+  dashboardStore, loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, heatmap, filteredSeriesPoints,
   metaCreatives, googleKeywords, recentPurchases, geoData, purchaseModalOpen, purchaseSelected, onPurchaseSelect,
-  headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, selectedPixelObj, hasCustomCardPrefs,
-  cardsEditorOpen, savingCardsPrefs, enabledCardIds, cardOrder, cardPickerOptions, visibleCards, onSaveCards, onResetCardsDefault,
-  funnelEditorOpen, savingFunnelPrefs, enabledFunnelEvents, funnelOrder, funnelPickerOptions, funnelSteps, onSaveFunnelEvents,
-  eventLabelOverrides, refresh,
+  headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, selectedPixelObj, activeCurrency, panelLeadsTotal,
+  hasCustomCardPrefs, cardsEditorOpen, savingCardsPrefs, enabledCardIds, cardOrder, cardPickerOptions, visibleCards,
+  onSaveCards, onResetCardsDefault, funnelEditorOpen, savingFunnelPrefs, enabledFunnelEvents, funnelOrder,
+  funnelPickerOptions, funnelSteps, onSaveFunnelEvents, eventLabelOverrides, refresh,
 } = useDashboardView()
 </script>
 

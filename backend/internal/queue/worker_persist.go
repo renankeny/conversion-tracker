@@ -38,15 +38,32 @@ func isPermanentHTTPStatus(code int) bool {
 	return code == 400 || code == 401 || code == 403
 }
 
-// collapseChannelResults ordena para que, dentro de um mesmo canal com múltiplos sub-pixels,
-// uma falha prevaleça sobre sucesso parcial na linha consolidada de sent_events.
+// collapseChannelResults consolida múltiplos sub-pixels de um mesmo canal em uma única
+// linha por canal, garantindo que falha parcial em qualquer sub-pixel prevaleça sobre sucesso.
 func collapseChannelResults(results []dispatchResult) []dispatchResult {
-	sorted := make([]dispatchResult, len(results))
-	copy(sorted, results)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].Err == nil && sorted[j].Err != nil
+	if len(results) <= 1 {
+		return results
+	}
+	idxByChan := make(map[string]int, len(results))
+	out := make([]dispatchResult, 0, len(results))
+	for _, r := range results {
+		ch := r.Channel
+		if ch == "" {
+			ch = "meta"
+		}
+		if idx, exists := idxByChan[ch]; exists {
+			if r.Err != nil {
+				out[idx] = r
+			}
+			continue
+		}
+		idxByChan[ch] = len(out)
+		out = append(out, r)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Err == nil && out[j].Err != nil
 	})
-	return sorted
+	return out
 }
 
 func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in domain.SendEventInput, r dispatchResult) {

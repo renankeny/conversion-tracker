@@ -166,8 +166,11 @@ func applyContextInfo(ctxInfo *evoContextInfo, out *ParsedWhatsAppMessage) {
 	if ctxInfo == nil {
 		return
 	}
-	if ctxInfo.CtwaClidDirect != "" && out.CtwaClid == "" {
-		out.CtwaClid = strings.TrimSpace(ctxInfo.CtwaClidDirect)
+	if clid := strings.TrimSpace(ctxInfo.CtwaClidDirect); clid != "" {
+		out.HasMsgAdReferral = true
+		if out.CtwaClid == "" {
+			out.CtwaClid = clid
+		}
 	}
 	applyReferral(&ctxInfo.ExternalAdReply, util.FirstNonEmpty(ctxInfo.ConversionApp, ctxInfo.ConversionSrc, ctxInfo.ConversionFB), out)
 }
@@ -176,11 +179,17 @@ func applyReferral(ref *evoAdReferral, fallbackApp string, out *ParsedWhatsAppMe
 	if ref == nil {
 		return
 	}
-	if clid := util.FirstNonEmpty(ref.CtwaClid, ref.CtwaClidSnake); clid != "" && out.CtwaClid == "" {
-		out.CtwaClid = strings.TrimSpace(clid)
+	if clid := strings.TrimSpace(util.FirstNonEmpty(ref.CtwaClid, ref.CtwaClidSnake)); clid != "" {
+		out.HasMsgAdReferral = true
+		if out.CtwaClid == "" {
+			out.CtwaClid = clid
+		}
 	}
-	if sid := util.FirstNonEmpty(ref.SourceID, ref.SourceIdAlt, ref.SourceIDSnake); sid != "" && out.SourceID == "" {
-		out.SourceID = strings.TrimSpace(sid)
+	if sid := strings.TrimSpace(util.FirstNonEmpty(ref.SourceID, ref.SourceIdAlt, ref.SourceIDSnake)); sid != "" {
+		out.HasMsgAdReferral = true
+		if out.SourceID == "" {
+			out.SourceID = sid
+		}
 	}
 	if surl := util.FirstNonEmpty(ref.SourceURL, ref.SourceUrlAlt); surl != "" && out.SourceURL == "" {
 		out.SourceURL = strings.TrimSpace(surl)

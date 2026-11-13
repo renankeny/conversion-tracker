@@ -149,13 +149,24 @@ func (r *SentEventRepo) ListSalesForConfirmation(ctx context.Context, accountID 
 		offset = 0
 	}
 
-	countQ := `
-		SELECT COUNT(DISTINCT event_id)
-		FROM sent_events
-		WHERE event_name IN ('AddPaymentInfo', 'Purchase')
-		  AND (account_id = $1 OR $1 = 0 OR account_id IS NULL)
-		  AND ($2 = '' OR pixel_name = $2)
+	baseCond := `
+		WHERE e.event_name IN ('AddPaymentInfo', 'Purchase')
+		  AND e.status <> 'contested'
+		  AND (e.account_id = $1 OR $1 = 0 OR e.account_id IS NULL)
+		  AND ($2 = '' OR e.pixel_name = $2)
+		  AND NOT (
+			e.event_name = 'AddPaymentInfo'
+			AND EXISTS (
+				SELECT 1 FROM sent_events p
+				WHERE p.event_id = 'pur_' || e.event_id
+				  AND p.pixel_name = e.pixel_name
+				  AND p.event_name = 'Purchase'
+				  AND p.status <> 'contested'
+			)
+		  )
 	`
+
+	countQ := `SELECT COUNT(DISTINCT e.event_id) FROM sent_events e ` + baseCond
 	var total int64
 	if err := r.pool.QueryRow(ctx, countQ, accountID, pixelName).Scan(&total); err != nil {
 		return nil, 0, err
@@ -168,9 +179,7 @@ func (r *SentEventRepo) ListSalesForConfirmation(ctx context.Context, accountID 
 				COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), COALESCE(u.email, ''), COALESCE(u.phone, '')
 			FROM sent_events e
 			LEFT JOIN tracked_users u ON e.external_id = u.external_id AND e.pixel_name = u.pixel_name
-			WHERE e.event_name IN ('AddPaymentInfo', 'Purchase')
-			  AND (e.account_id = $1 OR $1 = 0 OR e.account_id IS NULL)
-			  AND ($2 = '' OR e.pixel_name = $2)
+			` + baseCond + `
 			ORDER BY e.event_id, (CASE WHEN e.event_name = 'Purchase' THEN 1 ELSE 2 END) ASC, e.created_at DESC
 		) t
 		ORDER BY created_at DESC
