@@ -90,6 +90,7 @@ import { useWhatsAppStore } from '~/stores/useWhatsAppStore'
 import { usePixelStore } from '~/stores/usePixelStore'
 import { useTenantStore } from '~/stores/useTenantStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
 const { formatTitle } = useBranding()
@@ -123,12 +124,12 @@ const loadData = async (force = false) => {
     await Promise.all([
       waStore.fetchAll(force),
       pixelsStore.fetch(force),
-      api.get<Array<{ id: number; name: string }>>('/admin/ext-api/crm/stages')
-        .then((res) => { crmStages.value = Array.isArray(res) ? res : [] })
+      api.get<{ stages?: Array<{ id: number; name: string }> } | Array<{ id: number; name: string }>>('/admin/ext-api/crm/stages')
+        .then((res) => { crmStages.value = Array.isArray(res) ? res : (res?.stages ?? []) })
         .catch(() => {}),
     ])
-  } catch (e: any) {
-    toast.error('Erro ao carregar WhatsApp', e.message || 'Tente novamente.')
+  } catch (e: unknown) {
+    toast.error('Erro ao carregar WhatsApp', errorMessage(e, 'Tente novamente.'))
   }
 }
 
@@ -150,8 +151,8 @@ const onSaveInstance = async (input: WhatsAppInstanceInput) => {
       connectingInstance.value = created
       showConnectModal.value = true
     }
-  } catch (e: any) {
-    toast.error('Erro ao salvar', e.message || 'Falha ao configurar instância.')
+  } catch (e: unknown) {
+    toast.error('Erro ao salvar', errorMessage(e, 'Falha ao configurar instância.'))
   } finally {
     savingInstance.value = false
   }
@@ -161,8 +162,8 @@ const onRefreshInstance = async (inst: WhatsAppInstance) => {
   refreshingId.value = inst.id
   try {
     await wa.refreshStatus(inst.id)
-  } catch (e: any) {
-    toast.error('Erro ao sincronizar', e.message || 'Verifique o servidor Evolution Go.')
+  } catch (e: unknown) {
+    toast.error('Erro ao sincronizar', errorMessage(e, 'Verifique o servidor Evolution Go.'))
   } finally {
     refreshingId.value = null
   }
@@ -173,8 +174,8 @@ const onDisconnect = async (inst: WhatsAppInstance) => {
   try {
     await wa.disconnectInstance(inst.id)
     toast.success('Desconectado', `Sessão de "${inst.name}" encerrada.`)
-  } catch (e: any) {
-    toast.error('Erro ao desconectar', e.message || 'Tente novamente.')
+  } catch (e: unknown) {
+    toast.error('Erro ao desconectar', errorMessage(e, 'Tente novamente.'))
   } finally {
     disconnectingId.value = null
   }
@@ -188,8 +189,8 @@ const onConfirmDelete = async () => {
     toast.success('Conexão removida', `"${deletingInstance.value.name}" foi excluída.`)
     showDeleteModal.value = false
     deletingInstance.value = null
-  } catch (e: any) {
-    toast.error('Erro ao excluir', e.message || 'Falha ao remover instância.')
+  } catch (e: unknown) {
+    toast.error('Erro ao excluir', errorMessage(e, 'Falha ao remover instância.'))
   } finally {
     deletingLoading.value = false
   }

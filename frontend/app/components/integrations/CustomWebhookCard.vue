@@ -19,13 +19,15 @@
 </template>
 
 <script setup lang="ts">
+import type { CustomWebhook } from '#shared/types'
+
 const props = defineProps<{
-  item: any
+  item: CustomWebhook
 }>()
 
 defineEmits<{
-  logs: [item: any]
-  edit: [item: any]
+  logs: [item: CustomWebhook]
+  edit: [item: CustomWebhook]
   delete: [id: string]
 }>()
 

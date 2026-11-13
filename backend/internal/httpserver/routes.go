@@ -163,7 +163,7 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 
 				r.Get("/admin/geoip/status", h.adminGeoIP.Status)
 				r.Get("/admin/maintenance/status", h.adminMaintenance.Status)
-				r.Put("/admin/maintenance/retention", h.adminMaintenance.UpdateRetention)
+				r.With(RequireManager).Put("/admin/maintenance/retention", h.adminMaintenance.UpdateRetention)
 
 				r.Get("/admin/custom-webhooks", h.adminCustomWebhooks.List)
 				r.Post("/admin/custom-webhooks", h.adminCustomWebhooks.Create)
@@ -226,8 +226,8 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 
 			r.Post("/admin/openai/webhook-mapping", h.adminOpenAI.GenerateMapping)
 			r.Post("/admin/geoip/refresh", h.adminGeoIP.Refresh)
-			r.Post("/admin/maintenance/prune", h.adminMaintenance.PruneNow)
-			r.Post("/admin/maintenance/reset", h.adminMaintenance.Reset)
+			r.With(RequireManager).Post("/admin/maintenance/prune", h.adminMaintenance.PruneNow)
+			r.With(RequireManager).Post("/admin/maintenance/reset", h.adminMaintenance.Reset)
 			r.Post("/admin/pixels/{id}/test-event", h.adminPixelTest.SendTestEvent)
 			r.Post("/admin/google-ads-accounts/{id}/test-event", h.adminGoogleAds.SendTestEvent)
 			r.Get("/admin/dashboard/meta/live-insights", h.adminDashboardMeta.LiveInsights)

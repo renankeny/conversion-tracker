@@ -103,6 +103,7 @@ import { Copy, Check } from 'lucide-vue-next'
 import BrandIcon from '~/components/events/BrandIcon.vue'
 import UserField from '~/components/users/UserField.vue'
 import type { TrackedUser, TrackedUserUpdateInput } from '#shared/types'
+import { formatDateTimeSP } from '~/utils/formatDate'
 
 interface Props {
   user: TrackedUser | null
@@ -127,17 +128,7 @@ const copyToClipboard = async (text: string | null | undefined, field: string) =
   }
 }
 
-const formatDate = (iso: string): string => {
-  if (!iso) return ''
-  return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
+const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
 </script>
 
 <style scoped>

@@ -22,38 +22,47 @@ const copyCode = async () => {
 </script>
 
 <template>
-  <div class="bg-surface-soft border border-border rounded-xl overflow-hidden shadow-sm">
-    <!-- Tabs Header -->
-    <div class="flex items-center justify-between px-2 py-2 bg-surface border-b border-border">
+  <div class="code-tabs-card">
+    <div class="code-tabs-header">
       <div class="flex gap-1 overflow-x-auto">
         <button
           v-for="(tab, index) in tabs"
           :key="index"
+          type="button"
+          class="code-tab-btn"
+          :class="{ 'is-active': activeTab === index }"
           @click="activeTab = index"
-          class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-2"
-          :class="[
-            activeTab === index 
-              ? 'bg-brand-soft text-brand' 
-              : 'text-text-3 hover:text-text-1 hover:bg-surface-hover'
-          ]"
         >
-          <span v-if="tab.icon" class="text-base leading-none">{{ tab.icon }}</span>
+          <span v-if="tab.icon" class="code-tab-icon">{{ tab.icon }}</span>
           {{ tab.name }}
         </button>
       </div>
-      <button 
-        @click="copyCode"
-        class="ml-2 p-1.5 text-text-3 hover:text-text-1 hover:bg-surface-hover rounded-lg transition-colors flex-shrink-0"
+      <button
+        type="button"
+        class="copy-btn"
         title="Copiar código"
+        @click="copyCode"
       >
         <Check v-if="copied" class="w-4 h-4 text-success" />
         <Clipboard v-else class="w-4 h-4" />
       </button>
     </div>
-    
-    <!-- Code Content -->
-    <div class="p-4 bg-[#0d1117] overflow-x-auto text-sm font-mono leading-relaxed">
-      <pre><code class="text-gray-300">{{ tabs[activeTab]?.code }}</code></pre>
+
+    <div class="code-body">
+      <pre><code class="code-text">{{ tabs[activeTab]?.code }}</code></pre>
     </div>
   </div>
 </template>
+
+<style scoped>
+.code-tabs-card { background: var(--surface-soft); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.code-tabs-header { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.code-tab-btn { padding: 0.375rem 0.75rem; font-size: var(--fs-base); font-weight: var(--fw-medium); border-radius: 8px; white-space: nowrap; display: flex; align-items: center; gap: 0.5rem; color: var(--text-3); background: transparent; border: none; cursor: pointer; transition: all 0.15s ease; }
+.code-tab-btn:hover { color: var(--text-1); background: var(--surface-soft); }
+.code-tab-btn.is-active { background: var(--brand-soft); color: var(--brand); }
+.code-tab-icon { font-size: var(--fs-xl); line-height: 1; }
+.copy-btn { margin-left: 0.5rem; padding: 0.375rem; color: var(--text-3); background: transparent; border: none; border-radius: 8px; cursor: pointer; flex-shrink: 0; transition: all 0.15s ease; }
+.copy-btn:hover { color: var(--text-1); background: var(--surface-soft); }
+.code-body { padding: 1rem; background: var(--surface-code); overflow-x: auto; font-family: var(--font-mono); font-size: var(--fs-lg); line-height: 1.6; }
+.code-text { color: var(--text-2); }
+</style>

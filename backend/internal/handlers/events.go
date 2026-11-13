@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/redis/go-redis/v9"
@@ -22,9 +23,10 @@ type Events struct {
 	geo         *geoip.Lookup
 	queue       *queue.Enqueuer
 	urls        *util.URLMapper
-	crmRepo     *repo.CRMRepo
-	rdb         *redis.Client
-	recentDedup sync.Map // fallback local caso o Redis esteja temporariamente indisponível
+	crmRepo            *repo.CRMRepo
+	rdb                *redis.Client
+	trackingTargetHost string
+	recentDedup        sync.Map // fallback local caso o Redis esteja temporariamente indisponível
 }
 
 func NewEvents(
@@ -41,6 +43,10 @@ func NewEvents(
 
 func (h *Events) SetRedis(rdb *redis.Client) {
 	h.rdb = rdb
+}
+
+func (h *Events) SetTrackingTargetHost(host string) {
+	h.trackingTargetHost = strings.TrimSpace(host)
 }
 
 // sendRequest reflete o payload enviado pelo pixel.js legado.

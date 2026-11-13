@@ -32,6 +32,7 @@
 <script setup lang="ts">
 import MetaAdsOAuthCard from '~/components/meta-ads/MetaAdsOAuthCard.vue'
 import MetaAdsAssetsSection from '~/components/meta-ads/MetaAdsAssetsSection.vue'
+import { errorMessage } from '~/utils/errorMessage'
 import type {
   MetaAccount,
   MetaAccountInput,
@@ -124,8 +125,8 @@ const loadRemoteAssets = async () => {
     if (form.ad_account_id) {
       await loadRemotePixels(form.ad_account_id)
     }
-  } catch (e: any) {
-    toast.error('Erro ao consultar Meta Graph API', e.message || 'Tente novamente')
+  } catch (e: unknown) {
+    toast.error('Erro ao consultar Meta Graph API', errorMessage(e, 'Tente novamente'))
   } finally {
     loadingAssets.value = false
   }

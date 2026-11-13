@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
@@ -129,7 +130,10 @@ func buildDataManagerPayload(account *domain.GoogleAdsAccount, action *domain.Go
 	if in.EventTime <= 0 {
 		t = time.Now()
 	}
-	loc, _ := time.LoadLocation("America/Sao_Paulo")
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil || loc == nil {
+		loc = time.FixedZone("BRT", -3*3600)
+	}
 	eventTimestamp := t.In(loc).Format(time.RFC3339)
 
 	adIdentifiers := map[string]any{}

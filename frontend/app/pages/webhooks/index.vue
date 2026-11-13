@@ -100,6 +100,8 @@ import { RefreshCw } from 'lucide-vue-next'
 import { PLATFORMS } from '#shared/constants/platforms'
 import { useTenantStore } from '~/stores/useTenantStore'
 import type { WebhookLog } from '#shared/types'
+import { formatShortDateTimeSP } from '~/utils/formatDate'
+import { errorMessage } from '~/utils/errorMessage'
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
 
@@ -145,8 +147,8 @@ const fetchLogs = async () => {
     })
     logs.value = r.data || []
     total.value = r.total || 0
-  } catch (e: any) {
-    toast.error('Erro', e.message || 'Não foi possível carregar')
+  } catch (e: unknown) {
+    toast.error('Erro', errorMessage(e, 'Não foi possível carregar'))
   } finally {
     loading.value = false
   }
@@ -176,8 +178,8 @@ const handleReplay = async (log: WebhookLog) => {
     else if (r.error) toast.error('Falhou', r.error as string)
     else toast.warning('Aviso', 'Usuário não encontrado — cadastre o lead e tente novamente.')
     await fetchLogs()
-  } catch (e: any) {
-    toast.error('Erro', e.message || 'Replay falhou')
+  } catch (e: unknown) {
+    toast.error('Erro', errorMessage(e, 'Replay falhou'))
   } finally {
     replayingId.value = null
   }
@@ -186,8 +188,7 @@ const handleReplay = async (log: WebhookLog) => {
 const statusVariant = (s: string) => (s === 'queued' ? 'success' : s === 'failed' ? 'danger' : 'info')
 const statusLabel = (s: string) => (s === 'queued' ? 'Enfileirado' : s === 'failed' ? 'Falhou' : 'Reprocessado')
 const truncate = (s: string, n: number) => (s && s.length > n ? s.slice(0, n) + '…' : s || '')
-const formatDate = (iso: string) =>
-  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''
+const formatDate = (iso: string) => formatShortDateTimeSP(iso)
 
 onMounted(fetchLogs)
 </script>
@@ -195,7 +196,7 @@ onMounted(fetchLogs)
 <style scoped>
 .webhooks-page { display: flex; flex-direction: column; gap: 1.25rem; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
-.page-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.25rem; }
+.page-title { font-family: var(--font-sans); font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.25rem; }
 .page-subtitle { color: var(--text-2); font-size: var(--fs-lg); }
 .filters-row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 .filter-dropdown { min-width: 190px; }

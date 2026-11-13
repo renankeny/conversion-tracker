@@ -71,6 +71,7 @@
 <script setup lang="ts">
 import { ChevronRight } from 'lucide-vue-next'
 import type { TrackedUser } from '#shared/types'
+import { formatShortDateTimeSP } from '~/utils/formatDate'
 
 defineProps<{
   users: TrackedUser[]
@@ -106,12 +107,7 @@ const countryFlag = (country: string): string => {
   return String.fromCodePoint(upper.charCodeAt(0) + offset, upper.charCodeAt(1) + offset)
 }
 
-const formatTime = (iso: string): string => {
-  if (!iso) return ''
-  return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-  })
-}
+const formatTime = (iso: string): string => formatShortDateTimeSP(iso)
 </script>
 
 <style scoped>

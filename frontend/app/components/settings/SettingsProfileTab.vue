@@ -91,6 +91,8 @@
 </template>
 
 <script setup lang="ts">
+import { errorMessage } from '~/utils/errorMessage'
+
 const settings = useSettings()
 const { user, hasOpenAiKey, setUser } = useAuth()
 const { brandName } = useBranding()
@@ -123,22 +125,22 @@ const onSaveProfile = async () => {
       setUser({ ...user.value, name: updated.name, phone: updated.phone })
     }
     toast.success('Sucesso', 'Perfil atualizado')
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao salvar perfil')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao salvar perfil'))
   } finally {
     savingProfile.value = false
   }
 }
 
 const prefsForm = reactive({
-  openai_api_key: user.value?.preferences?.openai_api_key || '',
+  openai_api_key: String(user.value?.preferences?.openai_api_key || ''),
 })
 const savingPrefs = ref(false)
 
 watch(
   () => user.value?.preferences,
   (p) => {
-    if (p) prefsForm.openai_api_key = p.openai_api_key || ''
+    if (p) prefsForm.openai_api_key = String(p.openai_api_key || '')
   },
   { immediate: true }
 )
@@ -153,8 +155,8 @@ const onSavePrefs = async () => {
     }
     prefsForm.openai_api_key = ''
     toast.success('Sucesso', 'Preferências salvas')
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao salvar preferências')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao salvar preferências'))
   } finally {
     savingPrefs.value = false
   }
@@ -184,8 +186,8 @@ const onChangePassword = async () => {
     passwordForm.current = ''
     passwordForm.next = ''
     passwordForm.confirm = ''
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Não foi possível alterar a senha')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Não foi possível alterar a senha'))
   } finally {
     changingPassword.value = false
   }
@@ -193,27 +195,9 @@ const onChangePassword = async () => {
 </script>
 
 <style scoped>
-.account-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: var(--shadow-card);
-}
-
-.card-title {
-  font-family: 'Instrument Sans', sans-serif;
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-semibold);
-  color: var(--text-strong);
-  margin-bottom: 0.5rem;
-}
+.account-stack { display: flex; flex-direction: column; gap: 1rem; }
+.card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-card); }
+.card-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
 
 .card-hint {
   font-size: var(--fs-md);

@@ -1,6 +1,8 @@
 import type { Ref } from 'vue'
 import type { CrmTag } from '#shared/types'
 import { useAPI } from '~/composables/useAPI'
+import { getDefaultStageColor } from '~/utils/colorPalette'
+import { errorMessage } from '~/utils/errorMessage'
 
 export const useCrmTagActions = (
   modals: ReturnType<typeof import('~/composables/useCrmModals').useCrmModals>,
@@ -12,7 +14,7 @@ export const useCrmTagActions = (
 
   const openCreateTagModal = () => {
     modals.newTag.name = ''
-    modals.newTag.color = '#3B82F6'
+    modals.newTag.color = getDefaultStageColor()
     modals.showLeadModal.value = false
     modals.showCreateTagModal.value = true
   }
@@ -39,8 +41,8 @@ export const useCrmTagActions = (
         modals.showLeadModal.value = true
       }
       toast.success('Sucesso', 'Tag criada.')
-    } catch (e: any) {
-      toast.error('Erro', e?.message || 'Erro ao criar tag.')
+    } catch (e: unknown) {
+      toast.error('Erro', errorMessage(e, 'Erro ao criar tag.'))
     } finally {
       modals.isCreatingTag.value = false
     }
@@ -57,8 +59,8 @@ export const useCrmTagActions = (
       }
       modals.selectedTagToAdd.value = ''
       await fetchBoard(true)
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Não foi possível vincular a tag.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Não foi possível vincular a tag.'))
     }
   }
 
@@ -68,8 +70,8 @@ export const useCrmTagActions = (
       await api.delete(`/admin/crm/leads/${modals.selectedLeadId.value}/tags/${tagId}`)
       modals.leadEdit.tags = modals.leadEdit.tags.filter((t) => t.id !== tagId)
       await fetchBoard(true)
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Não foi possível desvincular a tag.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Não foi possível desvincular a tag.'))
     }
   }
 
@@ -83,8 +85,8 @@ export const useCrmTagActions = (
       }
       toast.success('Sucesso', 'Tag excluída da empresa.')
       await fetchBoard(true)
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Não foi possível excluir a tag.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Não foi possível excluir a tag.'))
     }
   }
 

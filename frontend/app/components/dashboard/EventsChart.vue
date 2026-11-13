@@ -21,6 +21,7 @@ import {
   LinearScale, TimeSeriesScale, CategoryScale, Tooltip, Legend, Filler,
 } from 'chart.js'
 import type { CounterSeriesPoint } from '#shared/types'
+import { formatDateSP, formatShortDateTimeSP } from '~/utils/formatDate'
 
 interface Props {
   points: CounterSeriesPoint[]
@@ -41,30 +42,29 @@ const { isDark } = useTheme()
 
 const hasData = computed(() => props.points.length > 0)
 
-const getCssVar = (val: string, fallback: string) => {
-  if (typeof document === 'undefined') return fallback
-  return getComputedStyle(document.documentElement).getPropertyValue(val).trim() || fallback
+const getCssVar = (val: string) => {
+  if (typeof document === 'undefined') return ''
+  return getComputedStyle(document.documentElement).getPropertyValue(val).trim()
 }
 
 const formatBucket = (iso: string, daily: boolean): string => {
-  const d = new Date(iso)
-  if (daily) return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  if (daily) return formatDateSP(iso, { day: '2-digit', month: '2-digit' })
+  return formatShortDateTimeSP(iso)
 }
 
 const buildDatasets = () => {
   const eventColors: Record<string, string> = {
-    PageView: getCssVar('--brand', '#A2F07C'),
-    ViewContent: getCssVar('--brand-strong', '#8EE85F'),
-    AddToCart: getCssVar('--warning', '#F59E0B'),
-    InitiateCheckout: getCssVar('--info', '#0B4B4D'),
-    Lead: getCssVar('--success', '#10B981'),
-    Purchase: getCssVar('--success', '#22C55E'),
-    AddPaymentInfo: getCssVar('--warning', '#EAB308'),
-    Contact: getCssVar('--info', '#EC4899'),
-    CompleteRegistration: getCssVar('--brand', '#8B5CF6'),
+    PageView: getCssVar('--chart-pageview'),
+    ViewContent: getCssVar('--chart-viewcontent'),
+    AddToCart: getCssVar('--chart-addtocart'),
+    InitiateCheckout: getCssVar('--chart-checkout'),
+    Lead: getCssVar('--chart-lead'),
+    Purchase: getCssVar('--chart-purchase'),
+    AddPaymentInfo: getCssVar('--chart-payment'),
+    Contact: getCssVar('--chart-contact'),
+    CompleteRegistration: getCssVar('--chart-registration'),
   }
-  const fallbackColor = getCssVar('--text-3', '#737373')
+  const fallbackColor = getCssVar('--text-3')
 
   const buckets = new Map<string, Map<string, number>>()
   for (const p of props.points) {
@@ -77,7 +77,7 @@ const buildDatasets = () => {
 
   const datasets = Array.from(buckets.entries()).map(([eventName, bucketMap]) => {
     const data = allTimestamps.map((t) => bucketMap.get(t) ?? 0)
-    const color = eventColors[eventName] ?? fallbackColor
+    const color = eventColors[eventName] || fallbackColor
     return {
       label: eventName,
       data,
@@ -95,7 +95,7 @@ const buildDatasets = () => {
 }
 
 const buildOptions = () => {
-  const cssText = (val: string) => getCssVar(val, '#777')
+  const cssText = (val: string) => getCssVar(val)
   const textColor = cssText('--text-2')
   const gridColor = cssText('--border')
 
@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
 }
 
 .chart-title {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
   color: var(--text-strong);

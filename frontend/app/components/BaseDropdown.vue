@@ -49,13 +49,15 @@
 import { ref, computed, useId, watch, onBeforeUnmount } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 
+export type DropdownValue = string | number | boolean | null | undefined
+
 export interface DropdownOption {
-  value: any
+  value: DropdownValue
   label: string
 }
 
 interface Props {
-  modelValue?: any
+  modelValue?: DropdownValue
   label?: string
   hint?: string
   options: DropdownOption[]
@@ -69,7 +71,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  'update:modelValue': [value: any]
+  'update:modelValue': [value: DropdownValue]
 }>()
 
 const dropdownId = useId()
@@ -79,7 +81,7 @@ const menuRef = ref<HTMLElement | null>(null)
 const isOpen = ref(false)
 const menuStyle = ref<Record<string, string>>({})
 
-const isOptionSelected = (optVal: any): boolean => {
+const isOptionSelected = (optVal: DropdownValue): boolean => {
   if (props.modelValue === optVal) return true
   if (props.modelValue == null && (optVal === '' || optVal === null)) return props.modelValue === optVal
   return String(props.modelValue ?? '') === String(optVal ?? '')
@@ -105,7 +107,7 @@ const toggle = () => {
   isOpen.value = !isOpen.value
 }
 
-const select = (value: any) => {
+const select = (value: DropdownValue) => {
   emit('update:modelValue', value)
   isOpen.value = false
 }

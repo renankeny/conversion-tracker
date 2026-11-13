@@ -1,4 +1,5 @@
 import type { WhatsAppChat, WhatsAppMessage } from '#shared/types'
+import { dateKeySP } from '~/utils/formatDate'
 
 export interface ChatFeedItem {
   key: string
@@ -35,13 +36,17 @@ export const useWhatsAppChat = () => {
     })
   }
 
+  let loadSeq = 0
+
   const loadInitial = async (leadId?: number | null, userId?: number | null) => {
+    const seq = ++loadSeq
     if (!leadId && !userId) {
       chat.value = null
       messages.value = []
       hasMore.value = false
       nextBeforeId.value = null
       canAutoLoadOlder.value = false
+      loading.value = false
       return
     }
     canAutoLoadOlder.value = false
@@ -51,30 +56,37 @@ export const useWhatsAppChat = () => {
         ? await wa.getChatByLead(leadId, { limit: 20 })
         : await wa.getChatByTrackedUser(userId!, { limit: 20 })
 
+      if (seq !== loadSeq) return
       chat.value = res.chat || null
       messages.value = res.messages || []
       hasMore.value = Boolean(res.has_more)
       nextBeforeId.value = res.next_before_id ?? null
     } catch {
+      if (seq !== loadSeq) return
       chat.value = null
       messages.value = []
       hasMore.value = false
       nextBeforeId.value = null
     } finally {
-      loading.value = false
-      await nextTick()
-      scrollToBottom(false)
-      requestAnimationFrame(() => scrollToBottom(false))
-      setTimeout(() => scrollToBottom(false), 80)
-      setTimeout(() => {
+      if (seq === loadSeq) {
+        loading.value = false
+        await nextTick()
         scrollToBottom(false)
-        canAutoLoadOlder.value = true
-      }, 300)
+        requestAnimationFrame(() => { if (seq === loadSeq) scrollToBottom(false) })
+        setTimeout(() => { if (seq === loadSeq) scrollToBottom(false) }, 80)
+        setTimeout(() => {
+          if (seq === loadSeq) {
+            scrollToBottom(false)
+            canAutoLoadOlder.value = true
+          }
+        }, 300)
+      }
     }
   }
 
   const loadOlder = async (leadId?: number | null, userId?: number | null) => {
     if (!hasMore.value || loadingMore.value || !nextBeforeId.value) return
+    const seq = loadSeq
     const el = scrollBox.value
     const prevScrollHeight = el ? el.scrollHeight : 0
     const prevScrollTop = el ? el.scrollTop : 0
@@ -85,6 +97,7 @@ export const useWhatsAppChat = () => {
         ? await wa.getChatByLead(leadId, { before_id: nextBeforeId.value, limit: 20 })
         : await wa.getChatByTrackedUser(userId!, { before_id: nextBeforeId.value, limit: 20 })
 
+      if (seq !== loadSeq) return
       const older = res.messages || []
       const existingIds = new Set(messages.value.map((m) => m.id))
       const fresh = older.filter((m) => !existingIds.has(m.id))
@@ -97,8 +110,10 @@ export const useWhatsAppChat = () => {
       if (el) {
         el.scrollTop = el.scrollHeight - prevScrollHeight + prevScrollTop
       }
+    } catch {
+      // Falha de rede silenciosa para permitir nova tentativa no scroll
     } finally {
-      loadingMore.value = false
+      if (seq === loadSeq) loadingMore.value = false
     }
   }
 
@@ -146,9 +161,8 @@ export const useWhatsAppChat = () => {
 
     for (const msg of messages.value) {
       if (msg.timestamp) {
-        const d = new Date(msg.timestamp)
-        const dateStr = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-        if (dateStr !== lastDateStr) {
+        const dateStr = dateKeySP(msg.timestamp)
+        if (dateStr && dateStr !== lastDateStr) {
           items.push({
             key: `date-${dateStr}`,
             type: 'date',

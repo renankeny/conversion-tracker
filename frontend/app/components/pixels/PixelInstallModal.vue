@@ -81,7 +81,7 @@
             <div v-if="testResults.length" class="test-results">
               <div v-for="(r, i) in testResults" :key="i" class="test-result" :class="{ ok: r.status_code === 200 && !r.error, fail: r.status_code !== 200 || r.error }">
                 <div class="result-row">
-                  <BrandIcon :channel="(r.channel || 'meta') as any" size="sm" />
+                  <BrandIcon :channel="(r.channel || 'meta') as 'meta' | 'tiktok'" size="sm" />
                   <code class="result-pixel">{{ r.pixel_id }}</code>
                   <BaseBadge :variant="r.status_code === 200 && !r.error ? 'success' : 'danger'">HTTP {{ r.status_code || 'erro' }}</BaseBadge>
                 </div>
@@ -109,6 +109,7 @@ import BaseDropdown from '~/components/BaseDropdown.vue'
 import ConfirmModal from '~/components/ConfirmModal.vue'
 import BrandIcon from '~/components/events/BrandIcon.vue'
 import { buildPixelSnippet } from '~/utils/apiOrigin'
+import { errorMessage } from '~/utils/errorMessage'
 import type { Pixel, TestEventInput, TestEventPixelResult } from '#shared/types'
 
 const props = defineProps<{ modelValue: boolean; pixel: Pixel | null }>()
@@ -150,7 +151,7 @@ const onRegenerateToken = async () => {
     const r = await pixelsApi.regenerateToken(props.pixel.id)
     emit('token-regenerated', { ...props.pixel, public_token: r.public_token } as Pixel)
     toast.success('Novo token gerado', 'Atualize o snippet no site.')
-  } catch (e: any) { toast.error('Erro', e.message) }
+  } catch (e: unknown) { toast.error('Erro', errorMessage(e, 'Falha ao gerar novo token')) }
   finally { regenerating.value = false; showRegenConfirm.value = false }
 }
 
@@ -181,7 +182,7 @@ const onSendTestEvent = async () => {
     testResults.value = res.results; lastEventID.value = res.event_id
     if (res.results.every(r => r.status_code === 200 && !r.error)) toast.success('Enviado!', 'Verifique em Events Manager → Test Events')
     else toast.warning('Evento com falhas', 'Veja os detalhes')
-  } catch (e: any) { toast.error('Erro', e.message) }
+  } catch (e: unknown) { toast.error('Erro', errorMessage(e, 'Falha ao gerar novo token')) }
   finally { testing.value = false }
 }
 const formatResponse = (r: string) => { try { return JSON.stringify(JSON.parse(r), null, 2) } catch { return r } }

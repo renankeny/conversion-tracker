@@ -1,18 +1,9 @@
 import { ref, computed, watch, type Ref, type ComputedRef } from 'vue'
 import type { GroupedEvent, TrackedUser, CustomerJourneyResponse } from '#shared/types'
 import type { TimelineItem } from '~/components/users/UserJourneyTimeline.vue'
+import { formatDateTimeSP } from '~/utils/formatDate'
 
-const formatDate = (iso: string): string => {
-  if (!iso) return ''
-  return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
+const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
 
 export const useUserTimeline = (
   userRef: Ref<TrackedUser | null> | ComputedRef<TrackedUser | null>
@@ -26,8 +17,10 @@ export const useUserTimeline = (
   const rawEvents = ref<GroupedEvent[]>([])
   const loadingTimeline = ref(false)
   const journeyData = ref<CustomerJourneyResponse | null>(null)
+  let timelineSeq = 0
 
   const fetchPurchaseHistory = async (externalId: string) => {
+    const seq = ++timelineSeq
     loadingPurchases.value = true
     loadingTimeline.value = true
     try {
@@ -35,6 +28,7 @@ export const useUserTimeline = (
         eventsApi.listGrouped({ external_id: externalId, event: 'Purchase', limit: 50 }),
         trackedUsers.getJourney(externalId).catch(() => null),
       ])
+      if (seq !== timelineSeq || userRef.value?.external_id !== externalId) return
       purchaseHistory.value = purchasesRes.data || []
       journeyData.value = journeyRes
 
@@ -42,15 +36,19 @@ export const useUserTimeline = (
         rawEvents.value = journeyRes.events
       } else {
         const fallback = await eventsApi.listGrouped({ external_id: externalId, limit: 100 })
+        if (seq !== timelineSeq || userRef.value?.external_id !== externalId) return
         rawEvents.value = fallback.data || []
       }
     } catch {
+      if (seq !== timelineSeq) return
       purchaseHistory.value = []
       rawEvents.value = []
       journeyData.value = null
     } finally {
-      loadingPurchases.value = false
-      loadingTimeline.value = false
+      if (seq === timelineSeq) {
+        loadingPurchases.value = false
+        loadingTimeline.value = false
+      }
     }
   }
 
@@ -58,8 +56,11 @@ export const useUserTimeline = (
     () => userRef.value?.external_id,
     (externalId) => {
       if (externalId) {
-        fetchPurchaseHistory(externalId)
+        void fetchPurchaseHistory(externalId)
       } else {
+        timelineSeq++
+        loadingPurchases.value = false
+        loadingTimeline.value = false
         purchaseHistory.value = []
         rawEvents.value = []
         journeyData.value = null

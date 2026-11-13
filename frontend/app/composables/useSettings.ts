@@ -36,8 +36,8 @@ export const useSettings = () => {
   const updateMyProfile = (input: UpdateProfileInput): Promise<AdminUser> =>
     api.put<AdminUser>('/admin/me', input)
 
-  const updateMyPreferences = (prefs: Record<string, any>): Promise<any> =>
-    api.put<any>('/admin/me/preferences', prefs)
+  const updateMyPreferences = (prefs: Record<string, unknown>): Promise<Record<string, unknown>> =>
+    api.put<Record<string, unknown>>('/admin/me/preferences', prefs)
 
   // GeoIP
   const geoipStatus = (): Promise<GeoIPStatus> =>

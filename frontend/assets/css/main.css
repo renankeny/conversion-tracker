@@ -57,12 +57,49 @@
   /* Estados */
   --success: var(--brand);
   --success-soft: var(--brand-soft);
+  --status-ok: #4ADE80;
   --danger: #EF4444;
+  --danger-light: #F87171;
   --danger-soft: rgba(239, 68, 68, 0.15);
+  --danger-border: rgba(239, 68, 68, 0.25);
   --warning: #F59E0B;
-  --warning-soft: rgba(245, 158, 11, 0.15);
+  --warning-light: #FBBF24;
+  --warning-soft: rgba(251, 191, 36, 0.15);
+  --warning-border: rgba(251, 191, 36, 0.25);
   --info: var(--brand);
   --info-soft: var(--brand-soft);
+
+  /* Categorias, Gráficos e Etapas CRM */
+  --stage-default: #3B82F6;
+  --accent-sky: #38BDF8;
+  --accent-sky-soft: rgba(56, 189, 248, 0.15);
+  --accent-sky-border: rgba(56, 189, 248, 0.25);
+  --accent-purple: #C084FC;
+  --accent-purple-strong: #A855F7;
+  --accent-purple-soft: rgba(168, 85, 247, 0.15);
+  --accent-purple-border: rgba(168, 85, 247, 0.25);
+  --accent-pink: #F472B6;
+  --accent-pink-strong: #EC4899;
+  --accent-pink-soft: rgba(236, 72, 153, 0.15);
+  --accent-pink-border: rgba(236, 72, 153, 0.25);
+  --chart-pageview: var(--brand);
+  --chart-viewcontent: var(--brand-strong);
+  --chart-addtocart: var(--warning);
+  --chart-checkout: var(--accent-sky);
+  --chart-lead: #10B981;
+  --chart-purchase: #22C55E;
+  --chart-payment: #EAB308;
+  --chart-contact: var(--accent-pink-strong);
+  --chart-registration: #8B5CF6;
+  --surface-code: #0D1117;
+  --text-on-solid: #FFFFFF;
+  --text-on-light: #0F172A;
+  --globe-bg-start: #0D1522;
+  --globe-bg-end: #080D14;
+  --globe-text: #E2E8F0;
+  --globe-muted: #94A3B8;
+  --globe-border: rgba(255, 255, 255, 0.12);
+  --globe-hover: rgba(30, 41, 59, 0.85);
 
   /* Sombras (Flat design) */
   --shadow-card: none;
@@ -118,12 +155,20 @@
   /* Estados */
   --success: var(--brand);
   --success-soft: var(--brand-soft);
+  --status-ok: #16A34A;
   --danger: #EF4444;
+  --danger-light: #DC2626;
   --danger-soft: rgba(239, 68, 68, 0.1);
+  --danger-border: rgba(239, 68, 68, 0.25);
   --warning: #F59E0B;
+  --warning-light: #D97706;
   --warning-soft: rgba(245, 158, 11, 0.12);
+  --warning-border: rgba(245, 158, 11, 0.25);
   --info: var(--brand);
   --info-soft: var(--brand-soft);
+  --accent-sky: #0284C7;
+  --accent-purple: #7C3AED;
+  --accent-pink: #DB2777;
 
   /* Sombras */
   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
@@ -265,6 +310,6 @@ button, input, select, textarea, label, th, td, .font-medium, .font-normal {
   }
 
   /* Padding menor em textos de cards */
-  h1 { font-size: 1.5rem !important; }
-  h2 { font-size: 1.25rem !important; }
+  h1 { font-size: var(--fs-3xl) !important; }
+  h2 { font-size: var(--fs-2xl) !important; }
 }

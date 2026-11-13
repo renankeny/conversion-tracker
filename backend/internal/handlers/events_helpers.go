@@ -120,17 +120,11 @@ func (h *Events) isDuplicateInMemory(key string, ttl time.Duration) bool {
 	return false
 }
 
+// clientIP usa r.RemoteAddr já resolvido pelo middleware TrustedRealIP
+// (XFF só é aceito vindo de proxy confiável). Compatível com IPv6.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	if real := r.Header.Get("X-Real-IP"); real != "" {
-		return real
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		return host
 	}
-	return r.RemoteAddr
+	return strings.Trim(strings.TrimSpace(r.RemoteAddr), "[]")
 }

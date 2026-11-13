@@ -88,8 +88,10 @@
 import { ref, reactive, computed, useId, watch, onBeforeUnmount } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 
+export type AdAccountValue = string | number | null | undefined
+
 export interface AdAccountSelectOption {
-  value: any
+  value: AdAccountValue
   label: string
   sublabel?: string
   avatarUrl?: string
@@ -98,7 +100,7 @@ export interface AdAccountSelectOption {
 }
 
 const props = defineProps<{
-  modelValue?: any
+  modelValue?: AdAccountValue
   label?: string
   hint?: string
   placeholder?: string
@@ -108,7 +110,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: any]
+  'update:modelValue': [value: AdAccountValue]
 }>()
 
 const selectId = useId()
@@ -130,7 +132,7 @@ const initialsOf = (name: string): string => {
   return (parts[0]![0]! + parts[1]![0]!).toUpperCase()
 }
 
-const isSelected = (optVal: any): boolean => {
+const isSelected = (optVal: AdAccountValue): boolean => {
   if (props.modelValue === optVal) return true
   if (props.modelValue == null && (optVal === '' || optVal === null)) return props.modelValue === optVal
   return String(props.modelValue ?? '') === String(optVal ?? '')
@@ -154,7 +156,7 @@ const toggle = () => {
   isOpen.value = !isOpen.value
 }
 
-const choose = (val: any) => {
+const choose = (val: AdAccountValue) => {
   emit('update:modelValue', val)
   isOpen.value = false
 }

@@ -88,6 +88,7 @@
 import { ChevronRight, RefreshCw } from 'lucide-vue-next'
 import EventRowBadges from '~/components/events/EventRowBadges.vue'
 import type { GroupedEvent } from '#shared/types'
+import { formatShortDateTimeSP } from '~/utils/formatDate'
 
 const props = defineProps<{
   events: GroupedEvent[]
@@ -134,13 +135,7 @@ watch(() => props.events, () => {
 const hasFailed = (ev: GroupedEvent): boolean =>
   ev.channels.some(c => c.has_error || c.status === 'failed')
 
-const formatTime = (iso: string): string => {
-  if (!iso) return ''
-  return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit', month: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  })
-}
+const formatTime = (iso: string): string => formatShortDateTimeSP(iso, true)
 
 const truncate = (s: string, n: number): string =>
   s && s.length > n ? s.slice(0, n) + '…' : s || ''
@@ -220,7 +215,7 @@ const sourceLabel = (source: string | undefined): string => {
   transition: all 0.15s;
 }
 
-.btn-retry:hover { background: var(--warning); color: #fff; }
+.btn-retry:hover { background: var(--warning); color: var(--text-on-solid); }
 .row-arrow { background: none; border: none; color: var(--text-3); cursor: pointer; padding: 0; display: flex; align-items: center; }
 .state-row { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 1rem; gap: 0.75rem; color: var(--text-3); }
 .empty-msg { font-size: var(--fs-lg); }

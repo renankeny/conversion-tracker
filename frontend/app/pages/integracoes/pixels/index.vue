@@ -97,6 +97,7 @@ import TransferPixelModal from '~/components/pixels/TransferPixelModal.vue'
 import type { Pixel, PixelInput } from '#shared/types'
 import { usePixelStore } from '~/stores/usePixelStore'
 import { useTenantStore } from '~/stores/useTenantStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
 const { formatTitle } = useBranding()
@@ -126,8 +127,8 @@ const transferringPixel = ref<Pixel | null>(null)
 const fetchPixels = async (force = false) => {
   try {
     await pixelsApi.list(force)
-  } catch (error: any) {
-    toast.error('Erro ao carregar', error.message || 'Não foi possível listar os pixels')
+  } catch (error: unknown) {
+    toast.error('Erro ao carregar', errorMessage(error, 'Não foi possível listar os pixels'))
   }
 }
 
@@ -157,8 +158,8 @@ const onFormSubmit = async (input: PixelInput) => {
     }
     formModalOpen.value = false
     editing.value = null
-  } catch (error: any) {
-    toast.error('Erro ao salvar', error.message || 'Não foi possível salvar o pixel')
+  } catch (error: unknown) {
+    toast.error('Erro ao salvar', errorMessage(error, 'Não foi possível salvar o pixel'))
   } finally {
     saving.value = false
   }
@@ -173,8 +174,8 @@ const onConfirmDelete = async () => {
     toast.success('Pixel excluído', `"${removedName}" foi removido`)
     deleteModalOpen.value = false
     deletingPixel.value = null
-  } catch (error: any) {
-    toast.error('Erro ao excluir', error.message || 'Não foi possível excluir o pixel')
+  } catch (error: unknown) {
+    toast.error('Erro ao excluir', errorMessage(error, 'Não foi possível excluir o pixel'))
   } finally {
     deleting.value = false
   }
@@ -198,8 +199,8 @@ const onConfirmTransfer = async (pixelId: number, targetAccountId: number) => {
     transferModalOpen.value = false
     transferringPixel.value = null
     await fetchPixels(true)
-  } catch (error: any) {
-    toast.error('Erro na transferência', error.message || 'Não foi possível transferir o pixel')
+  } catch (error: unknown) {
+    toast.error('Erro na transferência', errorMessage(error, 'Não foi possível transferir o pixel'))
   }
 }
 

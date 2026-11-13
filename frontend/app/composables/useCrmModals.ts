@@ -12,6 +12,8 @@ import type {
 } from '#shared/types'
 import { useAPI } from '~/composables/useAPI'
 import { useGoogleAdsAccounts } from '~/composables/useGoogleAdsAccounts'
+import { getDefaultStageColor } from '~/utils/colorPalette'
+import { errorMessage } from '~/utils/errorMessage'
 
 interface UseCrmModalsDeps {
   stages: Ref<CrmStage[]>
@@ -37,12 +39,8 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
   let reopenPipelineAfterStage = false
 
   const selectedStage = ref<CrmStageForm>({
-    name: '',
-    color: '#3B82F6',
-    trigger_event: '',
-    trigger_event_ctwa: '',
-    google_ads_account_id: null,
-    google_ads_action_id: '',
+    name: '', color: getDefaultStageColor(), trigger_event: '', trigger_event_ctwa: '',
+    google_ads_account_id: null, google_ads_action_id: '',
   })
 
   const loadRemoteActionsForAccount = async (accountId: number | null) => {
@@ -124,7 +122,7 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
 
   const showCreateTagModal = ref(false)
   const isCreatingTag = ref(false)
-  const newTag = reactive({ name: '', color: '#3B82F6' })
+  const newTag = reactive({ name: '', color: getDefaultStageColor() })
 
   const selectedTagToAdd = ref('')
   const newNoteContent = ref('')
@@ -146,12 +144,8 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
     showPipelineModal.value = false
     isCreatingStage.value = true
     selectedStage.value = {
-      name: '',
-      color: '#3B82F6',
-      trigger_event: '',
-      trigger_event_ctwa: '',
-      google_ads_account_id: null,
-      google_ads_action_id: '',
+      name: '', color: getDefaultStageColor(), trigger_event: '', trigger_event_ctwa: '',
+      google_ads_account_id: null, google_ads_action_id: '',
     }
     remoteGadsActions.value = []
     showStageModal.value = true
@@ -164,7 +158,7 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
     selectedStage.value = {
       id: stage.id,
       name: stage.name,
-      color: stage.color || '#3B82F6',
+      color: stage.color || getDefaultStageColor(),
       trigger_event: stage.trigger_event || '',
       trigger_event_ctwa: stage.trigger_event_ctwa || '',
       google_ads_account_id: stage.google_ads_account_id ?? null,
@@ -200,8 +194,8 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
       await deps.fetchBoard(true)
       toast.success('Sucesso', 'Etapa salva com sucesso.')
       closeStageModal()
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Falha ao salvar etapa.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Falha ao salvar etapa.'))
     } finally {
       isSavingStage.value = false
     }
@@ -223,8 +217,8 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
       await deps.fetchBoard(true)
       toast.success('Sucesso', 'Etapa excluída. Os leads foram movidos para a primeira coluna.')
       closeStageModal()
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Falha ao excluir etapa.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Falha ao excluir etapa.'))
     } finally {
       isSavingStage.value = false
     }

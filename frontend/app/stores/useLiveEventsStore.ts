@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useAuthStore } from '~/stores/useAuthStore'
 import { useTenantStore } from '~/stores/useTenantStore'
+import { errorStatusCode } from '~/utils/errorMessage'
 
 export interface LiveEvent {
   account_id: number
@@ -35,17 +36,18 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
   let connectGen = 0
   let currentToken = ''
   let currentPixel = ''
-  const customListeners = new Map<string, Set<(payload: any) => void>>()
+  const customListeners = new Map<string, Set<(payload: never) => void>>()
 
-  function onCustomEvent<T = any>(eventType: string, handler: (payload: T) => void): () => void {
+  function onCustomEvent<T = Record<string, unknown>>(eventType: string, handler: (payload: T) => void): () => void {
     let set = customListeners.get(eventType)
     if (!set) {
       set = new Set()
       customListeners.set(eventType, set)
     }
-    set.add(handler)
+    const typed = handler as unknown as (payload: never) => void
+    set.add(typed)
     return () => {
-      set?.delete(handler)
+      set?.delete(typed)
     }
   }
 
@@ -71,7 +73,7 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
     const resolvedToken = token || authStore.token || ''
     if (!resolvedToken) return
 
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    if (connecting.value || (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))) {
       return
     }
 
@@ -95,12 +97,12 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
         return
       }
       params.set('ticket', res.ticket)
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (myGen !== connectGen || !shouldReconnect) {
         connecting.value = false
         return
       }
-      const status = err?.statusCode
+      const status = errorStatusCode(err)
       if (status === 401 || status === 403 || status === 423) {
         shouldReconnect = false
         connecting.value = false
@@ -146,16 +148,13 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
 
     socket.onmessage = (e: MessageEvent) => {
       try {
-        const msg = JSON.parse(e.data as string) as { type: string; data: any }
+        const msg = JSON.parse(e.data as string) as { type: string; data?: Record<string, unknown> }
+        const msgAccId = Number(msg.data?.account_id || 0)
+        if (activeAccountId.value > 0 && msgAccId > 0 && msgAccId !== activeAccountId.value) {
+          return
+        }
         if (msg.type === 'new_event' && msg.data) {
-          if (
-            activeAccountId.value > 0 &&
-            msg.data.account_id &&
-            msg.data.account_id !== activeAccountId.value
-          ) {
-            return
-          }
-          events.value.unshift(msg.data as LiveEvent)
+          events.value.unshift(msg.data as unknown as LiveEvent)
           if (events.value.length > MAX_EVENTS) {
             events.value.splice(MAX_EVENTS)
           }
@@ -165,7 +164,7 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
         const handlers = customListeners.get(msg.type)
         if (handlers?.size) {
           for (const cb of handlers) {
-            cb(msg.data)
+            cb(msg.data as never)
           }
         }
       } catch {

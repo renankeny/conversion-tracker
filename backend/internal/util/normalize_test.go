@@ -17,6 +17,8 @@ func TestNormalizePhone(t *testing.T) {
 		{"5511999998888", "5511999998888"},
 		{"1133334444", "551133334444"},
 		{"01133334444", "551133334444"},
+		{"2015550123", "2015550123"},
+		{"0014155552671", "14155552671"},
 		{"12345", "12345"},
 	}
 
@@ -82,6 +84,7 @@ func TestNormalizeCountry(t *testing.T) {
 		{"Argentina", "ar"},
 		{"Paraguai", "py"},
 		{"Reino Unido", "gb"},
+		{"Pais Desconhecido", ""},
 	}
 
 	for _, tc := range tests {

@@ -10,16 +10,23 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
+	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
 // AdminUsers gerencia o CRUD de admin_users (a tabela de admins do painel).
 type AdminUsers struct {
 	pool     *pgxpool.Pool
+	users    *repo.AdminUserRepo
+	accounts *repo.AccountRepo
 	sessions *cache.SessionStore
 }
 
 func NewAdminUsers(pool *pgxpool.Pool) *AdminUsers {
-	return &AdminUsers{pool: pool}
+	return &AdminUsers{
+		pool:     pool,
+		users:    repo.NewAdminUserRepo(pool),
+		accounts: repo.NewAccountRepo(pool),
+	}
 }
 
 func (h *AdminUsers) SetSessions(s *cache.SessionStore) {
@@ -39,6 +46,28 @@ type adminUserView struct {
 	UpdatedAt   string         `json:"updated_at"`
 }
 
+func recordToAdminUserView(u repo.AdminUserRecord) adminUserView {
+	perms := make(map[string]any)
+	if len(u.Permissions) > 0 {
+		_ = json.Unmarshal(u.Permissions, &perms)
+	}
+	if perms == nil {
+		perms = make(map[string]any)
+	}
+	return adminUserView{
+		ID:          u.ID,
+		Email:       u.Email,
+		Name:        u.Name,
+		Phone:       u.Phone,
+		Role:        u.Role,
+		AccountID:   u.AccountID,
+		ParentID:    u.ParentID,
+		Permissions: perms,
+		CreatedAt:   u.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:   u.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
 // List retorna todos os admins subordinados.
 func (h *AdminUsers) List(w http.ResponseWriter, r *http.Request) {
 	c, ok := auth.ClaimsFrom(r.Context())
@@ -51,35 +80,15 @@ func (h *AdminUsers) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := `SELECT id, email, COALESCE(name, ''), COALESCE(phone, ''),
-		        COALESCE(role, 'admin'), account_id, parent_id, permissions, created_at, updated_at
-		   FROM admin_users WHERE $1::boolean OR parent_id = $2 OR id = $2 ORDER BY id ASC`
-
-	rows, err := h.pool.Query(r.Context(), query, c.IsOwner(), c.UserID)
+	records, err := h.users.ListSubordinates(r.Context(), c.IsOwner(), c.UserID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "list error: "+err.Error())
 		return
 	}
-	defer rows.Close()
 
-	var out []adminUserView
-	for rows.Next() {
-		var v adminUserView
-		var created, updated time.Time
-		var permsBytes []byte
-		if err := rows.Scan(&v.ID, &v.Email, &v.Name, &v.Phone, &v.Role, &v.AccountID, &v.ParentID, &permsBytes, &created, &updated); err != nil {
-			writeError(w, http.StatusInternalServerError, "scan error: "+err.Error())
-			return
-		}
-		if len(permsBytes) > 0 {
-			_ = json.Unmarshal(permsBytes, &v.Permissions)
-		}
-		if v.Permissions == nil {
-			v.Permissions = make(map[string]any)
-		}
-		v.CreatedAt = created.Format(time.RFC3339)
-		v.UpdatedAt = updated.Format(time.RFC3339)
-		out = append(out, v)
+	out := make([]adminUserView, 0, len(records))
+	for _, rec := range records {
+		out = append(out, recordToAdminUserView(rec))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": out})
 }
@@ -126,8 +135,7 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isSuper := c.IsOwner()
-	if role == "admin" && !isSuper {
+	if role == "admin" && !c.IsOwner() {
 		writeError(w, http.StatusForbidden, "apenas superadmin pode criar administradores")
 		return
 	}
@@ -136,7 +144,7 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := requireValidAccount(r.Context(), h.pool, in.AccountID); err != nil {
+	if err := h.requireValidAccount(r.Context(), in.AccountID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -151,22 +159,22 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var permsBytes []byte
+	permsBytes := []byte("{}")
 	if in.Permissions != nil {
 		permsBytes, _ = json.Marshal(in.Permissions)
-	} else {
-		permsBytes = []byte("{}")
 	}
 
-	var id int64
-	var created, updated time.Time
-	err = h.pool.QueryRow(r.Context(),
-		`INSERT INTO admin_users (email, password_hash, name, phone, role, account_id, parent_id, permissions)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		 RETURNING id, created_at, updated_at`,
-		in.Email, hash, strings.TrimSpace(in.Name), strings.TrimSpace(in.Phone), role, in.AccountID, c.UserID, permsBytes,
-	).Scan(&id, &created, &updated)
-	if err != nil {
+	rec := repo.AdminUserRecord{
+		Email:        in.Email,
+		PasswordHash: hash,
+		Name:         strings.TrimSpace(in.Name),
+		Phone:        strings.TrimSpace(in.Phone),
+		Role:         role,
+		AccountID:    in.AccountID,
+		ParentID:     &c.UserID,
+		Permissions:  permsBytes,
+	}
+	if err := h.users.Create(r.Context(), &rec); err != nil {
 		if isDuplicateKey(err) {
 			writeError(w, http.StatusConflict, "e-mail já cadastrado")
 			return
@@ -175,16 +183,9 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, adminUserView{
-		ID:          id,
-		Email:       in.Email,
-		Name:        strings.TrimSpace(in.Name),
-		Phone:       strings.TrimSpace(in.Phone),
-		Role:        role,
-		AccountID:   in.AccountID,
-		ParentID:    &c.UserID,
-		Permissions: in.Permissions,
-		CreatedAt:   created.Format(time.RFC3339),
-		UpdatedAt:   updated.Format(time.RFC3339),
-	})
+	view := recordToAdminUserView(rec)
+	if in.Permissions != nil {
+		view.Permissions = in.Permissions
+	}
+	writeJSON(w, http.StatusCreated, view)
 }

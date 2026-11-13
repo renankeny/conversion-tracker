@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -23,9 +24,9 @@ func evaluateAttendantTriggers(
 	u *domain.TrackedUser,
 	chatID int64,
 	phone, waMessageID, content string,
-) {
+) error {
 	if strings.TrimSpace(content) == "" || deps.Enqueuer == nil || u == nil {
-		return
+		return nil
 	}
 
 	matchedPurchase, isPurchase := matchPhraseTriggerWithTerm(inst.PurchaseTrigger, content)
@@ -35,12 +36,12 @@ func evaluateAttendantTriggers(
 		matchedCustom, isCustom = matchPhraseTriggerWithTerm(inst.CustomEventTrigger, content)
 	}
 	if !isPurchase && !isLead && !isCustom {
-		return
+		return nil
 	}
 
 	pixel, err := deps.Pixels.FindByID(ctx, inst.PixelID)
 	if err != nil || pixel == nil || !pixel.Enabled {
-		return
+		return nil
 	}
 
 	chat, _ := deps.WhatsApp.GetChatByID(ctx, inst.AccountID, chatID)
@@ -50,12 +51,22 @@ func evaluateAttendantTriggers(
 		ctwaClid = util.FirstNonEmpty(chat.CtwaClid, ctwaClid)
 		pageID = chat.PageID
 	}
+	if ctwaClid != "" && pageID == "" {
+		if oauthAcc := resolvePixelMetaOAuth(ctx, deps, pixel); oauthAcc != nil && oauthAcc.DefaultPageID != "" {
+			pageID = oauthAcc.DefaultPageID
+		}
+	}
 
 	actionSource := "website"
 	msgChannel := ""
 	if ctwaClid != "" {
-		actionSource = "business_messaging"
-		msgChannel = "whatsapp"
+		if pageID != "" {
+			actionSource = "business_messaging"
+			msgChannel = "whatsapp"
+		} else {
+			actionSource = "system_generated"
+			ctwaClid = ""
+		}
 	}
 
 	type triggerMatch struct {
@@ -83,9 +94,10 @@ func evaluateAttendantTriggers(
 		linked, _ = deps.Users.LinkedFieldsByAccount(ctx, inst.AccountID, u.ExternalID)
 	}
 
+	var firstErr error
 	for _, tm := range matches {
 		eventID := waMessageID + ":" + tm.eventName
-		if exists, _ := deps.SentEvents.ExistsSent(ctx, eventID, pixel.Name); exists {
+		if exists, _ := deps.SentEvents.ExistsSent(ctx, pixel.AccountID, eventID, pixel.Name, ""); exists {
 			continue
 		}
 
@@ -109,7 +121,7 @@ func evaluateAttendantTriggers(
 			sourceURL = ""
 		}
 
-		_ = deps.Enqueuer.EnqueueSendEvent(ctx, domain.SendEventInput{
+		if err := deps.Enqueuer.EnqueueSendEvent(ctx, domain.SendEventInput{
 			PixelName:        pixel.Name,
 			EventName:        tm.eventName,
 			EventID:          eventID,
@@ -143,8 +155,14 @@ func evaluateAttendantTriggers(
 			GA4SessionID:     util.FirstNonEmpty(u.GA4SessionID, linked.GA4SessionID),
 			Value:            valPtr,
 			Currency:         domain.NormalizeWhatsAppCurrency(inst.Currency),
-		})
+		}); err != nil {
+			slog.Error("enqueue whatsapp trigger event failed", "pixel_name", pixel.Name, "event_id", eventID, "error", err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
 	}
+	return firstErr
 }
 
 // matchPhraseTriggerWithTerm suporta múltiplos termos separados por vírgula ou ponto-e-vírgula,
@@ -186,4 +204,3 @@ func foldAccentsLower(s string) string {
 	}
 	return res
 }
-

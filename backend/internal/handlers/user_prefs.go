@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -50,11 +49,9 @@ func sanitizePrefsForClient(raw []byte) map[string]any {
 	return prefs
 }
 
-func preparePrefsForStorage(ctx context.Context, pool *pgxpool.Pool, userID int64, incoming map[string]any) ([]byte, map[string]any, error) {
+func preparePrefsForStorage(ctx context.Context, users *repo.AdminUserRepo, userID int64, incoming map[string]any) ([]byte, map[string]any, error) {
 	existing := make(map[string]any)
-	var existingBytes []byte
-	_ = pool.QueryRow(ctx, `SELECT preferences FROM admin_users WHERE id = $1`, userID).Scan(&existingBytes)
-	if len(existingBytes) > 0 {
+	if existingBytes, err := users.GetPreferences(ctx, userID); err == nil && len(existingBytes) > 0 {
 		_ = json.Unmarshal(existingBytes, &existing)
 	}
 
@@ -77,7 +74,11 @@ func preparePrefsForStorage(ctx context.Context, pool *pgxpool.Pool, userID int6
 		if keyStr == "" {
 			delete(merged, "openai_api_key")
 		} else if !isMaskedOpenAIKey(keyStr) {
-			merged["openai_api_key"] = util.Encrypt(keyStr)
+			encKey, err := util.Encrypt(keyStr)
+			if err != nil {
+				return nil, nil, err
+			}
+			merged["openai_api_key"] = encKey
 		}
 	}
 
@@ -88,12 +89,12 @@ func preparePrefsForStorage(ctx context.Context, pool *pgxpool.Pool, userID int6
 	return storedBytes, sanitizePrefsForClient(storedBytes), nil
 }
 
-func loadDecryptedOpenAIKey(ctx context.Context, pool *pgxpool.Pool, userID int64) string {
-	if userID <= 0 || pool == nil {
+func loadDecryptedOpenAIKey(ctx context.Context, users *repo.AdminUserRepo, userID int64) string {
+	if userID <= 0 || users == nil {
 		return ""
 	}
-	var raw []byte
-	if err := pool.QueryRow(ctx, `SELECT preferences FROM admin_users WHERE id = $1`, userID).Scan(&raw); err != nil || len(raw) == 0 {
+	raw, err := users.GetPreferences(ctx, userID)
+	if err != nil || len(raw) == 0 {
 		return ""
 	}
 	var prefs map[string]any

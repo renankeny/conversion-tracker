@@ -83,6 +83,7 @@
 
 <script setup lang="ts">
 import type { GoogleAdsAccount, GoogleAdsConversionAction } from '#shared/types'
+import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
   account: GoogleAdsAccount
@@ -161,8 +162,8 @@ const onSendTest = async () => {
     } else {
       toast.success('Sucesso', test.validate_only ? 'Payload validado pelo Google.' : 'Conversao enviada.')
     }
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao chamar test-event')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao chamar test-event'))
   } finally {
     testLoading.value = false
   }
@@ -180,7 +181,7 @@ const formatJSON = (raw: string): string => {
 
 <style scoped>
 .form-section { display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border-faint); }
-.section-header h4 { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0; }
+.section-header h4 { font-family: var(--font-sans); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0; }
 .section-hint { font-size: var(--fs-base); color: var(--text-2); margin: 0.25rem 0 0; line-height: 1.5; }
 .actions-empty { font-size: var(--fs-base); color: var(--text-2); background: var(--surface-soft); border: 1px dashed var(--border); border-radius: 8px; padding: 0.875rem; }
 .grid-2 { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
@@ -190,12 +191,12 @@ const formatJSON = (raw: string): string => {
 .test-fields { display: flex; flex-direction: column; gap: 0.875rem; }
 .test-actions { display: flex; justify-content: flex-end; }
 .test-result { display: flex; flex-direction: column; gap: 0.625rem; padding: 0.875rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); font-size: var(--fs-base); }
-.test-result.result-ok { border-color: rgba(34, 197, 94, 0.3); background: var(--success-soft); }
-.test-result.result-fail { border-color: rgba(239, 68, 68, 0.3); background: var(--danger-soft); }
+.test-result.result-ok { border-color: var(--success); background: var(--success-soft); }
+.test-result.result-fail { border-color: var(--danger-border); background: var(--danger-soft); }
 .result-header { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .result-pill { font-weight: var(--fw-semibold); font-size: var(--fs-sm); padding: 0.2rem 0.5rem; border-radius: 999px; background: var(--surface-2); color: var(--text-1); }
-.test-result.result-ok .result-pill { background: var(--success); color: #fff; }
-.test-result.result-fail .result-pill { background: var(--danger); color: #fff; }
+.test-result.result-ok .result-pill { background: var(--success); color: var(--text-on-solid); }
+.test-result.result-fail .result-pill { background: var(--danger); color: var(--text-on-solid); }
 .result-action { font-size: var(--fs-sm); color: var(--text-2); }
 .result-action code { background: var(--surface-2); padding: 0.125rem 0.4rem; border-radius: 4px; }
 .result-error { color: var(--danger); font-weight: var(--fw-medium); word-break: break-word; }

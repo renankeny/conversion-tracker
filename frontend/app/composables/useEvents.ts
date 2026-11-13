@@ -3,7 +3,6 @@ import type {
   EventFilters,
   EventsResponse,
   GroupedEventsResponse,
-  SentEvent,
 } from '#shared/types'
 
 export const useEvents = () => {
@@ -25,10 +24,6 @@ export const useEvents = () => {
     return api.get<EventDetail>(`/admin/sent-events/by-event-id/${encodeURIComponent(eventId)}${qs}`)
   }
 
-  const find = (id: number): Promise<SentEvent> => {
-    return api.get<SentEvent>(`/admin/sent-events/${id}`)
-  }
-
   /** Remove múltiplos eventos por event_id (máx 500). */
   const deleteByEventIDs = (eventIds: string[]): Promise<{ deleted: number }> => {
     return api.delete<{ deleted: number }>('/admin/sent-events', {
@@ -44,10 +39,10 @@ export const useEvents = () => {
     )
   }
 
-  return { list, listGrouped, findByEventID, find, deleteByEventIDs, retryByEventIDs }
+  return { list, listGrouped, findByEventID, deleteByEventIDs, retryByEventIDs }
 }
 
-const buildQuery = (params: Record<string, any>): string => {
+const buildQuery = (params: Record<string, unknown>): string => {
   const entries = Object.entries(params).filter(
     ([, v]) => v !== undefined && v !== '' && v !== null
   )

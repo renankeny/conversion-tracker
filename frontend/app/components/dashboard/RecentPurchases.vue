@@ -87,7 +87,7 @@ watch(() => props.purchases, () => { page.value = 1 })
 }
 
 .purchases-title {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
   color: var(--text-strong);

@@ -104,6 +104,7 @@ import { storeToRefs } from 'pinia'
 import type { AdAccountSelectOption } from '~/components/BaseAdAccountSelect.vue'
 import type { MetaAccount } from '#shared/types'
 import { useMetaAdsStore } from '~/stores/useMetaAdsStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
   account?: MetaAccount | null
@@ -189,8 +190,8 @@ const onUseExisting = async () => {
     await metaApi.reuseOAuth(props.account.id, srcId)
     toast.success('Conta vinculada', 'Conexão Meta reutilizada com sucesso.')
     emit('reused')
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao reutilizar conta Meta')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao reutilizar conta Meta'))
   } finally {
     oauthLoading.value = false
   }
@@ -204,8 +205,8 @@ const onConnect = async (switchAccount: boolean) => {
   oauthLoading.value = true
   try {
     await metaApi.startOAuth(props.account.id, switchAccount)
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao iniciar OAuth da Meta')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao iniciar OAuth da Meta'))
     oauthLoading.value = false
   }
 }
@@ -218,8 +219,8 @@ const executeDisconnect = async () => {
     showDisconnectConfirm.value = false
     toast.success('Desconectado', 'Conexão com a Meta revogada.')
     emit('disconnected')
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao desconectar')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao desconectar'))
   } finally {
     oauthLoading.value = false
   }

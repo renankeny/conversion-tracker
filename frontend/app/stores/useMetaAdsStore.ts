@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { MetaAccount } from '#shared/types'
 import { useTenantStore } from '~/stores/useTenantStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 export const useMetaAdsStore = defineStore('metaAds', () => {
   const accounts = ref<MetaAccount[]>([])
@@ -35,8 +36,8 @@ export const useMetaAdsStore = defineStore('metaAds', () => {
         accounts.value = list
         loaded.value = true
         return list
-      } catch (e: any) {
-        error.value = e.message ?? 'Erro ao carregar contas Meta Ads'
+      } catch (e: unknown) {
+        error.value = errorMessage(e, 'Erro ao carregar contas Meta Ads')
         throw e
       } finally {
         loading.value = false

@@ -2,6 +2,7 @@
   <button
     :type="type"
     :disabled="disabled || loading"
+    class="base-btn"
     :class="buttonClasses"
     @click="$emit('click', $event)"
   >
@@ -34,27 +35,31 @@ defineEmits<{
 }>()
 
 const buttonClasses = computed(() => {
-  const base = 'inline-flex items-center justify-center gap-1.5 font-medium rounded-md transition-all duration-150 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none active:scale-[0.98]'
-  
+  const base = 'inline-flex items-center justify-center gap-1.5 rounded-md transition-all duration-150 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none active:scale-[0.98]'
+
   const sizes = {
-    sm: 'px-2.5 py-1 text-xs leading-tight min-h-[30px]',
-    md: 'px-3.5 py-1.5 text-xs font-medium leading-normal min-h-[34px]',
-    lg: 'px-4.5 py-2 text-sm leading-normal min-h-[40px]',
+    sm: 'btn-size-sm px-2.5 py-1 leading-tight min-h-[30px]',
+    md: 'btn-size-md px-3.5 py-1.5 leading-normal min-h-[34px]',
+    lg: 'btn-size-lg px-4.5 py-2 leading-normal min-h-[40px]',
   }
-  
+
   const variants = {
-    primary: 'bg-primary text-[var(--brand-text)] font-semibold shadow-sm hover:brightness-105 hover:shadow-[0_0_12px_var(--brand-soft)] active:brightness-95',
-    success: 'bg-secondary text-white shadow-sm hover:brightness-105 hover:shadow-[0_0_12px_var(--brand-soft)] active:brightness-95',
-    danger: 'bg-danger text-white shadow-sm hover:bg-danger/90 hover:shadow-[0_0_12px_var(--danger-soft)] active:brightness-95',
+    primary: 'btn-primary bg-primary text-[var(--brand-text)] shadow-sm hover:brightness-105 hover:shadow-[0_0_12px_var(--brand-soft)] active:brightness-95',
+    success: 'bg-secondary text-[var(--text-on-solid)] shadow-sm hover:brightness-105 hover:shadow-[0_0_12px_var(--brand-soft)] active:brightness-95',
+    danger: 'bg-danger text-[var(--text-on-solid)] shadow-sm hover:bg-danger/90 hover:shadow-[0_0_12px_var(--danger-soft)] active:brightness-95',
     ghost: 'bg-transparent text-[var(--text-2)] hover:text-[var(--text-1)] hover:bg-[var(--surface-soft)] active:bg-[var(--surface-soft-2)]',
     outline: 'bg-transparent border border-[var(--border)] text-[var(--text-1)] hover:bg-[var(--surface-soft)] hover:border-[var(--brand-border)] hover:text-[var(--brand)]',
   }
-  
+
   return [base, sizes[props.size], variants[props.variant]]
 })
 </script>
 
 <style scoped>
+.base-btn { font-family: var(--font-sans); font-weight: var(--fw-medium); }
+.btn-size-sm, .btn-size-md { font-size: var(--fs-base); }
+.btn-size-lg { font-size: var(--fs-lg); }
+.btn-primary { font-weight: var(--fw-semibold); }
 .spinner {
   width: 1em;
   height: 1em;

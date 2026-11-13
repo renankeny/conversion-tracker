@@ -101,8 +101,12 @@ export const useTenantStore = defineStore('tenant', () => {
   function removeAccount(id: number): void {
     accounts.value = accounts.value.filter((a) => a.id !== id)
     if (String(activeAccountId.value) === String(id)) {
-      const fallback = accounts.value[0]?.id ? String(accounts.value[0].id) : '1'
-      switchAccount(fallback)
+      const next = accounts.value[0]?.id
+      if (next) {
+        switchAccount(next)
+      } else {
+        setActiveAccountId(null)
+      }
     }
   }
 

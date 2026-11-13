@@ -32,6 +32,15 @@ func (r *AccountRepo) FindByID(ctx context.Context, id int64) (*domain.Account, 
 	return scanAccount(r.pool.QueryRow(ctx, q, id))
 }
 
+func (r *AccountRepo) Exists(ctx context.Context, id int64) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM accounts WHERE id = $1)`, id).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 func (r *AccountRepo) FindBySlug(ctx context.Context, slug string) (*domain.Account, error) {
 	q := `SELECT ` + accountColumns + ` FROM accounts WHERE slug = $1`
 	return scanAccount(r.pool.QueryRow(ctx, q, strings.ToLower(strings.TrimSpace(slug))))

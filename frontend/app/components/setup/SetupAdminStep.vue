@@ -70,6 +70,7 @@
 
 <script setup lang="ts">
 import { AlertCircle } from 'lucide-vue-next'
+import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
   model: {
@@ -112,8 +113,8 @@ const onNext = async () => {
   try {
     await verifySetupEmail(props.model.admin_email.trim())
     emit('next')
-  } catch (err: any) {
-    errorMsg.value = err?.message || 'Este e-mail não possui uma compra ativa do sistema.'
+  } catch (err: unknown) {
+    errorMsg.value = errorMessage(err, 'Este e-mail não possui uma compra ativa do sistema.')
   } finally {
     verifyingEmail.value = false
   }

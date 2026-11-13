@@ -57,6 +57,38 @@ const pixelColumns = `id, name, label, public_token, pixel_ids, access_tokens, t
 		aggregation_enabled, aggregation_window_minutes,
 		created_at, updated_at`
 
+func encryptSlice(items []string) ([]string, error) {
+	out := make([]string, len(items))
+	for i, t := range items {
+		v, err := util.Encrypt(t)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = v
+	}
+	return out, nil
+}
+
+func encryptPixelSecrets(p *domain.Pixel) ([]string, []string, string, string, error) {
+	encAccess, err := encryptSlice(p.AccessTokens)
+	if err != nil {
+		return nil, nil, "", "", err
+	}
+	encTikTok, err := encryptSlice(p.TikTokAccessTokens)
+	if err != nil {
+		return nil, nil, "", "", err
+	}
+	encGA4, err := util.Encrypt(p.GA4APISecret)
+	if err != nil {
+		return nil, nil, "", "", err
+	}
+	encMeta, err := util.Encrypt(p.MetaPermanentToken)
+	if err != nil {
+		return nil, nil, "", "", err
+	}
+	return encAccess, encTikTok, encGA4, encMeta, nil
+}
+
 func (r *PixelRepo) Create(ctx context.Context, p *domain.Pixel) error {
 	cfgJSON, err := json.Marshal(p.TrackerConfig)
 	if err != nil {
@@ -65,22 +97,13 @@ func (r *PixelRepo) Create(ctx context.Context, p *domain.Pixel) error {
 	if p.AccountID == 0 {
 		p.AccountID = 1 // default account
 	}
-	// Gera token público opaco (128 bits hex) se não fornecido.
 	if p.PublicToken == "" {
 		p.PublicToken = domain.GeneratePublicToken()
 	}
-
-	encAccessTokens := make([]string, len(p.AccessTokens))
-	for i, t := range p.AccessTokens {
-		encAccessTokens[i] = util.Encrypt(t)
+	encAccessTokens, encTikTokTokens, encGA4Secret, encMetaPermanentToken, err := encryptPixelSecrets(p)
+	if err != nil {
+		return fmt.Errorf("encrypt pixel secrets: %w", err)
 	}
-	encTikTokTokens := make([]string, len(p.TikTokAccessTokens))
-	for i, t := range p.TikTokAccessTokens {
-		encTikTokTokens[i] = util.Encrypt(t)
-	}
-	encGA4Secret := util.Encrypt(p.GA4APISecret)
-	encMetaPermanentToken := util.Encrypt(p.MetaPermanentToken)
-
 	if p.AggregationWindowMinutes <= 0 {
 		p.AggregationWindowMinutes = 10
 	}
@@ -112,21 +135,13 @@ func (r *PixelRepo) Update(ctx context.Context, p *domain.Pixel) error {
 	if err != nil {
 		return fmt.Errorf("marshal tracker_config: %w", err)
 	}
-
 	if p.AggregationWindowMinutes <= 0 {
 		p.AggregationWindowMinutes = 10
 	}
-
-	encAccessTokens := make([]string, len(p.AccessTokens))
-	for i, t := range p.AccessTokens {
-		encAccessTokens[i] = util.Encrypt(t)
+	encAccessTokens, encTikTokTokens, encGA4Secret, encMetaPermanentToken, err := encryptPixelSecrets(p)
+	if err != nil {
+		return fmt.Errorf("encrypt pixel secrets: %w", err)
 	}
-	encTikTokTokens := make([]string, len(p.TikTokAccessTokens))
-	for i, t := range p.TikTokAccessTokens {
-		encTikTokTokens[i] = util.Encrypt(t)
-	}
-	encGA4Secret := util.Encrypt(p.GA4APISecret)
-	encMetaPermanentToken := util.Encrypt(p.MetaPermanentToken)
 
 	const q = `UPDATE pixels
 	           SET name=$1, label=$2, pixel_ids=$3, access_tokens=$4, test_codes=$5,

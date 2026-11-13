@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { AdminUser, LoginRequest, LoginResponse } from '#shared/types'
 import { sanitizeUserForStorage, setBrowserCookie, getBrowserCookie } from '~/utils/cookies'
+import { errorStatusCode } from '~/utils/errorMessage'
 import { useTenantStore } from '~/stores/useTenantStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
 import { usePixelStore } from '~/stores/usePixelStore'
@@ -149,18 +150,18 @@ export const useAuthStore = defineStore('auth', () => {
       const me = await api.get<AdminUser>('/admin/me')
       setUser(me)
       return true
-    } catch (err: any) {
-      if (err?.statusCode === 401) {
+    } catch (err: unknown) {
+      if (errorStatusCode(err) === 401) {
         clearSession()
       }
       return false
     }
   }
 
-  async function updatePreferences(preferences: Record<string, any>): Promise<void> {
+  async function updatePreferences(preferences: Record<string, unknown>): Promise<void> {
     if (!token.value || !user.value) return
     const api = useAPI()
-    const response = await api.put<{ ok: boolean; preferences: Record<string, any> }>(
+    const response = await api.put<{ ok: boolean; preferences: Record<string, unknown> }>(
       '/admin/me/preferences',
       preferences,
     )

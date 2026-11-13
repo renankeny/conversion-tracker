@@ -71,7 +71,10 @@ func (h *TraefikConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	} else {
-		cand := strings.TrimSpace(r.URL.Query().Get("secret"))
+		cand := strings.TrimSpace(r.Header.Get("X-Traefik-Secret"))
+		if cand == "" {
+			cand = strings.TrimSpace(r.URL.Query().Get("secret"))
+		}
 		if cand == "" {
 			cand = stripAuthPrefix(r.Header.Get("Authorization"))
 		}

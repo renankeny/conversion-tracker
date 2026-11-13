@@ -27,7 +27,7 @@
             :title="copiedField === 'user_id' ? 'ID Copiado!' : 'Copiar ID do usuário'"
             @click="copyToClipboard(user.external_id, 'user_id')"
           >
-            <Check v-if="copiedField === 'user_id'" class="w-3 h-3 text-emerald-400" />
+            <Check v-if="copiedField === 'user_id'" class="w-3 h-3 copy-ok" />
             <Copy v-else class="w-3 h-3" />
             <span>{{ copiedField === 'user_id' ? 'Copiado' : 'Copiar' }}</span>
           </button>
@@ -39,7 +39,7 @@
       </div>
     </div>
   </div>
-  <h2 v-else class="text-base font-bold" style="color: var(--text-1)">Carregando usuário...</h2>
+  <h2 v-else class="user-loading-title">Carregando usuário...</h2>
 </template>
 
 <script setup lang="ts">
@@ -181,8 +181,10 @@ const trafficTypeSummary = computed(() => {
   border-radius: 9999px;
 }
 .header-traffic-badge.is-human { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
-.header-traffic-badge.is-bot { background: rgba(239, 68, 68, 0.12); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.25); }
-.header-traffic-badge.is-inconclusive { background: rgba(251, 191, 36, 0.12); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.25); }
+.header-traffic-badge.is-bot { background: var(--danger-soft); color: var(--danger-light); border: 1px solid var(--danger-border); }
+.header-traffic-badge.is-inconclusive { background: var(--warning-soft); color: var(--warning-light); border: 1px solid var(--warning-border); }
+.copy-ok { color: var(--success); }
+.user-loading-title { font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--text-1); }
 
 .user-sub-row {
   display: flex;

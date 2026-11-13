@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -53,7 +54,8 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 		return
 	}
 	if accountID == 0 {
-		accountID = 1
+		slog.Warn("sent_event persist skipped: no account", "event_id", in.EventID, "pixel_name", in.PixelName)
+		return
 	}
 	status := "sent"
 	errMsg := ""
@@ -61,9 +63,10 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 		status = "failed"
 		errMsg = util.RedactSecrets(r.Err.Error())
 	}
-	payload := util.RedactSecrets(r.RequestBody)
-	if payload == "" {
-		payload = "null"
+	// NULL SQL de verdade quando não houver payload: o COALESCE preserva o payload bom anterior.
+	var payload *string
+	if redacted := util.RedactSecrets(r.RequestBody); redacted != "" {
+		payload = &redacted
 	}
 	channel := r.Channel
 	if channel == "" {
@@ -83,14 +86,14 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 			aggItemsJSON = string(raw)
 		}
 	}
-	_, _ = pool.Exec(ctx, `
+	_, err := pool.Exec(ctx, `
 		INSERT INTO sent_events
 			(event_id, event_name, pixel_name, external_id, account_id,
 			 channel, status, response_code, response_body, error, payload, purchase_value, input_json,
 			 aggregated_count, aggregated_items, updated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13::jsonb,$14,$15::jsonb,NOW())
 		ON CONFLICT (account_id, pixel_name, channel, event_id) DO UPDATE SET
-			status           = EXCLUDED.status,
+			status           = CASE WHEN sent_events.status = 'sent' THEN 'sent' ELSE EXCLUDED.status END,
 			response_code    = EXCLUDED.response_code,
 			response_body    = EXCLUDED.response_body,
 			error            = EXCLUDED.error,
@@ -105,4 +108,8 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 		channel, status, r.StatusCode, util.RedactSecrets(r.Body), errMsg, payload, purchaseValue(in), inputJSON,
 		aggCount, aggItemsJSON,
 	)
+	if err != nil {
+		slog.Error("sent_event persist failed",
+			"event_id", in.EventID, "pixel_name", in.PixelName, "channel", channel, "error", err)
+	}
 }

@@ -18,6 +18,7 @@
 <script setup lang="ts">
 import type { PlatformBranding } from '#shared/types'
 import { DEFAULT_BRANDING, isValidHexColor, normalizeHexColor } from '~/utils/colorPalette'
+import { errorMessage } from '~/utils/errorMessage'
 import BrandingLivePreview from '~/components/settings/branding/BrandingLivePreview.vue'
 import BrandingIdentityCard from '~/components/settings/branding/BrandingIdentityCard.vue'
 import BrandingColorsCard from '~/components/settings/branding/BrandingColorsCard.vue'
@@ -96,8 +97,8 @@ const onSave = async () => {
   try {
     await saveBranding(cloneBranding(draft))
     toast.success('Whitelabel atualizado', 'Identidade visual e cores salvas com sucesso')
-  } catch (err: any) {
-    toast.error('Erro ao salvar', err?.message || 'Não foi possível salvar o branding')
+  } catch (err: unknown) {
+    toast.error('Erro ao salvar', errorMessage(err, 'Não foi possível salvar o branding'))
   } finally {
     saving.value = false
   }

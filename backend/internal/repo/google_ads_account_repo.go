@@ -86,6 +86,10 @@ func (r *GoogleAdsAccountRepo) Create(ctx context.Context, a *domain.GoogleAdsAc
 	if err != nil {
 		return err
 	}
+	encTok, err := util.Encrypt(a.RefreshToken)
+	if err != nil {
+		return err
+	}
 	const q = `INSERT INTO google_ads_accounts
 	    (account_id, name, customer_id, login_customer_id, conversion_action_id,
 	     conversion_actions, refresh_token, oauth_email, oauth_picture_url, enabled)
@@ -93,7 +97,7 @@ func (r *GoogleAdsAccountRepo) Create(ctx context.Context, a *domain.GoogleAdsAc
 	    RETURNING id, created_at, updated_at`
 	return r.pool.QueryRow(ctx, q,
 		a.AccountID, a.Name, a.CustomerID, a.LoginCustomerID, a.ConversionActionID,
-		actionsJSON, util.Encrypt(a.RefreshToken), a.OAuthEmail, a.OAuthPictureURL, a.Enabled,
+		actionsJSON, encTok, a.OAuthEmail, a.OAuthPictureURL, a.Enabled,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
 }
 
@@ -138,13 +142,17 @@ func (r *GoogleAdsAccountRepo) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *GoogleAdsAccountRepo) SetTokens(ctx context.Context, id int64, refreshToken, email, pictureURL string) error {
+	encTok, err := util.Encrypt(refreshToken)
+	if err != nil {
+		return err
+	}
 	const q = `UPDATE google_ads_accounts
 	           SET refresh_token = $2,
 	               oauth_email = $3,
 	               oauth_picture_url = $4,
 	               updated_at = NOW()
 	           WHERE id = $1`
-	tag, err := r.pool.Exec(ctx, q, id, util.Encrypt(refreshToken), email, pictureURL)
+	tag, err := r.pool.Exec(ctx, q, id, encTok, email, pictureURL)
 	if err != nil {
 		return err
 	}

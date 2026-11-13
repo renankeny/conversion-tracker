@@ -7,12 +7,13 @@ import { useTenantStore } from '~/stores/useTenantStore'
 import { useThemeStore } from '~/stores/useThemeStore'
 import { setBrowserCookie, getBrowserCookie } from '~/utils/cookies'
 
-function buildNormalizedError(status: number | undefined, data: any, fallback: string): Error & { statusCode?: number; data?: any } {
+function buildNormalizedError(status: number | undefined, data: unknown, fallback: string): Error & { statusCode?: number; data?: unknown } {
+  const errField = data && typeof data === 'object' ? (data as Record<string, unknown>).error : undefined
   const message =
     typeof data === 'string' && data.trim()
       ? data
-      : (data?.error || fallback || 'Erro desconhecido')
-  const err = new Error(message) as Error & { statusCode?: number; data?: any }
+      : (typeof errField === 'string' && errField ? errField : (fallback || 'Erro desconhecido'))
+  const err = new Error(message) as Error & { statusCode?: number; data?: unknown }
   err.statusCode = status
   err.data = data
   return err

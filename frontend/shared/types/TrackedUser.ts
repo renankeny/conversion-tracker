@@ -1,5 +1,6 @@
 export interface TrackedUser {
   id: number
+  account_id?: number
   external_id: string
   id_wpp: string
   pixel_name: string
@@ -11,6 +12,11 @@ export interface TrackedUser {
   ttclid: string
   ttp: string
   ctwa_clid?: string
+  wa_chat_id?: number | null
+  wa_name?: string
+  wa_ad_id?: string
+  wa_source_app?: string
+  wa_lid?: string
   ga4_client_id: string
   ga4_session_id: string
   client_ip: string
@@ -135,6 +141,6 @@ export interface CustomerJourneyResponse {
   total_pageviews: number
   total_checkouts: number
   time_to_purchase: string
-  events: any[]
+  events: import('./Event').GroupedEvent[]
 }
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 
@@ -142,7 +143,18 @@ func Load() (*Config, error) {
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
+	if c.EncryptionKey == "troque-por-chave-exata-32-bytes!" {
+		if c.Env == "production" {
+			return nil, fmt.Errorf("ENCRYPTION_KEY must not use the .env.example placeholder in production")
+		}
+		slog.Error("ENCRYPTION_KEY está com o valor de exemplo do .env.example: gere uma chave aleatória de 32 bytes")
+	}
 	if len(c.EncryptionKey) != 32 {
+		if c.EncryptionKey != "" && c.Env == "production" {
+			return nil, fmt.Errorf("ENCRYPTION_KEY must be exactly 32 bytes (got %d)", len(c.EncryptionKey))
+		}
+		// Mantido quando vazio por compatibilidade com instâncias antigas que derivavam do JWT_SECRET.
+		slog.Warn("ENCRYPTION_KEY ausente ou != 32 bytes: usando chave derivada do JWT_SECRET; trocar JWT_SECRET tornará tokens salvos ilegíveis")
 		c.EncryptionKey = util.DeriveEncryptionKey(c.JWTSecret)
 	}
 	return c, nil

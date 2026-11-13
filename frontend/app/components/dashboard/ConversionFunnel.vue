@@ -130,7 +130,7 @@ const conversionFromTop = (idx: number): string => {
 }
 
 .funnel-title {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
   color: var(--text-strong);
@@ -175,7 +175,7 @@ const conversionFromTop = (idx: number): string => {
 }
 
 .step-count {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--fs-xl);
   font-weight: var(--fw-bold);
   color: var(--text-strong);

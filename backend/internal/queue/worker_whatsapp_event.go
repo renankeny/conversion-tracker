@@ -173,7 +173,9 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	}
 
 	if effCtwaClid != "" || effSourceID != "" {
-		enrichAndDispatchCTWALead(ctx, deps, inst, trackedUser, chatID, phone, effSourceID, effCtwaClid, !parsed.IsFromMe)
+		if err := enrichAndDispatchCTWALead(ctx, deps, inst, trackedUser, chatID, phone, effSourceID, effCtwaClid, !parsed.IsFromMe); err != nil {
+			return err
+		}
 	}
 
 	mediaStatus, expiresAt := classifyInitialMediaStatus(deps, parsed)
@@ -193,11 +195,17 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		slog.Warn("save whatsapp message failed", "msg_id", parsed.MessageID, "err", err)
 		return nil
 	}
-	if !inserted {
+	retryCount, _ := asynq.GetRetryCount(ctx)
+	if !inserted && retryCount == 0 {
 		return nil
 	}
 
-	evaluateAttendantTriggers(ctx, deps, inst, trackedUser, chatID, phone, parsed.MessageID, parsed.Content)
+	if err := evaluateAttendantTriggers(ctx, deps, inst, trackedUser, chatID, phone, parsed.MessageID, parsed.Content); err != nil {
+		return fmt.Errorf("evaluate attendant triggers: %w", err)
+	}
+	if !inserted {
+		return nil
+	}
 	wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_message", map[string]any{
 		"chat_id": chatID, "tracked_user_id": trackedUser.ID, "crm_lead_id": crmLeadID, "message": dbMsg,
 	})

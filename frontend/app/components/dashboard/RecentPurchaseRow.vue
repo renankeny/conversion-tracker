@@ -63,6 +63,7 @@
 import { ShoppingCart, ChevronRight } from 'lucide-vue-next'
 import BrandIcon from '~/components/events/BrandIcon.vue'
 import type { Channel, GroupedEvent } from '#shared/types'
+import { formatShortDateTimeSP } from '~/utils/formatDate'
 
 defineProps<{
   event: GroupedEvent
@@ -101,11 +102,7 @@ const formatCurrency = (v: number): string =>
 const truncate = (s: string, n: number): string =>
   s && s.length > n ? s.slice(0, n) + '…' : s || ''
 
-const formatDate = (iso: string): string => {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
+const formatDate = (iso: string): string => formatShortDateTimeSP(iso)
 </script>
 
 <style scoped>

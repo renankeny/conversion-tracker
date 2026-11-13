@@ -1,18 +1,13 @@
 import type { Component } from 'vue'
 import { useDashboardStore } from '~/stores/useDashboardStore'
-import { useTenantStore } from '~/stores/useTenantStore'
+import { useDashboardFetch } from '~/composables/useDashboardFetch'
 import {
   EVENT_CATALOG, FULL_CARD_CATALOG, ALL_CARD_IDS, DEFAULT_ENABLED_CARDS, CATALOG_IDS,
   DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon,
   type CardFormat, type EventCatalogEntry,
 } from '~/utils/dashboardEventCatalog'
 import { computeCardRichDetails, type CardRichDetails } from '~/utils/dashboardCardDetails'
-import type {
-  CounterSummaryResponse, CounterSeriesResponse, CounterSummaryRow,
-  DashboardConfig, DashboardHeatmap, GroupedEvent, PanelAudit, PreviousPeriodMetrics,
-  TrafficQualityStats, SourceBreakdown, AdPlatformLiveInsights, GoogleKeywordInsight,
-} from '#shared/types'
-import type { MetaCreativeInsight } from '~/composables/useDashboard'
+import type { CounterSummaryRow, DashboardConfig, GroupedEvent } from '#shared/types'
 
 export interface DashboardVisibleCard extends CardRichDetails {
   id: string
@@ -29,36 +24,21 @@ const PERIOD_LABELS: Record<string, string> = {
 }
 
 export const useDashboardView = () => {
-  const dashboard = useDashboard()
   const toast = useToast()
   const pixelsApi = usePixels()
   const pixelStore = usePixelStore()
-  const accountsApi = useAccounts()
   const dashboardStore = useDashboardStore()
-  const tenantStore = useTenantStore()
 
   const selectedPixel = computed({
     get: () => dashboardStore.selectedPixel,
     set: (v: string) => { dashboardStore.setSelectedPixel(v) },
   })
-  const loading = ref(false)
-  const initialized = ref(false)
-  const summaryData = ref<CounterSummaryResponse | null>(null)
-  const seriesData = ref<CounterSeriesResponse | null>(null)
-  const trafficQuality = ref<TrafficQualityStats | undefined>()
-  const sourceBreakdown = ref<SourceBreakdown | null>(null)
-  const panelAudit = ref<PanelAudit | null>(null)
-  const previousPeriod = ref<PreviousPeriodMetrics | null>(null)
-  const heatmap = ref<DashboardHeatmap | null>(null)
-  const metaInsights = ref<AdPlatformLiveInsights | null>(null)
-  const googleInsights = ref<AdPlatformLiveInsights | null>(null)
-  const metaCreatives = ref<MetaCreativeInsight[]>([])
-  const googleKeywords = ref<GoogleKeywordInsight[]>([])
-  const adsLoading = ref(false)
-  const eventsFilterMap = ref<Record<string, string[]>>({})
-  const recentPurchases = ref<GroupedEvent[]>([])
-  const geoData = ref<any[]>([])
-  const totalRevenue = ref(0)
+
+  const {
+    loading, adsLoading, summaryData, seriesData, trafficQuality, sourceBreakdown,
+    panelAudit, previousPeriod, heatmap, metaInsights, googleInsights, metaCreatives,
+    googleKeywords, eventsFilterMap, recentPurchases, geoData, totalRevenue, refresh,
+  } = useDashboardFetch(selectedPixel)
 
   const purchaseModalOpen = ref(false)
   const purchaseSelected = ref<GroupedEvent | null>(null)
@@ -170,68 +150,6 @@ export const useDashboardView = () => {
     } catch { toast.error('Erro', 'Não foi possível salvar a configuração deste pixel.') }
     finally { savingFunnelPrefs.value = false }
   }
-
-  const ensurePixelSelected = () => {
-    if (pixelStore.pixels.length && (!selectedPixel.value || !pixelStore.pixels.some((p) => p.name === selectedPixel.value))) {
-      selectedPixel.value = pixelStore.pixels[0]?.name || ''
-    }
-  }
-
-  const fetchAll = async () => {
-    ensurePixelSelected()
-    loading.value = true; adsLoading.value = true
-    try {
-      const { from, to } = dashboardStore.getDateRange()
-      const px = selectedPixel.value
-      const ts = dashboardStore.trafficSource
-      const [summary, series, purchases, geo, geoPurchases, revenue] = await Promise.all([
-        dashboard.summary({ from, to, pixel: px, traffic_source: ts }),
-        dashboard.series({ from, to, granularity: dashboardStore.granularityFor, pixel: px, traffic_source: ts }),
-        dashboard.recentPurchases({ from, to, limit: 50, pixel: px, traffic_source: ts }),
-        dashboard.geoStats({ from, to, pixel: px, traffic_source: ts }),
-        dashboard.geoStatsByEvent({ from, to, event: 'Purchase', pixel: px, traffic_source: ts }),
-        dashboard.revenue({ from, to, pixel: px, traffic_source: ts }),
-      ])
-      summaryData.value = summary; seriesData.value = series; recentPurchases.value = purchases.data || []
-      totalRevenue.value = revenue.total_revenue ?? 0; trafficQuality.value = revenue.traffic_quality
-      sourceBreakdown.value = revenue.source_breakdown || null; panelAudit.value = revenue.panel_audit || null
-      previousPeriod.value = revenue.previous_period || null; heatmap.value = revenue.heatmap || null
-      geoData.value = [...(geo || []).map((g: any) => ({ ...g, event_name: 'PageView' })), ...(geoPurchases || [])]
-
-      if (px) {
-        const [mLive, mRank, gLive, gRank] = await Promise.all([
-          dashboard.metaLiveInsights({ pixel_name: px, from, to }).catch(() => null),
-          dashboard.metaCreativeRanking({ pixel_name: px, from, to }).catch(() => null),
-          dashboard.googleLiveInsights({ pixel_name: px, from, to }).catch(() => null),
-          dashboard.googleKeywordRanking({ pixel_name: px, from, to }).catch(() => null),
-        ])
-        metaInsights.value = mLive; metaCreatives.value = (Array.isArray(mRank) ? mRank : []).slice(0, 3)
-        googleInsights.value = gLive; googleKeywords.value = (Array.isArray(gRank) ? gRank : []).slice(0, 5)
-      }
-    } catch (error: any) { toast.error('Erro', error.message || 'Não foi possível carregar a dashboard') }
-    finally { loading.value = false; adsLoading.value = false }
-  }
-
-  const loadEventsFilter = async () => {
-    try { eventsFilterMap.value = (await accountsApi.getEventsFilter()).events_filter || {} }
-    catch { eventsFilterMap.value = {} }
-  }
-
-  const refresh = () => fetchAll()
-  watch([() => dashboardStore.period, () => dashboardStore.customFrom, () => dashboardStore.customTo, () => dashboardStore.trafficSource, selectedPixel], () => {
-    if (initialized.value && (dashboardStore.period !== 'custom' || (dashboardStore.customFrom && dashboardStore.customTo))) refresh()
-  })
-
-  watch(() => tenantStore.switchVersion, async () => {
-    initialized.value = false
-    await Promise.all([pixelStore.fetch(), loadEventsFilter()])
-    ensurePixelSelected(); initialized.value = true; await fetchAll()
-  })
-
-  onMounted(async () => {
-    await Promise.all([pixelStore.fetch().catch(() => {}), loadEventsFilter()])
-    ensurePixelSelected(); initialized.value = true; await fetchAll()
-  })
 
   return {
     dashboardStore, loading, adsLoading, summaryData, seriesData, trafficQuality, heatmap, filteredSeriesPoints,

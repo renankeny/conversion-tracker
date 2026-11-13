@@ -105,6 +105,8 @@ export interface WhatsAppChat {
   campaign_id: string
   campaign_name: string
   ad_thumbnail_url: string
+  source?: string
+  metadata?: Record<string, unknown>
   unread_count: number
   last_message_time: string
   created_at: string
@@ -125,6 +127,7 @@ export interface WhatsAppMessage {
   media_duration_sec: number
   media_filename: string
   media_expires_at?: string | null
+  media_url?: string
   media_stream_url?: string
   timestamp: string
   created_at: string

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { GoogleAdsAccount } from '#shared/types'
 import { useTenantStore } from '~/stores/useTenantStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 export const useGoogleAdsStore = defineStore('googleAds', () => {
   const accounts = ref<GoogleAdsAccount[]>([])
@@ -35,8 +36,8 @@ export const useGoogleAdsStore = defineStore('googleAds', () => {
         accounts.value = list
         loaded.value = true
         return list
-      } catch (e: any) {
-        error.value = e.message ?? 'Erro ao carregar contas Google Ads'
+      } catch (e: unknown) {
+        error.value = errorMessage(e, 'Erro ao carregar contas Google Ads')
         throw e
       } finally {
         loading.value = false

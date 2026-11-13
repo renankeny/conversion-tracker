@@ -11,6 +11,7 @@ require (
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/oschwald/geoip2-golang v1.11.0
 	golang.org/x/crypto v0.28.0
+	golang.org/x/net v0.30.0
 )
 
 require (
@@ -37,7 +38,6 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/spf13/cast v1.3.1 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.19.0 // indirect

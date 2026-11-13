@@ -38,7 +38,7 @@ defineProps<{
 }
 
 .placeholder-title {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--fs-2xl);
   font-weight: var(--fw-semibold);
   color: var(--text-strong);

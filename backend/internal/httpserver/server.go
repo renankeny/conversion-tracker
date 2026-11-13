@@ -141,6 +141,7 @@ func New(deps Deps) (*Server, error) {
 	brandingH.SetRedis(rdb)
 	eventsH := handlers.NewEvents(pixels, users, sentEvents, deps.GeoIP, deps.Enqueuer, deps.URLs, crmRepo)
 	eventsH.SetRedis(rdb)
+	eventsH.SetTrackingTargetHost(deps.Cfg.TrackingTargetHost)
 	apiEventsH := handlers.NewAPIEvents(apiKeys, pixels, users, sentEvents, deps.GeoIP, deps.Enqueuer, deps.URLs, crmRepo)
 	apiEventsH.SetRedis(rdb)
 	pubDashH := handlers.NewPublicDashboard(pixels, stats, counters, sentEvents)

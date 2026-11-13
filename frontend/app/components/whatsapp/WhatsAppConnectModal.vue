@@ -90,6 +90,7 @@ import { QrCode, RefreshCw, Link2, Check } from 'lucide-vue-next'
 import type { WhatsAppInstance } from '#shared/types'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
 import { useWhatsAppStore } from '~/stores/useWhatsAppStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
   modelValue: boolean
@@ -135,8 +136,8 @@ const loadQr = async () => {
       return
     }
     qrDataUrl.value = normalizeQrSrc(res.qrcode)
-  } catch (e: any) {
-    toast.error('Erro ao obter QR Code', e.message || 'Tente novamente em instantes.')
+  } catch (e: unknown) {
+    toast.error('Erro ao obter QR Code', errorMessage(e, 'Tente novamente em instantes.'))
   } finally {
     loadingQr.value = false
   }
@@ -182,13 +183,21 @@ let offQr: (() => void) | null = null
 let offStatus: (() => void) | null = null
 
 onMounted(() => {
-  offQr = liveStore.onCustomEvent('whatsapp_qr', (data: any) => {
+  offQr = liveStore.onCustomEvent('whatsapp_qr', (raw: unknown) => {
+    const data = raw as { instance_id?: number; qrcode?: string } | null
     if (props.modelValue && props.instance && data?.instance_id === props.instance.id && data.qrcode) {
       qrDataUrl.value = normalizeQrSrc(data.qrcode)
     }
   })
-  offStatus = liveStore.onCustomEvent('whatsapp_status', (data: any) => {
-    if (!props.instance || data?.instance_id !== props.instance.id) return
+  offStatus = liveStore.onCustomEvent('whatsapp_status', (raw: unknown) => {
+    const data = raw as {
+      instance_id?: number
+      status?: string
+      owner_jid?: string
+      profile_name?: string
+      profile_pic_url?: string
+    } | null
+    if (!props.instance || data?.instance_id !== props.instance.id || !data.status) return
     waStore.updateInstanceStatus(props.instance.id, data.status, data.owner_jid, data.profile_name, data.profile_pic_url)
     if (props.modelValue && data.status === 'OPEN') {
       toast.success('WhatsApp conectado!', 'Aparelho sincronizado com sucesso.')

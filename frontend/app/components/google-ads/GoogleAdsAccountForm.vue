@@ -47,6 +47,7 @@ import GoogleAdsCustomerSection from '~/components/google-ads/GoogleAdsCustomerS
 import GoogleAdsOAuthCard from '~/components/google-ads/GoogleAdsOAuthCard.vue'
 import GoogleAdsConversionMappings from '~/components/google-ads/GoogleAdsConversionMappings.vue'
 import GoogleAdsTestSection from '~/components/google-ads/GoogleAdsTestSection.vue'
+import { errorMessage } from '~/utils/errorMessage'
 import type {
   GoogleAdsAccount,
   GoogleAdsAccountInput,
@@ -117,8 +118,8 @@ const loadRemoteCustomers = async () => {
         form.name = only.name
       }
     }
-  } catch (e: any) {
-    toast.error('Erro ao buscar contas Google Ads', e.message || 'Tente novamente')
+  } catch (e: unknown) {
+    toast.error('Erro ao buscar contas Google Ads', errorMessage(e, 'Tente novamente'))
   } finally {
     loadingCustomers.value = false
   }
@@ -134,8 +135,8 @@ const loadRemoteActions = async () => {
       form.login_customer_id,
     )
     remoteActions.value = res.conversion_actions || []
-  } catch (e: any) {
-    toast.error('Erro ao buscar Conversion Actions', e.message || 'Tente novamente')
+  } catch (e: unknown) {
+    toast.error('Erro ao buscar Conversion Actions', errorMessage(e, 'Tente novamente'))
   } finally {
     loadingActions.value = false
   }

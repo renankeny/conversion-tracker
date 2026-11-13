@@ -98,7 +98,7 @@ const applyPreset = (preset: BrandingPreset) => {
 <style scoped>
 .colors-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
 .section-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; }
-.section-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.25rem; }
+.section-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.25rem; }
 .section-subtitle { font-size: var(--fs-md); color: var(--text-2); }
 .presets-block { display: flex; flex-direction: column; gap: 0.5rem; }
 .block-label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); }

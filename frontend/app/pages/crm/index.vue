@@ -177,7 +177,7 @@ const {
   canManageStages, canDeleteLeads,
   searchQuery, selectedTagFilter, selectedOriginFilter, isFilterActive, clearFilters, matchesFilter,
   totalPipelineValue, totalLeadsCount, totalWonValue, averageTicket, filteredTotalCount,
-  toggleStageCollapse, getLeadsForStage, fetchBoard, loadGadsAccounts, loadAllTags,
+  toggleStageCollapse, getLeadsForStage, fetchBoard, resetPixelAndFetchBoard, loadGadsAccounts, loadAllTags,
   moveStageUp, moveStageDown, onStageDragEnd,
   showPurchaseModal, purchaseValue, isConfirmingPurchase, onDragEnd, cancelPurchase, confirmPurchase,
 } = useCrmBoard()
@@ -204,8 +204,7 @@ const {
 
 const tenantStore = useTenantStore()
 watch(() => tenantStore.switchVersion, () => {
-  selectedPixel.value = ''
-  void fetchBoard(false)
+  void resetPixelAndFetchBoard()
   void loadGadsAccounts()
   void loadAllTags()
 })

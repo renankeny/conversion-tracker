@@ -97,6 +97,7 @@
 <script setup lang="ts">
 import { Server, CheckCircle2 } from 'lucide-vue-next'
 import type { WhatsAppServer, WhatsAppServerHealth } from '#shared/types'
+import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
   server: WhatsAppServer | null
@@ -142,8 +143,8 @@ const onTest = async () => {
     })
     healthInfo.value = res
     toast.success('Servidor online', `Evolution Go v${res.version || '0.7'} respondeu com sucesso.`)
-  } catch (e: any) {
-    toast.error('Falha na conexão', e.message || 'Verifique a URL e a Global API Key.')
+  } catch (e: unknown) {
+    toast.error('Falha na conexão', errorMessage(e, 'Verifique a URL e a Global API Key.'))
   } finally {
     testing.value = false
   }
@@ -165,8 +166,8 @@ const onSave = async () => {
     expanded.value = false
     toast.success('Servidor salvo', 'Credenciais da Evolution Go criptografadas e salvas.')
     emit('saved')
-  } catch (e: any) {
-    toast.error('Erro ao salvar', e.message || 'Não foi possível salvar o servidor.')
+  } catch (e: unknown) {
+    toast.error('Erro ao salvar', errorMessage(e, 'Não foi possível salvar o servidor.'))
   } finally {
     saving.value = false
   }

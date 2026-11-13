@@ -63,6 +63,8 @@
 
 <script setup lang="ts">
 import type { GeoIPStatus } from '#shared/types'
+import { formatDateTimeSP } from '~/utils/formatDate'
+import { errorMessage } from '~/utils/errorMessage'
 
 const settings = useSettings()
 const toast = useToast()
@@ -85,8 +87,7 @@ const geoipStatusLabel = computed(() => {
   return 'Não instalada'
 })
 
-const formatDate = (iso: string): string =>
-  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+const formatDate = (iso: string): string => formatDateTimeSP(iso)
 
 const formatBytes = (bytes: number): string => {
   if (!bytes) return '0 B'
@@ -104,8 +105,8 @@ const loadGeoIP = async () => {
   loadingGeoIP.value = true
   try {
     geoip.value = await settings.geoipStatus()
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao consultar GeoIP')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao consultar GeoIP'))
   } finally {
     loadingGeoIP.value = false
   }
@@ -122,8 +123,8 @@ const onRefreshGeoIP = async () => {
       )
     }
     await loadGeoIP()
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao baixar GeoIP')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao baixar GeoIP'))
   } finally {
     refreshingGeoIP.value = false
   }
@@ -134,7 +135,7 @@ onMounted(loadGeoIP)
 
 <style scoped>
 .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-card); }
-.card-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
+.card-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
 .card-hint { font-size: var(--fs-md); color: var(--text-2); margin-bottom: 1rem; line-height: 1.5; }
 .card-hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-soft); padding: 0.0625rem 0.375rem; border-radius: 4px; }
 .muted { color: var(--text-3); font-size: var(--fs-md); font-style: italic; }

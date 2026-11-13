@@ -63,7 +63,7 @@ const onNext = () => {
 <style scoped>
 .step-form { display: flex; flex-direction: column; gap: 1.25rem; }
 .step-intro { display: flex; flex-direction: column; gap: 0.375rem; }
-.step-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--text-strong); }
+.step-title { font-family: var(--font-sans); font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--text-strong); }
 .step-desc { font-size: var(--fs-md); color: var(--text-2); line-height: 1.5; }
 .fields-stack { display: flex; flex-direction: column; gap: 1rem; }
 .info-box { background: var(--surface-soft-2); border: 1px solid var(--border-soft); border-radius: 10px; padding: 0.875rem 1rem; display: flex; flex-direction: column; gap: 0.375rem; }

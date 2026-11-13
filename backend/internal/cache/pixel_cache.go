@@ -116,7 +116,10 @@ func (c *PixelCache) writePixel(ctx context.Context, rKey string, p *domain.Pixe
 	if err != nil {
 		return
 	}
-	enc := util.Encrypt(string(raw))
+	enc, err := util.Encrypt(string(raw))
+	if err != nil || enc == "" {
+		return
+	}
 	_ = c.rdb.Set(ctx, rKey, enc, ttl).Err()
 }
 

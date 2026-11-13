@@ -66,6 +66,7 @@
 <script setup lang="ts">
 import { Building2 } from 'lucide-vue-next'
 import type { Account } from '#shared/types'
+import { formatDateSP } from '~/utils/formatDate'
 
 const props = defineProps<{
   account: Account
@@ -88,14 +89,7 @@ const retentionLabel = computed(() => {
   return parts.join(' / ')
 })
 
-const formatDate = (iso: string): string => {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-}
+const formatDate = (iso: string): string => formatDateSP(iso) || '—'
 </script>
 
 <style scoped>

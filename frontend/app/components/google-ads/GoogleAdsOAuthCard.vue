@@ -104,6 +104,7 @@ import { storeToRefs } from 'pinia'
 import type { AdAccountSelectOption } from '~/components/BaseAdAccountSelect.vue'
 import type { GoogleAdsAccount } from '#shared/types'
 import { useGoogleAdsStore } from '~/stores/useGoogleAdsStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
   account?: GoogleAdsAccount | null
@@ -190,8 +191,8 @@ const onUseExisting = async () => {
     await googleAdsApi.reuseOAuth(props.account.id, srcId)
     toast.success('Conta vinculada', 'Conexão Google reutilizada com sucesso.')
     emit('reused')
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao reutilizar conta Google')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao reutilizar conta Google'))
   } finally {
     oauthLoading.value = false
   }
@@ -205,8 +206,8 @@ const onConnect = async () => {
   oauthLoading.value = true
   try {
     await googleAdsApi.startOAuth(props.account.id)
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao iniciar OAuth')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao iniciar OAuth'))
     oauthLoading.value = false
   }
 }
@@ -219,8 +220,8 @@ const executeDisconnect = async () => {
     showDisconnectConfirm.value = false
     toast.success('Desconectado', 'Conta Google revogada.')
     emit('disconnected')
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao desconectar')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao desconectar'))
   } finally {
     oauthLoading.value = false
   }

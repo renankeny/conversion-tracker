@@ -46,6 +46,19 @@
 </template>
 
 <script setup lang="ts">
+import { formatDateTimeSP } from '~/utils/formatDate'
+
+interface CustomWebhookLog {
+  id: number
+  status: string
+  event_name: string
+  external_id?: string
+  received_at: string
+  raw_payload: unknown
+  processed_input: unknown
+  error?: string
+}
+
 const props = defineProps<{
   modelValue: boolean
   webhookId: string
@@ -58,7 +71,7 @@ defineEmits<{
 
 const toast = useToast()
 const loading = ref(false)
-const logs = ref<any[]>([])
+const logs = ref<CustomWebhookLog[]>([])
 const expandedLogs = ref(new Set<number>())
 
 const fetchLogs = async (id: string) => {
@@ -68,7 +81,7 @@ const fetchLogs = async (id: string) => {
   logs.value = []
   try {
     const api = useAPI()
-    const data = await api.get<any[]>(`/admin/custom-webhooks/${id}/logs`)
+    const data = await api.get<CustomWebhookLog[]>(`/admin/custom-webhooks/${id}/logs`)
     logs.value = data || []
   } catch {
     toast.error('Erro', 'Não foi possível carregar os logs.')
@@ -92,10 +105,7 @@ const toggleLog = (id: number) => {
 }
 
 const formatDate = (d: string) =>
-  new Date(d).toLocaleString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-  })
+  formatDateTimeSP(d, { year: '2-digit', second: '2-digit' })
 </script>
 
 <style scoped>

@@ -7,10 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
+	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
 type updateProfileInput struct {
@@ -34,14 +32,12 @@ func (h *AdminUsers) UpdateMyProfile(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(in.Name)
 	phone := strings.TrimSpace(in.Phone)
 
-	tag, err := h.pool.Exec(r.Context(),
-		`UPDATE admin_users SET name = $1, phone = $2, updated_at = NOW()
-		 WHERE id = $3`, name, phone, claims.UserID)
+	updated, err := h.users.UpdateProfile(r.Context(), claims.UserID, name, phone)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "update error: "+err.Error())
 		return
 	}
-	if tag.RowsAffected() == 0 {
+	if !updated {
 		writeError(w, http.StatusNotFound, "admin não encontrado")
 		return
 	}
@@ -77,12 +73,9 @@ func (h *AdminUsers) ChangeMyPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var currentHash string
-	err := h.pool.QueryRow(r.Context(),
-		`SELECT password_hash FROM admin_users WHERE id = $1`, claims.UserID,
-	).Scan(&currentHash)
+	currentHash, err := h.users.GetPasswordHash(r.Context(), claims.UserID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, repo.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "admin não encontrado")
 			return
 		}
@@ -101,9 +94,7 @@ func (h *AdminUsers) ChangeMyPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.pool.Exec(r.Context(),
-		`UPDATE admin_users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
-		newHash, claims.UserID); err != nil {
+	if err := h.users.UpdatePasswordHash(r.Context(), claims.UserID, newHash); err != nil {
 		writeError(w, http.StatusInternalServerError, "update error: "+err.Error())
 		return
 	}
@@ -128,16 +119,13 @@ func (h *AdminUsers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	prefsBytes, sanitized, err := preparePrefsForStorage(r.Context(), h.pool, claims.UserID, prefs)
+	prefsBytes, sanitized, err := preparePrefsForStorage(r.Context(), h.users, claims.UserID, prefs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to serialize preferences")
 		return
 	}
 
-	_, err = h.pool.Exec(r.Context(),
-		`UPDATE admin_users SET preferences = $1, updated_at = NOW() WHERE id = $2`,
-		prefsBytes, claims.UserID)
-	if err != nil {
+	if err := h.users.UpdatePreferences(r.Context(), claims.UserID, prefsBytes); err != nil {
 		writeError(w, http.StatusInternalServerError, "update error: "+err.Error())
 		return
 	}
@@ -145,17 +133,16 @@ func (h *AdminUsers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "preferences": sanitized})
 }
 
-func requireValidAccount(ctx context.Context, pool *pgxpool.Pool, accountID *int64) error {
+func (h *AdminUsers) requireValidAccount(ctx context.Context, accountID *int64) error {
 	if accountID == nil || *accountID <= 0 {
 		return errors.New("selecione uma empresa para este usuário — administradores, gerentes e funcionários precisam estar vinculados a uma conta")
 	}
-	var exists bool
-	err := pool.QueryRow(ctx, `SELECT true FROM accounts WHERE id = $1`, *accountID).Scan(&exists)
-	if errors.Is(err, pgx.ErrNoRows) || !exists {
-		return errors.New("a empresa selecionada não existe")
-	}
+	exists, err := h.accounts.Exists(ctx, *accountID)
 	if err != nil {
 		return err
+	}
+	if !exists {
+		return errors.New("a empresa selecionada não existe")
 	}
 	return nil
 }

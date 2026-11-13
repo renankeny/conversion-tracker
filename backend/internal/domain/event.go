@@ -136,11 +136,15 @@ type SendEventInput struct {
 	ItemType        string           `json:"item_type,omitempty"` // "main", "order_bump", "upsell"
 	AggregatedCount int              `json:"aggregated_count,omitempty"`
 	AggregatedItems []AggregatedItem `json:"aggregated_items,omitempty"`
+
+	// IsReplay marca reenvio manual pelo painel (não soma count_total novamente).
+	IsReplay bool `json:"is_replay,omitempty"`
 }
 
 // AggregatedItem representa um item ou venda individual agrupado dentro de uma janela de tempo.
 type AggregatedItem struct {
 	OrderID      string  `json:"order_id,omitempty"`
+	ProductID    string  `json:"product_id,omitempty"`
 	ProductTitle string  `json:"product_title,omitempty"`
 	ItemType     string  `json:"item_type,omitempty"` // "main", "order_bump", "upsell"
 	Value        float64 `json:"value"`

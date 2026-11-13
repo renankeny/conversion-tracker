@@ -164,7 +164,7 @@ onMounted(() => {
 }
 
 .modal-title {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--fs-xl);
   font-weight: var(--fw-semibold);
   color: var(--text-strong);

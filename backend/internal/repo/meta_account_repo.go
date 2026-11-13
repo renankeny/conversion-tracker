@@ -99,7 +99,10 @@ func (r *MetaAccountRepo) Create(ctx context.Context, a *domain.MetaAccount) err
 	if a.AccountID == 0 {
 		a.AccountID = 1
 	}
-	encTok := util.Encrypt(a.VaultTokenEncrypted)
+	encTok, err := util.Encrypt(a.VaultTokenEncrypted)
+	if err != nil {
+		return err
+	}
 	return r.pool.QueryRow(ctx, `
 		INSERT INTO meta_accounts (
 			account_id, name, vault_token_encrypted,
@@ -132,8 +135,11 @@ func (r *MetaAccountRepo) Update(ctx context.Context, a *domain.MetaAccount) err
 }
 
 func (r *MetaAccountRepo) SetOAuthTokens(ctx context.Context, id int64, vaultToken, userID, name, email, picURL string, expiresAt *time.Time) error {
-	encTok := util.Encrypt(vaultToken)
-	_, err := r.pool.Exec(ctx, `
+	encTok, err := util.Encrypt(vaultToken)
+	if err != nil {
+		return err
+	}
+	_, err = r.pool.Exec(ctx, `
 		UPDATE meta_accounts
 		SET vault_token_encrypted = $1, oauth_user_id = $2, oauth_name = $3,
 		    oauth_email = $4, oauth_picture_url = $5, token_expires_at = $6, updated_at = NOW()

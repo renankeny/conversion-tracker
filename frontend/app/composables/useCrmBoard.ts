@@ -1,4 +1,4 @@
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import type { CrmBoardResponse, CrmLead, CrmStage, CrmTag, GoogleAdsAccount } from '#shared/types'
 import { useAPI } from '~/composables/useAPI'
 import { useGoogleAdsAccounts } from '~/composables/useGoogleAdsAccounts'
@@ -6,6 +6,7 @@ import { useCrmHelpers } from '~/composables/useCrmHelpers'
 import { useCrmDragDrop } from '~/composables/useCrmDragDrop'
 import { useAuthStore } from '~/stores/useAuthStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 export const useCrmBoard = () => {
   const api = useAPI()
@@ -121,10 +122,15 @@ export const useCrmBoard = () => {
     return leadsByStage.value[stageId] || []
   }
 
+  let boardSeq = 0
+  let suppressPixelWatch = false
+
   const fetchBoard = async (silent = false) => {
+    const seq = ++boardSeq
     if (!silent) isLoading.value = true
     try {
       const data = await api.get<CrmBoardResponse>(`/admin/crm/board?pixel=${encodeURIComponent(selectedPixel.value)}`)
+      if (seq !== boardSeq) return
       stages.value = data.stages || []
       leads.value = data.leads || []
 
@@ -143,13 +149,22 @@ export const useCrmBoard = () => {
         grouped[sid]!.push(l)
       })
       leadsByStage.value = grouped
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if (seq !== boardSeq) return
       if (!silent) {
-        toast.error('Erro', err?.message || 'Falha ao carregar o funil de vendas.')
+        toast.error('Erro', errorMessage(err, 'Falha ao carregar o funil de vendas.'))
       }
     } finally {
-      if (!silent) isLoading.value = false
+      if (seq === boardSeq && !silent) isLoading.value = false
     }
+  }
+
+  const resetPixelAndFetchBoard = async () => {
+    suppressPixelWatch = true
+    selectedPixel.value = ''
+    await nextTick()
+    suppressPixelWatch = false
+    await fetchBoard(false)
   }
 
   const loadGadsAccounts = async () => {
@@ -168,6 +183,7 @@ export const useCrmBoard = () => {
   }
 
   watch(selectedPixel, () => {
+    if (suppressPixelWatch) return
     void fetchBoard(false)
   })
 
@@ -182,9 +198,6 @@ export const useCrmBoard = () => {
   }
 
   onMounted(() => {
-    if (authStore.token) {
-      void liveStore.connect(authStore.token, '')
-    }
     offCrmEvent = liveStore.onCustomEvent('crm_updated', scheduleSilentRefresh)
   })
 
@@ -201,7 +214,7 @@ export const useCrmBoard = () => {
     searchQuery, selectedTagFilter, selectedOriginFilter, isFilterActive, clearFilters, matchesFilter,
     totalPipelineValue, totalLeadsCount, totalWonValue, averageTicket, filteredTotalCount,
     toggleStageCollapse, getStageTotalValue, getLeadsForStage,
-    fetchBoard, loadGadsAccounts, loadAllTags,
+    fetchBoard, resetPixelAndFetchBoard, loadGadsAccounts, loadAllTags,
     ...dragDrop,
   }
 }

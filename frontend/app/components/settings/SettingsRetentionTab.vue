@@ -103,6 +103,7 @@
 
 <script setup lang="ts">
 import type { MaintenanceStatusResponse, PruneResultRow, ResetAccountResponse } from '#shared/types'
+import { errorMessage } from '~/utils/errorMessage'
 
 const settings = useSettings()
 const tenantStore = useTenantStore()
@@ -133,8 +134,8 @@ const loadMaintenance = async () => {
     maintenanceData.value = await settings.maintenanceStatus()
     retentionForm.sent_events = maintenanceData.value.account_sent_events_retention_days ?? undefined
     retentionForm.event_counters = maintenanceData.value.account_event_counters_retention_days ?? undefined
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao consultar retenção')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao consultar retenção'))
   }
 }
 
@@ -145,8 +146,8 @@ const onPrune = async () => {
     lastPruneResults.value = res.results || []
     toast.success('Limpeza executada', 'Veja resultado abaixo')
     confirmPrune.value = false
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao executar limpeza')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao executar limpeza'))
   } finally {
     pruning.value = false
   }
@@ -161,8 +162,8 @@ const onSaveRetention = async () => {
     })
     toast.success('Retenção atualizada', 'Próxima limpeza usará a nova janela')
     await loadMaintenance()
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao salvar retenção')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao salvar retenção'))
   } finally {
     savingRetention.value = false
   }
@@ -179,8 +180,8 @@ const onResetRetention = async () => {
     retentionForm.event_counters = undefined
     toast.success('Override removido', 'Conta volta a usar o default global')
     await loadMaintenance()
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao remover override')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao remover override'))
   } finally {
     savingRetention.value = false
   }
@@ -196,8 +197,8 @@ const onReset = async () => {
       `${formatNumber(res.deleted_sent_events)} eventos + ${formatNumber(res.deleted_event_counters)} contadores apagados`
     )
     confirmReset.value = false
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao resetar conta')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao resetar conta'))
   } finally {
     resetting.value = false
   }
@@ -214,13 +215,13 @@ onMounted(loadMaintenance)
 
 <style scoped>
 .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-card); }
-.card-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
+.card-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
 .card-hint { font-size: var(--fs-md); color: var(--text-2); margin-bottom: 1rem; line-height: 1.5; }
 .muted { color: var(--text-3); font-size: var(--fs-md); font-style: italic; }
 .retention-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem 1rem; }
 .retention-item { display: flex; flex-direction: column; gap: 0.25rem; }
 .retention-label { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3); font-weight: var(--fw-semibold); }
-.retention-value { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--text-strong); }
+.retention-value { font-family: var(--font-sans); font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--text-strong); }
 .retention-value small { font-size: var(--fs-sm); font-weight: var(--fw-normal); color: var(--text-3); }
 .retention-source { font-size: var(--fs-xs); color: var(--text-3); font-style: italic; margin-top: 0.125rem; }
 .retention-form { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border-soft); }

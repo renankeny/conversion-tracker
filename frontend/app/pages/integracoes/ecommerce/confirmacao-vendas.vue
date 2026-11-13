@@ -34,7 +34,7 @@
         </thead>
         <tbody>
           <tr v-for="sale in sales" :key="sale.event_id">
-            <td>{{ new Date(sale.created_at).toLocaleString() }}</td>
+            <td>{{ formatDateTimeSP(sale.created_at) }}</td>
             <td><span class="pixel-name">{{ sale.pixel_name }}</span></td>
             <td>
               <div class="text-strong">{{ sale.first_name }} {{ sale.last_name }}</div>
@@ -107,6 +107,20 @@
 import { ref, onMounted, watch } from 'vue'
 import ConfirmModal from '~/components/ConfirmModal.vue'
 import { useTenantStore } from '~/stores/useTenantStore'
+import { formatDateTimeSP } from '~/utils/formatDate'
+import { errorMessage } from '~/utils/errorMessage'
+
+interface SaleConfirmationItem {
+  event_id: string
+  created_at: string
+  pixel_name: string
+  first_name?: string
+  last_name?: string
+  email?: string
+  phone?: string
+  purchase_value: number
+  event_name: string
+}
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
 const { formatTitle } = useBranding()
@@ -116,25 +130,25 @@ const api = useAPI()
 const toast = useToast()
 const tenantStore = useTenantStore()
 
-const sales = ref<any[]>([])
+const sales = ref<SaleConfirmationItem[]>([])
 const loading = ref(true)
 const confirming = ref<string | null>(null)
 const confirmModalOpen = ref(false)
-const saleToConfirm = ref<any>(null)
+const saleToConfirm = ref<SaleConfirmationItem | null>(null)
 
 const fetchSales = async () => {
   loading.value = true
   try {
-    const res = await api.get<any>('/admin/sales-confirmations?limit=50')
+    const res = await api.get<{ items?: SaleConfirmationItem[] }>('/admin/sales-confirmations?limit=50')
     sales.value = res.items || []
-  } catch (err: any) {
-    toast.error('Erro ao buscar vendas', err.message)
+  } catch (err: unknown) {
+    toast.error('Erro ao buscar vendas', errorMessage(err, 'Falha ao buscar vendas'))
   } finally {
     loading.value = false
   }
 }
 
-const confirmSale = (sale: any) => {
+const confirmSale = (sale: SaleConfirmationItem) => {
   saleToConfirm.value = sale
   confirmModalOpen.value = true
 }
@@ -153,8 +167,8 @@ const executeConfirmSale = async () => {
     toast.success('Sucesso', 'Venda confirmada com sucesso! Evento Purchase enviado para a Meta.')
     confirmModalOpen.value = false
     await fetchSales()
-  } catch (err: any) {
-    toast.error('Erro ao confirmar', err.message || (err.err ? err.err : err.toString()))
+  } catch (err: unknown) {
+    toast.error('Erro ao confirmar', errorMessage(err, 'Falha ao confirmar venda'))
   } finally {
     confirming.value = null
   }
@@ -175,7 +189,7 @@ onMounted(() => fetchSales())
 <style scoped>
 .sales-confirmation-page { display: flex; flex-direction: column; gap: 1.25rem; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
-.page-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.25rem; }
+.page-title { font-family: var(--font-sans); font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.25rem; }
 .page-subtitle { font-size: var(--fs-md); color: var(--text-weak); line-height: 1.4; margin: 0; }
 .sales-table-container { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-card); overflow: hidden; overflow-x: auto; }
 .data-table { width: 100%; border-collapse: collapse; min-width: 1080px; }

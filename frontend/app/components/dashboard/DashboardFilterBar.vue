@@ -157,7 +157,7 @@ const revokeShareLink = async () => {
 }
 
 .page-title {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--fs-3xl);
   font-weight: var(--fw-bold);
   color: var(--text-strong);

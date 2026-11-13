@@ -54,9 +54,11 @@ func scanWhatsAppInstance(scanner pgx.Row, i *domain.WhatsAppInstance) error {
 }
 
 func (r *WhatsAppRepo) CreateInstance(ctx context.Context, inst *domain.WhatsAppInstance) error {
-	encTok := ""
-	if strings.TrimSpace(inst.InstanceToken) != "" {
-		encTok = util.Encrypt(strings.TrimSpace(inst.InstanceToken))
+	encTok, err := util.Encrypt(strings.TrimSpace(inst.InstanceToken))
+	if err != nil {
+		return err
+	}
+	if encTok != "" {
 		inst.HasInstanceToken = true
 	}
 	inst.Provider = domain.NormalizeWhatsAppProvider(inst.Provider)
@@ -87,12 +89,14 @@ func (r *WhatsAppRepo) CreateInstance(ctx context.Context, inst *domain.WhatsApp
 func (r *WhatsAppRepo) UpdateInstance(ctx context.Context, inst *domain.WhatsAppInstance) error {
 	inst.Provider = domain.NormalizeWhatsAppProvider(inst.Provider)
 	inst.Currency = domain.NormalizeWhatsAppCurrency(inst.Currency)
-	encTok := ""
-	if strings.TrimSpace(inst.InstanceToken) != "" {
-		encTok = util.Encrypt(strings.TrimSpace(inst.InstanceToken))
+	encTok, err := util.Encrypt(strings.TrimSpace(inst.InstanceToken))
+	if err != nil {
+		return err
+	}
+	if encTok != "" {
 		inst.HasInstanceToken = true
 	}
-	_, err := r.db.Exec(ctx, `
+	_, err = r.db.Exec(ctx, `
 		UPDATE whatsapp_instances
 		SET name = $1, pixel_id = $2, provider = $3, external_api_url = $4, currency = $5,
 		    instance_token_encrypted = CASE WHEN $6 <> '' THEN $6 ELSE instance_token_encrypted END,
@@ -220,11 +224,11 @@ func (r *WhatsAppRepo) UpdateInstanceOwnerAndProfile(ctx context.Context, instan
 }
 
 func (r *WhatsAppRepo) UpdateInstanceExternalCredentials(ctx context.Context, instanceID int64, externalURL, rawToken string) error {
-	encTok := ""
-	if strings.TrimSpace(rawToken) != "" {
-		encTok = util.Encrypt(strings.TrimSpace(rawToken))
+	encTok, err := util.Encrypt(strings.TrimSpace(rawToken))
+	if err != nil {
+		return err
 	}
-	_, err := r.db.Exec(ctx, `
+	_, err = r.db.Exec(ctx, `
 		UPDATE whatsapp_instances
 		SET external_api_url         = COALESCE(NULLIF(external_api_url, ''), NULLIF($1, ''), external_api_url),
 		    instance_token_encrypted = COALESCE(NULLIF(instance_token_encrypted, ''), NULLIF($2, ''), instance_token_encrypted),

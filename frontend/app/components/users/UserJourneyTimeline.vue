@@ -104,18 +104,18 @@ defineProps<Props>()
   height: 10px;
   border-radius: 9999px;
   background: var(--text-3);
-  border: 2px solid var(--surface-1, #18181b);
+  border: 2px solid var(--surface-1);
   box-shadow: 0 0 0 1px var(--border);
   z-index: 2;
   flex-shrink: 0;
 }
 
-.timeline-indicator.type-discovery .timeline-dot { background: #38bdf8; box-shadow: 0 0 8px rgba(56, 189, 248, 0.4); }
-.timeline-indicator.type-checkout .timeline-dot { background: #fbbf24; box-shadow: 0 0 8px rgba(251, 191, 36, 0.4); }
+.timeline-indicator.type-discovery .timeline-dot { background: var(--accent-sky); box-shadow: 0 0 8px var(--accent-sky-border); }
+.timeline-indicator.type-checkout .timeline-dot { background: var(--warning-light); box-shadow: 0 0 8px var(--warning-border); }
 .timeline-indicator.type-purchase .timeline-dot { background: var(--brand); box-shadow: 0 0 8px var(--brand-border); }
-.timeline-indicator.type-lead .timeline-dot { background: #a855f7; box-shadow: 0 0 8px rgba(168, 85, 247, 0.4); }
+.timeline-indicator.type-lead .timeline-dot { background: var(--accent-purple-strong); box-shadow: 0 0 8px var(--accent-purple-border); }
 .timeline-indicator.type-contact .timeline-dot { background: var(--brand); box-shadow: 0 0 8px var(--brand-border); }
-.timeline-indicator.type-device .timeline-dot { background: #ec4899; box-shadow: 0 0 8px rgba(236, 72, 153, 0.4); }
+.timeline-indicator.type-device .timeline-dot { background: var(--accent-pink-strong); box-shadow: 0 0 8px var(--accent-pink-border); }
 
 .timeline-line {
   position: absolute;
@@ -157,12 +157,12 @@ defineProps<Props>()
   color: var(--text-2);
 }
 
-.timeline-badge.type-discovery { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); }
-.timeline-badge.type-checkout { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.25); }
+.timeline-badge.type-discovery { background: var(--accent-sky-soft); color: var(--accent-sky); border: 1px solid var(--accent-sky-border); }
+.timeline-badge.type-checkout { background: var(--warning-soft); color: var(--warning-light); border: 1px solid var(--warning-border); }
 .timeline-badge.type-purchase { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
-.timeline-badge.type-lead { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.25); }
+.timeline-badge.type-lead { background: var(--accent-purple-soft); color: var(--accent-purple); border: 1px solid var(--accent-purple-border); }
 .timeline-badge.type-contact { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
-.timeline-badge.type-device { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.25); }
+.timeline-badge.type-device { background: var(--accent-pink-soft); color: var(--accent-pink); border: 1px solid var(--accent-pink-border); }
 
 .timeline-title {
   font-size: var(--fs-base);

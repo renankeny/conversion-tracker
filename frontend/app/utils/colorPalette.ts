@@ -142,3 +142,11 @@ export function applyPaletteToDocument(palette: ThemePalette): void {
   }
 }
 
+export function getDefaultStageColor(): string {
+  if (import.meta.client) {
+    const val = getComputedStyle(document.documentElement).getPropertyValue('--stage-default').trim()
+    if (val) return val
+  }
+  return '#3B82F6'
+}
+

@@ -93,7 +93,7 @@ const onLogoUpdate = (val: string) => {
 <style scoped>
 .step-form { display: flex; flex-direction: column; gap: 1.25rem; }
 .step-intro { display: flex; flex-direction: column; gap: 0.375rem; }
-.step-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--text-strong); }
+.step-title { font-family: var(--font-sans); font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--text-strong); }
 .step-desc { font-size: var(--fs-md); color: var(--text-2); line-height: 1.5; }
 .fields-stack { display: flex; flex-direction: column; gap: 1rem; }
 .grid-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }

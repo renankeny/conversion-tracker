@@ -72,6 +72,17 @@
     return "";
   })();
 
+  var isFirstPartyAPI = (function () {
+    try {
+      if (!rootDomain) return false;
+      var apiHost = new URL(TF_API_URL).hostname.toLowerCase();
+      var bareRoot = rootDomain.charAt(0) === "." ? rootDomain.substring(1).toLowerCase() : rootDomain.toLowerCase();
+      return apiHost === bareRoot || apiHost.slice(-(bareRoot.length + 1)) === "." + bareRoot;
+    } catch (e) {
+      return false;
+    }
+  })();
+
   function getCookie(name) {
     var cookies = (document.cookie || "").split(";");
     for (var i = 0; i < cookies.length; i++) {
@@ -180,6 +191,8 @@
       var fromStorage = JSON.parse(getStorage("__userData") || "{}");
       if (fromStorage && (fromStorage.userId || fromStorage.id_wpp)) return fromStorage;
     } catch (e) {}
+    var uidCookie = getCookie("tf_uid");
+    if (uidCookie) return { userId: uidCookie };
     return {};
   }
 
@@ -278,13 +291,14 @@
     return "+" + digits;
   }
 
-  function generateFallbackTtp() {
-    var alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-    var prefix = "01";
-    for (var i = 0; i < 24; i++) {
-      prefix += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
-    }
-    return prefix + "_.tt.1." + Date.now();
+  function isLegacyFabricatedTtp(val) {
+    return typeof val === "string" && /^01[0-9A-Z]{24}_\.tt\.1\.\d{13}$/.test(val);
+  }
+
+  function getRealTtpCookie() {
+    var val = getCookie("_ttp");
+    if (!val || isLegacyFabricatedTtp(val)) return null;
+    return val;
   }
 
   function getTikTokParams() {
@@ -292,16 +306,15 @@
     var ttclid = qp.get("ttclid");
     if (ttclid) savePersistent("_ttclid", ttclid, 90);
     else ttclid = getPersistent("_ttclid");
-    var cookieTtp = getCookie("_ttp");
+    var cookieTtp = getRealTtpCookie();
     if (cookieTtp) {
-      setStorage("_ttp", cookieTtp);
+      setStorage("_tf_ttp", cookieTtp);
     }
-    var ttp = cookieTtp || getStorage("_ttp") || null;
-    if (!ttp) {
-      ttp = generateFallbackTtp();
-      savePersistent("_ttp", ttp, 390);
+    var storedTtp = getStorage("_tf_ttp");
+    if (storedTtp && isLegacyFabricatedTtp(storedTtp)) {
+      storedTtp = null;
     }
-    return { ttclid: ttclid, ttp: ttp };
+    return { ttclid: ttclid, ttp: cookieTtp || storedTtp || null };
   }
 
   // === GA4 ==============================================================
@@ -353,6 +366,13 @@
   }
 
   // === Meta Cookies (FBP / FBC / fbclid) ================================
+  function extractFbcTimestamp(fbc) {
+    if (!fbc || typeof fbc !== "string") return "";
+    var parts = fbc.split(".");
+    if (parts.length >= 4 && /^\d+$/.test(parts[2])) return parts[2];
+    return "";
+  }
+
   function ensureMetaCookies() {
     var fbp = getPersistent("_fbp");
     if (!fbp) {
@@ -364,18 +384,39 @@
     var fbclid = new URLSearchParams(window.location.search).get("fbclid");
     var fbc = getPersistent("_fbc");
     if (fbclid) {
+      var prevFbclid = getPersistent("_tf_fbclid");
+      var clickTs = "";
+      if (prevFbclid === fbclid) {
+        clickTs = getPersistent("_tf_fbclid_ts") || "";
+      }
+      if (!clickTs && fbc && fbc.indexOf(fbclid) > -1) {
+        clickTs = extractFbcTimestamp(fbc);
+      }
+      if (!clickTs || !/^\d+$/.test(clickTs)) {
+        clickTs = String(Date.now());
+      }
       savePersistent("_tf_fbclid", fbclid, 90);
+      savePersistent("_tf_fbclid_ts", clickTs, 90);
       if (!fbc || fbc.indexOf(fbclid) === -1) {
-        fbc = "fb.1." + Date.now() + "." + fbclid;
+        fbc = "fb.1." + clickTs + "." + fbclid;
       }
       savePersistent("_fbc", fbc, 90);
     } else if (!fbc) {
       var savedFbclid = getPersistent("_tf_fbclid");
       if (savedFbclid) {
-        fbc = "fb.1." + Date.now() + "." + savedFbclid;
+        var savedTs = getPersistent("_tf_fbclid_ts");
+        if (!savedTs || !/^\d+$/.test(savedTs)) {
+          savedTs = String(Date.now());
+          savePersistent("_tf_fbclid_ts", savedTs, 90);
+        }
+        fbc = "fb.1." + savedTs + "." + savedFbclid;
         savePersistent("_fbc", fbc, 90);
       }
     } else {
+      var existingTs = extractFbcTimestamp(fbc);
+      if (existingTs && !getPersistent("_tf_fbclid_ts")) {
+        savePersistent("_tf_fbclid_ts", existingTs, 90);
+      }
       savePersistent("_fbc", fbc, 90);
     }
     return { fbp: fbp, fbc: fbc };
@@ -669,7 +710,7 @@
 
     return fetch(TF_API_URL + "/events/collect", {
       method: "POST",
-      credentials: "omit",
+      credentials: isFirstPartyAPI ? "include" : "omit",
       keepalive: true,
       headers: { "Content-Type": "application/json" },
       body: bodyStr
@@ -1377,7 +1418,7 @@
 
     guardTikTokVsaParams();
     refreshTtqIdentify({});
-    watchTtpCookie(!!getCookie("_ttp"));
+    watchTtpCookie(!!getRealTtpCookie());
   }
 
   function watchTtpCookie(alreadyHadTtp) {
@@ -1385,10 +1426,10 @@
     var elapsed = 0;
     var iv = setInterval(function () {
       elapsed += 300;
-      var ttp = getCookie("_ttp");
+      var ttp = getRealTtpCookie();
       if (ttp) {
         clearInterval(iv);
-        setStorage("_ttp", ttp);
+        setStorage("_tf_ttp", ttp);
         sendEvent("UpdateUserData", { ttp: ttp });
       } else if (elapsed >= 6000) {
         clearInterval(iv);

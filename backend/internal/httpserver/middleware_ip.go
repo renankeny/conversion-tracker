@@ -65,6 +65,12 @@ func TrustedRealIP(next http.Handler) http.Handler {
 }
 
 func extractForwardedClientIP(r *http.Request) string {
+	// Cloudflare na frente do proxy: IP real do visitante vem em CF-Connecting-IP.
+	if cf := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); cf != "" {
+		if ip := net.ParseIP(cf); ip != nil {
+			return ip.String()
+		}
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
 		// Percorre da direita para a esquerda e escolhe o primeiro IP público válido
@@ -99,10 +105,11 @@ func buildCORS(cfg *config.Config, set *util.DomainSet) func(http.Handler) http.
 	adminOrigin := normalizeOrigin(cfg.AppURL)
 	if !cfg.StrictCORS {
 		return cors.Handler(cors.Options{
-			AllowedOrigins: []string{"*"},
-			AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-			AllowedHeaders: []string{"Authorization", "Content-Type", "X-Account-ID"},
-			MaxAge:         300,
+			AllowOriginFunc:  func(_ *http.Request, _ string) bool { return true },
+			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Account-ID"},
+			AllowCredentials: true,
+			MaxAge:           300,
 		})
 	}
 	return cors.Handler(cors.Options{

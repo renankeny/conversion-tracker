@@ -1,3 +1,4 @@
+import type { GeoStat } from '~/utils/geoCoordinates'
 import type {
   CounterSeriesResponse,
   CounterSummaryResponse,
@@ -32,10 +33,10 @@ export const usePublicDashboard = (token: string) => {
     )
 
   const geo = (f: PublicDashboardFilters) =>
-    api.publicGet<any[]>(`${base}/geo?from=${encodeURIComponent(f.from)}&to=${encodeURIComponent(f.to)}`)
+    api.publicGet<GeoStat[]>(`${base}/geo?from=${encodeURIComponent(f.from)}&to=${encodeURIComponent(f.to)}`)
 
   const geoByEvent = (f: PublicDashboardFilters & { event: string }) =>
-    api.publicGet<any[]>(
+    api.publicGet<GeoStat[]>(
       `${base}/geo-by-event?from=${encodeURIComponent(f.from)}&to=${encodeURIComponent(f.to)}&event=${encodeURIComponent(f.event)}`,
     )
 

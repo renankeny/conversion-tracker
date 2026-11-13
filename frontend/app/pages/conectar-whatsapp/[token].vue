@@ -89,7 +89,7 @@
             </ol>
           </div>
 
-          <BaseButton variant="outline" size="md" :loading="loading" @click="fetchStatus">
+          <BaseButton variant="outline" size="md" :loading="loading" @click="fetchStatus(false)">
             <RefreshCw :size="14" />
             <span>Atualizar QR Code</span>
           </BaseButton>
@@ -101,6 +101,7 @@
 
 <script setup lang="ts">
 import { CheckCircle2, AlertCircle, RefreshCw, QrCode, Smartphone } from 'lucide-vue-next'
+import { errorStatusCode } from '~/utils/errorMessage'
 
 definePageMeta({ layout: 'default' })
 
@@ -150,12 +151,12 @@ interface PublicStatusResp {
   qrcode?: string
 }
 
-const fetchStatus = async () => {
+const fetchStatus = async (silent = false) => {
   if (!token.value) {
     notFound.value = true
     return
   }
-  loading.value = true
+  if (!silent) loading.value = true
   try {
     const res = await api.publicGet<PublicStatusResp>(`/public/whatsapp/${encodeURIComponent(token.value)}/status`)
     instanceName.value = res.instance_name || 'WhatsApp'
@@ -167,11 +168,11 @@ const fetchStatus = async () => {
     ownerJid.value = res.owner_jid || ''
     status.value = res.status || 'CONNECTING'
     if (res.qrcode) qrDataUrl.value = normalizeQrSrc(res.qrcode)
-  } catch (e: any) {
-    const code = e?.response?.status || e?.statusCode
+  } catch (e: unknown) {
+    const code = errorStatusCode(e)
     if (code === 404 || code === 400) notFound.value = true
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -181,21 +182,25 @@ const initAndFetch = async () => {
   try {
     await api.publicRequest(`/public/whatsapp/${encodeURIComponent(token.value)}/connect`, { method: 'POST' })
   } catch {}
-  await fetchStatus()
+  await fetchStatus(false)
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let unmounted = false
 
 onMounted(async () => {
-  void fetchBranding()
-  await fetchStatus()
+  unmounted = false
   pollTimer = setInterval(() => {
-    if (!notFound.value && !isConnected.value) void fetchStatus()
+    if (!unmounted && !notFound.value && !isConnected.value) void fetchStatus(true)
   }, 4500)
+  void fetchBranding()
+  await fetchStatus(false)
 })
 
 onUnmounted(() => {
+  unmounted = true
   if (pollTimer) clearInterval(pollTimer)
+  pollTimer = null
 })
 </script>
 

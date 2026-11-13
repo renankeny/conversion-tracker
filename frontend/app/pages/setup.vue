@@ -59,6 +59,7 @@
 <script setup lang="ts">
 import type { PlatformBranding } from '#shared/types'
 import { DEFAULT_BRANDING } from '~/utils/colorPalette'
+import { errorMessage } from '~/utils/errorMessage'
 import SetupHero from '~/components/setup/SetupHero.vue'
 import SetupAdminStep from '~/components/setup/SetupAdminStep.vue'
 import SetupCompanyStep from '~/components/setup/SetupCompanyStep.vue'
@@ -167,8 +168,8 @@ const onCompleteSetup = async () => {
       return
     }
     await navigateTo('/', { replace: true })
-  } catch (err: any) {
-    toast.error('Falha na configuração', err?.message || 'Não foi possível concluir o setup')
+  } catch (err: unknown) {
+    toast.error('Falha na configuração', errorMessage(err, 'Não foi possível concluir o setup'))
   } finally {
     submitting.value = false
   }
@@ -189,7 +190,7 @@ const onCompleteSetup = async () => {
 .wizard-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; }
 .wizard-heading { display: flex; flex-direction: column; gap: 0.125rem; }
 .wizard-eyebrow { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--brand); text-transform: uppercase; letter-spacing: 0.05em; }
-.wizard-main-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--text-strong); }
+.wizard-main-title { font-family: var(--font-sans); font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--text-strong); }
 .setup-badge { font-size: var(--fs-xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: 0.06em; padding: 0.25rem 0.625rem; border-radius: 999px; background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
 .stepper-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-soft); }
 .step-item { display: flex; align-items: center; gap: 0.5rem; font-size: var(--fs-base); color: var(--text-3); font-weight: var(--fw-medium); }

@@ -60,6 +60,7 @@
 
 <script setup lang="ts">
 import { optimizeBrandingImage } from '~/utils/imageOptimizer'
+import { errorMessage } from '~/utils/errorMessage'
 
 const props = withDefaults(
   defineProps<{
@@ -102,8 +103,8 @@ const onFileSelect = async (event: Event) => {
     const dataUrl = await optimizeBrandingImage(file, props.kind)
     emit('update:modelValue', dataUrl)
     toast.success('Imagem processada', 'Otimizada e pronta para salvar no banco')
-  } catch (err: any) {
-    toast.error('Erro na imagem', err?.message || 'Não foi possível processar a imagem')
+  } catch (err: unknown) {
+    toast.error('Erro na imagem', errorMessage(err, 'Não foi possível processar a imagem'))
   } finally {
     optimizing.value = false
     input.value = ''

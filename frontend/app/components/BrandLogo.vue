@@ -142,7 +142,7 @@ const iconSize = computed(() => {
 }
 
 .brand-name-text {
-  font-family: 'Instrument Sans', sans-serif;
+  font-family: var(--font-sans);
   font-weight: var(--fw-bold);
   color: var(--text-strong);
   letter-spacing: -0.02em;

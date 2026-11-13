@@ -56,6 +56,7 @@ import UsersTable from '~/components/users/UsersTable.vue'
 import UserDetailsModal from '~/components/users/UserDetailsModal.vue'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
 import { useTenantStore } from '~/stores/useTenantStore'
+import { errorMessage } from '~/utils/errorMessage'
 import type { TrackedUser, TrackedUserFilters } from '#shared/types'
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
@@ -69,11 +70,12 @@ const tenantStore = useTenantStore()
 
 let _usersRefreshTimer: ReturnType<typeof setTimeout> | null = null
 let _pollingTimer: ReturnType<typeof setInterval> | null = null
+let usersSeq = 0
 
 watch(() => liveStore.lastEventSeq, () => {
-  if (offset.value > 0) return
+  if (offset.value > 0 || modalOpen.value) return
   if (_usersRefreshTimer) clearTimeout(_usersRefreshTimer)
-  _usersRefreshTimer = setTimeout(fetchUsers, 2000)
+  _usersRefreshTimer = setTimeout(() => void fetchUsers(true), 2000)
 })
 
 watch(() => tenantStore.switchVersion, () => {
@@ -83,7 +85,7 @@ watch(() => tenantStore.switchVersion, () => {
   pixelInput.value = ''
   filters.value = {}
   offset.value = 0
-  fetchUsers()
+  void fetchUsers()
 })
 
 onUnmounted(() => {
@@ -106,20 +108,23 @@ const selected = ref<TrackedUser | null>(null)
 const offsetFrom = computed(() => (users.value.length ? offset.value + 1 : 0))
 const offsetTo = computed(() => offset.value + users.value.length)
 
-const fetchUsers = async () => {
-  loading.value = true
+const fetchUsers = async (silent = false) => {
+  const seq = ++usersSeq
+  if (!silent) loading.value = true
   try {
     const response = await trackedUsersApi.list({
       ...filters.value,
       limit: PAGE_SIZE,
       offset: offset.value,
     })
+    if (seq !== usersSeq) return
     users.value = response.data || []
     total.value = response.total || 0
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Não foi possível carregar os usuários')
+  } catch (err: unknown) {
+    if (seq !== usersSeq) return
+    if (!silent) toast.error('Erro', errorMessage(err, 'Não foi possível carregar os usuários'))
   } finally {
-    loading.value = false
+    if (seq === usersSeq && !silent) loading.value = false
   }
 }
 
@@ -155,9 +160,9 @@ const onUserSaved = (updated: TrackedUser) => {
 const formatNumber = (n: number): string => new Intl.NumberFormat('pt-BR').format(n)
 
 onMounted(() => {
-  fetchUsers()
+  void fetchUsers()
   _pollingTimer = setInterval(() => {
-    if (offset.value === 0) fetchUsers()
+    if (offset.value === 0 && !modalOpen.value) void fetchUsers(true)
   }, 30_000)
 })
 </script>
@@ -166,7 +171,7 @@ onMounted(() => {
 .users-page { display: flex; flex-direction: column; gap: 1.25rem; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
 .page-header > div:first-child { flex: 1; min-width: 280px; }
-.page-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.25rem; }
+.page-title { font-family: var(--font-heading); font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.25rem; }
 .page-subtitle { color: var(--text-2); font-size: var(--fs-lg); max-width: 640px; }
 .filters { display: flex; gap: 0.625rem; align-items: flex-end; flex-wrap: wrap; }
 .filters > :first-child { flex: 2; min-width: 240px; }

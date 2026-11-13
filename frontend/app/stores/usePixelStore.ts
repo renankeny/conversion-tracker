@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Pixel } from '#shared/types'
 import { useTenantStore } from '~/stores/useTenantStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 export const usePixelStore = defineStore('pixels', () => {
   const pixels = ref<Pixel[]>([])
@@ -35,8 +36,8 @@ export const usePixelStore = defineStore('pixels', () => {
         pixels.value = list
         loaded.value = true
         return list
-      } catch (e: any) {
-        error.value = e.message ?? 'Erro ao carregar pixels'
+      } catch (e: unknown) {
+        error.value = errorMessage(e, 'Erro ao carregar pixels')
         throw e
       } finally {
         loading.value = false

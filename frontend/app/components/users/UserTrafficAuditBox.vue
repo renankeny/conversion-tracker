@@ -9,58 +9,47 @@
         <div>
           <div class="flex items-center gap-2">
             <span class="audit-badge" :class="trafficTypeClass">{{ trafficTypeLabel }}</span>
-            <span v-if="user.traffic_score !== undefined" class="text-xs font-mono" style="color: var(--text-3)">
+            <span v-if="user.traffic_score !== undefined" class="score-text">
               Score: {{ user.traffic_score > 0 ? '+' : '' }}{{ user.traffic_score }}
             </span>
           </div>
-          <p class="text-xs mt-0.5" style="color: var(--text-2)">{{ trafficTypeSummary }}</p>
+          <p class="summary-text">{{ trafficTypeSummary }}</p>
         </div>
       </div>
 
-      <button
-        type="button"
-        class="text-xs flex items-center gap-1 font-medium transition-colors"
-        style="color: var(--text-2)"
-        @click="showRules = !showRules"
-      >
+      <button type="button" class="rules-toggle-btn" @click="showRules = !showRules">
         <span>{{ showRules ? 'Ocultar regras' : 'Ver regras disparadas' }}</span>
         <ChevronDown :size="14" class="transition-transform duration-200" :class="{ 'rotate-180': showRules }" />
       </button>
     </div>
 
-    <!-- Lista de Regras Acionadas -->
-    <div v-show="showRules" class="mt-3 pt-3 flex flex-col gap-2" style="border-top: 1px solid var(--border-soft)">
+    <div v-show="showRules" class="rules-panel">
       <div v-if="parsedRules.length" class="flex flex-col gap-1.5">
-        <div
-          v-for="rule in parsedRules"
-          :key="rule.id"
-          class="flex items-start gap-2 p-2 rounded text-xs"
-          style="background: var(--surface-deep); border: 1px solid var(--border-soft)"
-        >
+        <div v-for="rule in parsedRules" :key="rule.id" class="rule-card">
           <span
-            class="w-2 h-2 rounded-full mt-1 flex-shrink-0"
+            class="rule-dot"
             :class="{
-              'bg-brand': rule.impact === 'human',
-              'bg-red-500': rule.impact === 'automated',
-              'bg-amber-400': rule.impact === 'neutral'
+              'is-human': rule.impact === 'human',
+              'is-bot': rule.impact === 'automated',
+              'is-neutral': rule.impact === 'neutral'
             }"
           />
           <div class="flex-1 min-w-0">
             <div class="flex items-center justify-between gap-2">
-              <span class="font-semibold" style="color: var(--text-1)">{{ rule.label }}</span>
-              <span class="font-mono text-[10px]" style="color: var(--text-3)">{{ rule.weight > 0 ? '+' : '' }}{{ rule.weight }}</span>
+              <span class="rule-label">{{ rule.label }}</span>
+              <span class="rule-weight">{{ rule.weight > 0 ? '+' : '' }}{{ rule.weight }}</span>
             </div>
-            <p class="text-[11px] mt-0.5" style="color: var(--text-2)">{{ rule.description }}</p>
+            <p class="rule-desc">{{ rule.description }}</p>
           </div>
         </div>
       </div>
-      <p v-else class="text-xs italic" style="color: var(--text-3)">Nenhuma regra específica registrada.</p>
+      <p v-else class="empty-rules">Nenhuma regra específica registrada.</p>
 
-      <div v-if="user.referrer" class="text-[11px] mt-1" style="color: var(--text-3)">
-        <strong>Referrer:</strong> <span class="font-mono">{{ user.referrer }}</span>
+      <div v-if="user.referrer" class="referrer-row">
+        <strong>Referrer:</strong> <span class="referrer-val">{{ user.referrer }}</span>
       </div>
 
-      <p class="text-[10px] mt-1 italic" style="color: var(--text-3)">
+      <p class="audit-footnote">
         * Indícios técnicos baseados em cabeçalhos HTTP, User-Agent e referrer.
       </p>
     </div>
@@ -121,58 +110,31 @@ const trafficTypeSummary = computed(() => {
 </script>
 
 <style scoped>
-.traffic-audit-box {
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border-soft);
-  background: var(--surface-soft-2);
-}
-
-.traffic-audit-box.is-human {
-  border-color: var(--brand-border);
-  background: var(--brand-soft-2);
-}
-.traffic-audit-box.is-human .audit-icon-wrapper {
-  color: var(--brand);
-}
-
-.traffic-audit-box.is-bot {
-  border-color: rgba(239, 68, 68, 0.25);
-  background: rgba(239, 68, 68, 0.04);
-}
-.traffic-audit-box.is-bot .audit-icon-wrapper {
-  color: #ef4444;
-}
-
-.traffic-audit-box.is-inconclusive {
-  border-color: rgba(251, 191, 36, 0.25);
-  background: rgba(251, 191, 36, 0.04);
-}
-.traffic-audit-box.is-inconclusive .audit-icon-wrapper {
-  color: #fbbf24;
-}
-
-.audit-badge {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.125rem 0.5rem;
-  border-radius: 9999px;
-}
-.audit-badge.is-human {
-  background: var(--brand-soft);
-  color: var(--brand);
-  border: 1px solid var(--brand-border);
-}
-.audit-badge.is-bot {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-}
-.audit-badge.is-inconclusive {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(251, 191, 36, 0.3);
-}
+.traffic-audit-box { border-radius: 8px; padding: 0.75rem 1rem; border: 1px solid var(--border-soft); background: var(--surface-soft-2); }
+.traffic-audit-box.is-human { border-color: var(--brand-border); background: var(--brand-soft-2); }
+.traffic-audit-box.is-human .audit-icon-wrapper { color: var(--brand); }
+.traffic-audit-box.is-bot { border-color: var(--danger-border); background: var(--danger-soft); }
+.traffic-audit-box.is-bot .audit-icon-wrapper { color: var(--danger); }
+.traffic-audit-box.is-inconclusive { border-color: var(--warning-border); background: var(--warning-soft); }
+.traffic-audit-box.is-inconclusive .audit-icon-wrapper { color: var(--warning-light); }
+.audit-badge { font-size: var(--fs-xs); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.04em; padding: 0.125rem 0.5rem; border-radius: 9999px; }
+.audit-badge.is-human { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
+.audit-badge.is-bot { background: var(--danger-soft); color: var(--danger-light); border: 1px solid var(--danger-border); }
+.audit-badge.is-inconclusive { background: var(--warning-soft); color: var(--warning-light); border: 1px solid var(--warning-border); }
+.score-text { font-size: var(--fs-base); font-family: var(--font-mono); color: var(--text-3); }
+.summary-text { font-size: var(--fs-base); color: var(--text-2); margin-top: 0.125rem; }
+.rules-toggle-btn { font-size: var(--fs-base); font-weight: var(--fw-medium); color: var(--text-2); display: flex; align-items: center; gap: 0.25rem; background: transparent; border: none; cursor: pointer; }
+.rules-panel { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 0.5rem; }
+.rule-card { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.5rem; border-radius: 6px; font-size: var(--fs-base); background: var(--surface-deep); border: 1px solid var(--border-soft); }
+.rule-dot { width: 8px; height: 8px; border-radius: 9999px; margin-top: 0.25rem; flex-shrink: 0; }
+.rule-dot.is-human { background: var(--brand); }
+.rule-dot.is-bot { background: var(--danger); }
+.rule-dot.is-neutral { background: var(--warning-light); }
+.rule-label { font-weight: var(--fw-semibold); color: var(--text-1); }
+.rule-weight { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
+.rule-desc { font-size: var(--fs-sm); color: var(--text-2); margin-top: 0.125rem; }
+.empty-rules { font-size: var(--fs-base); font-style: italic; color: var(--text-3); }
+.referrer-row { font-size: var(--fs-sm); color: var(--text-3); margin-top: 0.25rem; }
+.referrer-val { font-family: var(--font-mono); }
+.audit-footnote { font-size: var(--fs-xs); margin-top: 0.25rem; font-style: italic; color: var(--text-3); }
 </style>

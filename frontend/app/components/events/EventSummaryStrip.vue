@@ -54,19 +54,19 @@
         </div>
         <div class="customer-stat">
           <span class="stat-label">Tempo até Compra</span>
-          <span class="stat-value font-mono text-xs truncate" style="color: var(--text-1)" :title="trackedUser.time_to_purchase">
+          <span class="stat-value stat-mono truncate" style="color: var(--text-1)" :title="trackedUser.time_to_purchase">
             {{ trackedUser.time_to_purchase || '—' }}
           </span>
         </div>
         <div class="customer-stat">
           <span class="stat-label">Primeiro Acesso</span>
-          <span class="stat-value font-mono text-xs truncate" style="color: var(--text-2)" :title="decodeUTM(trackedUser.first_utm_source || trackedUser.last_utm_source)">
+          <span class="stat-value stat-mono truncate" style="color: var(--text-2)" :title="decodeUTM(trackedUser.first_utm_source || trackedUser.last_utm_source)">
             {{ decodeUTM(trackedUser.first_utm_source || trackedUser.last_utm_source) || 'Direto / Orgânico' }}
           </span>
         </div>
         <div class="customer-stat">
           <span class="stat-label">Último Acesso</span>
-          <span class="stat-value font-mono text-xs truncate" style="color: var(--text-2)" :title="decodeUTM(trackedUser.last_utm_source)">
+          <span class="stat-value stat-mono truncate" style="color: var(--text-2)" :title="decodeUTM(trackedUser.last_utm_source)">
             {{ decodeUTM(trackedUser.last_utm_source) || 'Direto / Orgânico' }}
           </span>
         </div>
@@ -183,9 +183,9 @@ const itemTypeClass = (item: AggregatedItem, idx: number): string => {
   color: var(--text-2);
 }
 
-.item-type-badge.type-main { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
-.item-type-badge.type-orderbump { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
-.item-type-badge.type-upsell { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+.item-type-badge.type-main { background: var(--accent-sky-soft); color: var(--accent-sky); }
+.item-type-badge.type-orderbump { background: var(--warning-soft); color: var(--warning-light); }
+.item-type-badge.type-upsell { background: var(--accent-purple-soft); color: var(--accent-purple); }
 
 .item-name {
   flex: 1;
@@ -220,4 +220,5 @@ const itemTypeClass = (item: AggregatedItem, idx: number): string => {
 
 .stat-label { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; color: var(--text-3); }
 .stat-value { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
+.stat-mono { font-family: var(--font-mono); font-size: var(--fs-base); }
 </style>

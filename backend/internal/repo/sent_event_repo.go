@@ -81,24 +81,36 @@ func NewSentEventRepo(pool *pgxpool.Pool) *SentEventRepo {
 	return &SentEventRepo{pool: pool}
 }
 
-// ExistsSent retorna true se já houver uma tentativa BEM-SUCEDIDA (status='sent')
-// pra esse par (event_id, pixel_name). Usado pra dedup antes do enqueue.
-//
-// Importante: NÃO bloqueia se a única tentativa anterior falhou — o asynq pode
-// querer fazer retry. Bloqueia só quando já chegou com sucesso na Meta.
-func (r *SentEventRepo) ExistsSent(ctx context.Context, eventID, pixelName string) (bool, error) {
+// ExistsSent retorna true se já houver envio concluído (status='sent') para a conta/pixel/evento.
+// Quando channel é vazio, exige também que não exista canal pendente em 'failed' (evitando que
+// sucesso apenas no TikTok bloqueie o reenvio para a Meta).
+func (r *SentEventRepo) ExistsSent(ctx context.Context, accountID int64, eventID, pixelName, channel string) (bool, error) {
 	if eventID == "" || pixelName == "" {
 		return false, nil
 	}
-	var n int
-	err := r.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM sent_events
-		WHERE event_id = $1 AND pixel_name = $2 AND status = 'sent'
-	`, eventID, pixelName).Scan(&n)
-	if err != nil {
-		return false, err
+	var exists bool
+	if channel != "" {
+		err := r.pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM sent_events
+				WHERE ($1::bigint = 0 OR account_id = $1)
+				  AND event_id = $2 AND pixel_name = $3 AND channel = $4 AND status = 'sent'
+			)
+		`, accountID, eventID, pixelName, channel).Scan(&exists)
+		return exists, err
 	}
-	return n > 0, nil
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM sent_events
+			WHERE ($1::bigint = 0 OR account_id = $1)
+			  AND event_id = $2 AND pixel_name = $3 AND status = 'sent'
+		) AND NOT EXISTS (
+			SELECT 1 FROM sent_events
+			WHERE ($1::bigint = 0 OR account_id = $1)
+			  AND event_id = $2 AND pixel_name = $3 AND status = 'failed'
+		)
+	`, accountID, eventID, pixelName).Scan(&exists)
+	return exists, err
 }
 
 // ExistsRecentEvent verifica se já foi registrado um evento do mesmo tipo para o mesmo external_id e pixel

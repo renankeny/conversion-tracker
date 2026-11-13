@@ -75,7 +75,9 @@
 </template>
 
 <script setup lang="ts">
-import type { Account, AdminUser } from '#shared/types'
+import type { Account, AdminUser, CreateAdminInput, UpdateAdminInput } from '#shared/types'
+import { formatDateTimeSP } from '~/utils/formatDate'
+import { errorMessage } from '~/utils/errorMessage'
 
 const settings = useSettings()
 const accountsAPI = useAccounts()
@@ -99,7 +101,7 @@ const deletingNow = ref(false)
 const newAdminForm = reactive({
   email: '', password: '', name: '', phone: '', role: 'employee',
   account_id: null as number | null,
-  permissions: { edit_pixels: false } as Record<string, any>,
+  permissions: { edit_pixels: false },
 })
 
 const newAdminAccountId = computed({
@@ -117,16 +119,15 @@ const roleOptions = computed(() => {
 
 const accountOptionsSettings = computed(() => accounts.value.map((a) => ({ value: String(a.id), label: `${a.name} (#${a.id})` })))
 
-const formatDate = (iso: string): string =>
-  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+const formatDate = (iso: string): string => formatDateTimeSP(iso)
 
 const loadAdmins = async () => {
   loadingAdmins.value = true
   try {
     const res = await settings.listAdmins()
     admins.value = res.data || []
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao listar admins')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao listar admins'))
   } finally {
     loadingAdmins.value = false
   }
@@ -145,7 +146,8 @@ const openEditAdmin = async (a: AdminUser) => {
   editingAdminId.value = a.id
   Object.assign(newAdminForm, {
     email: a.email, password: '', name: a.name || '', phone: a.phone || '',
-    role: a.role || 'employee', account_id: a.account_id ?? null, permissions: a.permissions || { edit_pixels: false },
+    role: a.role || 'employee', account_id: a.account_id ?? null,
+    permissions: { edit_pixels: Boolean(a.permissions?.edit_pixels) },
   })
   newAdminOpen.value = true
 }
@@ -166,24 +168,25 @@ const onCreateAdmin = async () => {
 
   creatingAdmin.value = true
   try {
-    const payload: any = {
+    const basePayload: UpdateAdminInput = {
       email: newAdminForm.email.trim().toLowerCase(), name: newAdminForm.name.trim(), phone: newAdminForm.phone.trim(),
-      role: newAdminForm.role, permissions: newAdminForm.role === 'employee' ? newAdminForm.permissions : undefined, account_id: newAdminForm.account_id,
+      role: newAdminForm.role, permissions: newAdminForm.role === 'employee' ? { ...newAdminForm.permissions } : undefined,
+      account_id: newAdminForm.account_id,
     }
-    if (newAdminForm.password) payload.password = newAdminForm.password
+    if (newAdminForm.password) basePayload.password = newAdminForm.password
 
     if (editingAdminId.value) {
-      const updated = await settings.updateAdmin(editingAdminId.value, payload)
+      const updated = await settings.updateAdmin(editingAdminId.value, basePayload)
       admins.value = admins.value.map((a) => (a.id === updated.id ? updated : a))
       toast.success('Sucesso', 'Usuário atualizado com sucesso')
     } else {
-      const created = await settings.createAdmin(payload)
+      const created = await settings.createAdmin({ ...basePayload, password: newAdminForm.password } as CreateAdminInput)
       admins.value = [...admins.value, created]
       toast.success('Admin criado', `${created.email} já pode logar`)
     }
     newAdminOpen.value = false
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao salvar usuário')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao salvar usuário'))
   } finally {
     creatingAdmin.value = false
   }
@@ -200,8 +203,8 @@ const onConfirmDeleteAdmin = async () => {
     toast.success('Sucesso', 'Admin removido')
     deleteAdminOpen.value = false
     deletingAdmin.value = null
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao remover')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao remover'))
   } finally {
     deletingNow.value = false
   }
@@ -214,7 +217,7 @@ onMounted(loadAdmins)
 <style scoped>
 .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-card); }
 .card-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
-.card-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); }
+.card-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); }
 .muted { color: var(--text-3); font-size: var(--fs-md); font-style: italic; }
 .text-danger { color: var(--danger); }
 .text-success { color: var(--success); font-size: var(--fs-sm); display: block; }

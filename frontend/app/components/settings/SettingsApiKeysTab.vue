@@ -108,6 +108,8 @@
 
 <script setup lang="ts">
 import type { Account, APIKey } from '#shared/types'
+import { formatDateTimeSP } from '~/utils/formatDate'
+import { errorMessage } from '~/utils/errorMessage'
 
 const apiKeysAPI = useAPIKeys()
 const accountsAPI = useAccounts()
@@ -127,16 +129,15 @@ const revokeKeyOpen = ref(false)
 const revokingKey = ref<APIKey | null>(null)
 const revokingKeyNow = ref(false)
 
-const formatDate = (iso: string): string =>
-  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+const formatDate = (iso: string): string => formatDateTimeSP(iso)
 
 const loadAPIKeys = async () => {
   loadingKeys.value = true
   try {
     const res = await apiKeysAPI.list()
     apiKeys.value = res.data || []
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao listar keys')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao listar keys'))
   } finally {
     loadingKeys.value = false
   }
@@ -166,8 +167,8 @@ const onCreateKey = async () => {
     newKeyResultOpen.value = true
     keyForm.name = ''
     keyForm.account_id = null
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao criar key')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao criar key'))
   } finally {
     creatingKey.value = false
   }
@@ -203,8 +204,8 @@ const onConfirmRevokeKey = async () => {
     toast.success('Sucesso', 'Key revogada')
     revokeKeyOpen.value = false
     revokingKey.value = null
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao revogar')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao revogar'))
   } finally {
     revokingKeyNow.value = false
   }
@@ -217,7 +218,7 @@ onMounted(loadAPIKeys)
 <style scoped>
 .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-card); }
 .card-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
-.card-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
+.card-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
 .card-hint { font-size: var(--fs-md); color: var(--text-2); margin-bottom: 1rem; line-height: 1.5; }
 .card-hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-soft); padding: 0.0625rem 0.375rem; border-radius: 4px; }
 .muted { color: var(--text-3); font-size: var(--fs-md); font-style: italic; }

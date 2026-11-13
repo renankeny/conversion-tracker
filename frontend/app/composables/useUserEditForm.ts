@@ -1,5 +1,6 @@
 import { ref, reactive, watch, type Ref, type ComputedRef } from 'vue'
 import type { TrackedUser, TrackedUserUpdateInput } from '#shared/types'
+import { errorMessage } from '~/utils/errorMessage'
 
 const decodeUTM = (val: string | null | undefined): string => {
   if (!val) return ''
@@ -71,11 +72,12 @@ export const useUserEditForm = (
       'last_utm_content', 'last_utm_term',
     ]
     for (const f of fields) {
-      let val = (u as any)[f] ?? ''
-      if (typeof val === 'string' && f.includes('utm_')) {
+      const raw = u[f as keyof TrackedUser]
+      let val = typeof raw === 'string' ? raw : ''
+      if (val && f.includes('utm_')) {
         val = decodeUTM(val)
       }
-      ;(form as any)[f] = val
+      form[f] = val
     }
   }
 
@@ -108,8 +110,8 @@ export const useUserEditForm = (
       editing.value = false
       if (onSavedCallback) onSavedCallback(updated)
       return updated
-    } catch (error: any) {
-      toast.error('Erro', error.message || 'Falha ao salvar')
+    } catch (error: unknown) {
+      toast.error('Erro', errorMessage(error, 'Falha ao salvar'))
     } finally {
       saving.value = false
     }

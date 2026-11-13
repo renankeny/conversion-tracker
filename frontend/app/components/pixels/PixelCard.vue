@@ -72,6 +72,7 @@
 import { Trash2, ArrowRightLeft } from 'lucide-vue-next'
 import BrandIcon from '~/components/events/BrandIcon.vue'
 import type { Pixel } from '#shared/types'
+import { formatDateSP } from '~/utils/formatDate'
 
 defineProps<{ pixel: Pixel; canEdit?: boolean }>()
 
@@ -88,12 +89,7 @@ defineEmits<{
   transfer: [pixel: Pixel]
 }>()
 
-const formatDate = (iso: string) => {
-  if (!iso) return ''
-  return new Date(iso).toLocaleDateString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: '2-digit',
-  })
-}
+const formatDate = (iso: string) => formatDateSP(iso, { year: '2-digit' })
 </script>
 
 <style scoped>
@@ -102,7 +98,7 @@ const formatDate = (iso: string) => {
 .card-header { padding: 1.125rem 1.25rem 0.875rem; }
 .header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
 .title-block { flex: 1; min-width: 0; }
-.card-name { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-name { font-family: var(--font-sans); font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-label { font-size: var(--fs-base); color: var(--text-3); margin-top: 0.125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-platforms { display: flex; gap: 0.5rem; padding: 0 1.25rem 0.875rem; flex-wrap: wrap; }
 .platform-chip { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.625rem; border-radius: 6px; border: 1px solid var(--border-soft); background: var(--surface-1); font-size: var(--fs-sm); transition: all 0.15s; }

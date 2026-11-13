@@ -11,11 +11,11 @@ export const useGeoGlobeRenderer = (getStats: () => GeoStat[]) => {
 
   const containerRef = ref<HTMLDivElement | null>(null)
   const canvasRef = ref<HTMLCanvasElement | null>(null)
-  const chartOption = shallowRef<any>({})
+  const chartOption = shallowRef<Record<string, unknown>>({})
   const hoveredMarker = ref<{ name: string; flag: string; count: number; x: number; y: number } | null>(null)
 
   let mapLoaded = false
-  let worldGeoJson: any = null
+  let worldGeoJson: unknown = null
   let animationFrameId: number | null = null
   let resizeObserver: ResizeObserver | null = null
   let rotY = -0.9
@@ -111,7 +111,7 @@ export const useGeoGlobeRenderer = (getStats: () => GeoStat[]) => {
     const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width)
     const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height)
     const cx = canvas.width / 2, cy = canvas.height / 2
-    let found: any = null
+    let found: { name: string; flag: string; count: number; x: number; y: number } | null = null
     for (const m of processedMarkers.value) {
       const p = projectPoint(m.lat, m.lon, globeRadius, cx, cy, rotY, rotX)
       if (!p.visible || p.z < 0.05) continue
@@ -181,7 +181,7 @@ export const useGeoGlobeRenderer = (getStats: () => GeoStat[]) => {
     try {
       const resWorld = await fetch('/world-land.json')
       worldGeoJson = await resWorld.json()
-      echarts.registerMap('world', worldGeoJson)
+      echarts.registerMap('world', worldGeoJson as Parameters<typeof echarts.registerMap>[1])
       mapLoaded = true
       update2DChart()
     } catch (e) { console.error('Falha ao carregar mapa mundial', e) }

@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -75,10 +76,10 @@ func enrichAndDispatchCTWALead(
 	chatID int64,
 	phone, sourceID, ctwaClid string,
 	isInbound bool,
-) {
+) error {
 	pixel, err := deps.Pixels.FindByID(ctx, inst.PixelID)
 	if err != nil || pixel == nil || !pixel.Enabled {
-		return
+		return nil
 	}
 
 	oauthAcc := resolvePixelMetaOAuth(ctx, deps, pixel)
@@ -110,7 +111,7 @@ func enrichAndDispatchCTWALead(
 	}
 
 	if !isInbound || deps.Enqueuer == nil || (ctwaClid == "" && sourceID == "") {
-		return
+		return nil
 	}
 
 	actionSource := "business_messaging"
@@ -120,10 +121,14 @@ func enrichAndDispatchCTWALead(
 		actionSource = "system_generated"
 		messagingChannel = ""
 		eventID = fmt.Sprintf("ctwa_ad:%s:%d", sourceID, chatID)
+	} else if metaInfo.PageID == "" {
+		actionSource = "system_generated"
+		messagingChannel = ""
+		ctwaClid = ""
 	}
 
-	if exists, _ := deps.SentEvents.ExistsSent(ctx, eventID, pixel.Name); exists {
-		return
+	if exists, _ := deps.SentEvents.ExistsSent(ctx, pixel.AccountID, eventID, pixel.Name, ""); exists {
+		return nil
 	}
 
 	var linked domain.LinkedTrackingFields
@@ -131,7 +136,7 @@ func enrichAndDispatchCTWALead(
 		linked, _ = deps.Users.LinkedFieldsByAccount(ctx, inst.AccountID, u.ExternalID)
 	}
 
-	_ = deps.Enqueuer.EnqueueSendEvent(ctx, domain.SendEventInput{
+	if err := deps.Enqueuer.EnqueueSendEvent(ctx, domain.SendEventInput{
 		PixelName:        pixel.Name,
 		EventName:        domain.EventLeadSubmitted,
 		EventID:          eventID,
@@ -163,5 +168,9 @@ func enrichAndDispatchCTWALead(
 		GA4ClientID:      util.FirstNonEmpty(u.GA4ClientID, linked.GA4ClientID),
 		GA4SessionID:     util.FirstNonEmpty(u.GA4SessionID, linked.GA4SessionID),
 		Currency:         domain.NormalizeWhatsAppCurrency(inst.Currency),
-	})
+	}); err != nil {
+		slog.Error("enqueue ctwa lead event failed", "pixel_name", pixel.Name, "event_id", eventID, "error", err)
+		return fmt.Errorf("enqueue ctwa lead event: %w", err)
+	}
+	return nil
 }

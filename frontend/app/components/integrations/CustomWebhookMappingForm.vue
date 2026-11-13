@@ -47,12 +47,16 @@
 </template>
 
 <script setup lang="ts">
+import type { CustomMappingConfig } from '#shared/types'
+
+type MappingFieldKey = Exclude<keyof CustomMappingConfig, 'status_map' | '_example_payload'>
+
 const props = defineProps<{
-  mappingConfig: Record<string, any>
+  mappingConfig: CustomMappingConfig
   exampleJson: string
 }>()
 
-const fieldDefs = [
+const fieldDefs: Array<{ key: MappingFieldKey; label: string; placeholder: string }> = [
   { key: 'first_name', label: 'Primeiro Nome', placeholder: 'customer.first_name' },
   { key: 'last_name', label: 'Sobrenome', placeholder: 'customer.last_name' },
   { key: 'email', label: 'E-mail', placeholder: 'customer.email' },
@@ -66,9 +70,9 @@ const fieldDefs = [
 const availableJsonPaths = computed(() => {
   if (!props.exampleJson) return []
   try {
-    const parsed = JSON.parse(props.exampleJson)
+    const parsed: unknown = JSON.parse(props.exampleJson)
     const paths: string[] = []
-    const flatten = (obj: any, prefix = '') => {
+    const flatten = (obj: unknown, prefix = '') => {
       if (obj === null || typeof obj !== 'object') {
         if (prefix) paths.push(prefix)
         return
@@ -76,7 +80,8 @@ const availableJsonPaths = computed(() => {
       if (Array.isArray(obj)) {
         if (obj.length > 0) flatten(obj[0], prefix + '[0]')
       } else {
-        for (const k in obj) flatten(obj[k], prefix ? `${prefix}.${k}` : k)
+        const rec = obj as Record<string, unknown>
+        for (const k in rec) flatten(rec[k], prefix ? `${prefix}.${k}` : k)
       }
     }
     flatten(parsed)
@@ -86,14 +91,14 @@ const availableJsonPaths = computed(() => {
   }
 })
 
-const extractValue = (obj: any, path: string) => {
+const extractValue = (obj: unknown, path: string): unknown => {
   if (!obj || !path) return ''
   try {
     const parts = path.replace(/\[(\w+)\]/g, '.$1').split('.').filter(Boolean)
-    let cur = obj
+    let cur: unknown = obj
     for (const part of parts) {
-      if (cur == null) return ''
-      cur = cur[part]
+      if (cur == null || typeof cur !== 'object') return ''
+      cur = (cur as Record<string, unknown>)[part]
     }
     return cur
   } catch {
@@ -101,10 +106,10 @@ const extractValue = (obj: any, path: string) => {
   }
 }
 
-const simulatedResult = computed<Record<string, any>>(() => {
+const simulatedResult = computed<Partial<Record<MappingFieldKey, unknown>>>(() => {
   if (!props.exampleJson) return {}
   try {
-    const parsed = JSON.parse(props.exampleJson)
+    const parsed: unknown = JSON.parse(props.exampleJson)
     const conf = props.mappingConfig
     let fn = String(extractValue(parsed, conf.first_name) || '')
     let ln = String(extractValue(parsed, conf.last_name) || '')
@@ -137,7 +142,7 @@ const simulatedResult = computed<Record<string, any>>(() => {
 const updateStatusKey = (oldKey: string, e: Event) => {
   const newKey = (e.target as HTMLInputElement).value
   if (oldKey === newKey || !newKey) return
-  const val = props.mappingConfig.status_map[oldKey]
+  const val = props.mappingConfig.status_map[oldKey] || 'Purchase'
   delete props.mappingConfig.status_map[oldKey]
   props.mappingConfig.status_map[newKey] = val
 }

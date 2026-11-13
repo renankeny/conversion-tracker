@@ -43,7 +43,10 @@ func (r *WhatsAppRepo) UpsertAccountServer(ctx context.Context, s *domain.WhatsA
 		if plainKey == "" {
 			plainKey = existing.APIKey
 		}
-		encKey := util.Encrypt(plainKey)
+		encKey, err := util.Encrypt(plainKey)
+		if err != nil {
+			return err
+		}
 		err = r.db.QueryRow(ctx, `
 			UPDATE whatsapp_servers
 			SET name = $1, url = $2, api_key = $3, is_active = TRUE, updated_at = NOW()
@@ -58,7 +61,10 @@ func (r *WhatsAppRepo) UpsertAccountServer(ctx context.Context, s *domain.WhatsA
 		return err
 	}
 
-	encKey := util.Encrypt(plainKey)
+	encKey, err := util.Encrypt(plainKey)
+	if err != nil {
+		return err
+	}
 	err = r.db.QueryRow(ctx, `
 		INSERT INTO whatsapp_servers (account_id, name, url, api_key, is_active)
 		VALUES ($1, $2, $3, $4, TRUE)

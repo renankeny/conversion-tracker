@@ -22,7 +22,7 @@
             :title="copied ? 'ID Copiado!' : 'Copiar ID do usuário'"
             @click="copyExternalId"
           >
-            <Check v-if="copied" class="w-3 h-3 text-emerald-400" />
+            <Check v-if="copied" class="w-3 h-3 copy-ok" />
             <Copy v-else class="w-3 h-3" />
             <span>{{ copied ? 'Copiado' : 'Copiar' }}</span>
           </button>
@@ -218,9 +218,10 @@ const copyExternalId = async () => {
   flex-shrink: 0;
 }
 
+.copy-ok { color: var(--success); }
 .btn-view-profile:hover {
   background: var(--brand);
-  color: #111;
+  color: var(--brand-text);
   border-color: var(--brand);
 }
 

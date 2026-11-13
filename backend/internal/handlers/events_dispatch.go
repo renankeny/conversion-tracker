@@ -38,6 +38,7 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 	}
 
 	if req.EventType == domain.EventInit {
+		setFirstPartyTrackingCookies(w, r, h.trackingTargetHost, "", req)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"city":              city,
 			"state":             state,
@@ -76,6 +77,8 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 		return
 	}
 
+	setFirstPartyTrackingCookies(w, r, h.trackingTargetHost, pixel.TrackingHost, req)
+
 	phone := util.NormalizePhone(req.Phone)
 	email := util.NormalizeEmail(req.Email)
 	mappedURL := h.urls.ApplyForAccount(pixel.AccountID, req.URL)
@@ -105,7 +108,7 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 			writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true, "event_id": eventID})
 			return
 		}
-		if exists, err := h.sentEvents.ExistsSent(ctx, eventID, pixel.Name); err != nil {
+		if exists, err := h.sentEvents.ExistsSent(ctx, pixel.AccountID, eventID, pixel.Name, ""); err != nil {
 			slog.Warn("dedup check failed", "err", err, "event_id", eventID)
 		} else if exists {
 			writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true, "event_id": eventID})
@@ -114,14 +117,16 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 	}
 
 	if req.EventType != domain.EventPurchase {
-		if claimedRecent, ok := cache.ClaimRecentAction(ctx, h.rdb, pixel.Name, req.UserID, req.EventType, 3*time.Second); ok {
+		// content_id na chave: dois eventos legítimos diferentes (outro produto/form) não se anulam.
+		actionKey := req.EventType + ":" + req.ContentID
+		if claimedRecent, ok := cache.ClaimRecentAction(ctx, h.rdb, pixel.Name, req.UserID, actionKey, 3*time.Second); ok {
 			if !claimedRecent {
 				cache.ReleaseEventDedup(ctx, h.rdb, pixel.AccountID, pixel.Name, eventID)
 				writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true, "event_id": eventID})
 				return
 			}
 		} else {
-			if req.UserID != "" && h.isDuplicateInMemory("act:"+pixel.Name+":"+req.UserID+":"+req.EventType, 2*time.Second) {
+			if req.UserID != "" && h.isDuplicateInMemory("act:"+pixel.Name+":"+req.UserID+":"+actionKey, 2*time.Second) {
 				writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true, "event_id": eventID})
 				return
 			}

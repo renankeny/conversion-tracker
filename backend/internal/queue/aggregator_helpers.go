@@ -18,6 +18,7 @@ func buildAggregatedItem(in domain.SendEventInput, val float64) domain.Aggregate
 	}
 	return domain.AggregatedItem{
 		OrderID:      in.OrderID,
+		ProductID:    in.ContentID,
 		ProductTitle: itemTitle,
 		ItemType:     itemType,
 		Value:        val,

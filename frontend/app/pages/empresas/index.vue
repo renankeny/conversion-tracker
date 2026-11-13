@@ -97,6 +97,7 @@ import { Building2, Plus } from 'lucide-vue-next'
 import AccountCard from '~/components/accounts/AccountCard.vue'
 import AccountFormModal from '~/components/accounts/AccountFormModal.vue'
 import type { Account, CreateAccountInput, UpdateAccountInput } from '#shared/types'
+import { errorMessage } from '~/utils/errorMessage'
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
 const { formatTitle } = useBranding()
@@ -152,8 +153,8 @@ const fetchAccounts = async () => {
   loading.value = true
   try {
     await accountsAPI.list()
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Falha ao carregar empresas')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao carregar empresas'))
   } finally {
     loading.value = false
   }
@@ -184,8 +185,8 @@ const onSaveAccount = async (payload: CreateAccountInput & UpdateAccountInput) =
     }
     modalOpen.value = false
     editingAccount.value = null
-  } catch (error: any) {
-    toast.error('Erro ao salvar', error.message || 'Não foi possível salvar a empresa')
+  } catch (error: unknown) {
+    toast.error('Erro ao salvar', errorMessage(error, 'Não foi possível salvar a empresa'))
   } finally {
     saving.value = false
   }
@@ -200,8 +201,8 @@ const onConfirmDelete = async () => {
     toast.success('Empresa removida', `"${removedName}" foi removida com sucesso`)
     deleteOpen.value = false
     deletingAccount.value = null
-  } catch (error: any) {
-    toast.error('Erro ao remover', error.message || 'Não foi possível remover a empresa')
+  } catch (error: unknown) {
+    toast.error('Erro ao remover', errorMessage(error, 'Não foi possível remover a empresa'))
   } finally {
     deletingNow.value = false
   }

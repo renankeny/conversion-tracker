@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -24,8 +23,7 @@ type updateAdminInput struct {
 
 // Update altera dados de um admin existente.
 func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")
 		return
@@ -67,10 +65,8 @@ func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verificar se usuário tem permissão sobre o alvo
-	var targetRole string
-	var targetParentID *int64
-	if err := h.pool.QueryRow(r.Context(), `SELECT role, parent_id FROM admin_users WHERE id = $1`, id).Scan(&targetRole, &targetParentID); err != nil {
+	targetRole, targetParentID, err := h.users.GetRoleAndParent(r.Context(), id)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "usuário não encontrado")
 		return
 	}
@@ -86,7 +82,7 @@ func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := requireValidAccount(r.Context(), h.pool, in.AccountID); err != nil {
+	if err := h.requireValidAccount(r.Context(), in.AccountID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -95,40 +91,31 @@ func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var permsBytes []byte
+	permsBytes := []byte("{}")
 	if in.Permissions != nil {
 		permsBytes, _ = json.Marshal(in.Permissions)
-	} else {
-		permsBytes = []byte("{}")
 	}
 
+	var passwordHash string
 	if in.Password != "" {
 		if len(in.Password) < 6 {
 			writeError(w, http.StatusBadRequest, "senha deve ter pelo menos 6 caracteres")
 			return
 		}
-		hash, err := auth.HashPassword(in.Password)
+		passwordHash, err = auth.HashPassword(in.Password)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "hash error")
 			return
 		}
-		_, err = h.pool.Exec(r.Context(),
-			`UPDATE admin_users SET email = $1, name = $2, phone = $3, role = $4, account_id = $5, permissions = $6, password_hash = $7, updated_at = NOW() WHERE id = $8`,
-			in.Email, in.Name, in.Phone, role, in.AccountID, permsBytes, hash, id,
-		)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "db error: "+err.Error())
+	}
+
+	if err := h.users.Update(r.Context(), id, in.Email, in.Name, in.Phone, role, in.AccountID, permsBytes, passwordHash); err != nil {
+		if isDuplicateKey(err) {
+			writeError(w, http.StatusConflict, "e-mail já cadastrado")
 			return
 		}
-	} else {
-		_, err = h.pool.Exec(r.Context(),
-			`UPDATE admin_users SET email = $1, name = $2, phone = $3, role = $4, account_id = $5, permissions = $6, updated_at = NOW() WHERE id = $7`,
-			in.Email, in.Name, in.Phone, role, in.AccountID, permsBytes, id,
-		)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "db error: "+err.Error())
-			return
-		}
+		writeError(w, http.StatusInternalServerError, "db error: "+err.Error())
+		return
 	}
 
 	if in.Password != "" || role != targetRole {
@@ -137,23 +124,12 @@ func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var updatedUser adminUserView
-	var created, updated time.Time
-	err = h.pool.QueryRow(r.Context(),
-		`SELECT id, email, name, phone, COALESCE(role, 'admin'), account_id, parent_id, permissions, created_at, updated_at FROM admin_users WHERE id = $1`,
-		id,
-	).Scan(&updatedUser.ID, &updatedUser.Email, &updatedUser.Name, &updatedUser.Phone, &updatedUser.Role, &updatedUser.AccountID, &updatedUser.ParentID, &permsBytes, &created, &updated)
-
-	if err == nil {
-		if len(permsBytes) > 0 {
-			_ = json.Unmarshal(permsBytes, &updatedUser.Permissions)
-		}
-		updatedUser.CreatedAt = created.Format(time.RFC3339)
-		updatedUser.UpdatedAt = updated.Format(time.RFC3339)
-		json.NewEncoder(w).Encode(updatedUser)
-	} else {
+	updatedRec, err := h.users.FindByID(r.Context(), id)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error fetching updated user")
+		return
 	}
+	writeJSON(w, http.StatusOK, recordToAdminUserView(*updatedRec))
 }
 
 // Delete remove um admin. Requer body com {"confirm": true} pra dupla checagem.
@@ -184,15 +160,13 @@ func (h *AdminUsers) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var targetRole string
-	var targetParentID *int64
-	if err := h.pool.QueryRow(r.Context(), `SELECT role, parent_id FROM admin_users WHERE id = $1`, id).Scan(&targetRole, &targetParentID); err != nil {
+	targetRole, targetParentID, err := h.users.GetRoleAndParent(r.Context(), id)
+	if err != nil {
 		writeError(w, http.StatusNotFound, "usuário não encontrado")
 		return
 	}
 
-	isSuper := c.IsOwner()
-	if !isSuper {
+	if !c.IsOwner() {
 		if targetRole == "superadmin" || targetRole == "owner" || targetRole == "admin" {
 			writeError(w, http.StatusForbidden, "você não tem permissão para excluir este usuário")
 			return
@@ -203,9 +177,8 @@ func (h *AdminUsers) Delete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var total int
-	if err := h.pool.QueryRow(r.Context(),
-		`SELECT COUNT(*) FROM admin_users`).Scan(&total); err != nil {
+	total, err := h.users.Count(r.Context())
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "count error")
 		return
 	}
@@ -214,13 +187,12 @@ func (h *AdminUsers) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := h.pool.Exec(r.Context(),
-		`DELETE FROM admin_users WHERE id = $1`, id)
+	deleted, err := h.users.Delete(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "delete error: "+err.Error())
 		return
 	}
-	if tag.RowsAffected() == 0 {
+	if !deleted {
 		writeError(w, http.StatusNotFound, "admin não encontrado")
 		return
 	}

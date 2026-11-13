@@ -82,6 +82,8 @@ import {
   DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon,
 } from '~/utils/dashboardEventCatalog'
 import { computeCardRichDetails } from '~/utils/dashboardCardDetails'
+import { errorMessage } from '~/utils/errorMessage'
+import type { GeoStat } from '~/utils/geoCoordinates'
 import type { DashboardVisibleCard } from '~/composables/useDashboardView'
 import type {
   CounterSummaryResponse, CounterSeriesResponse, CounterSummaryRow,
@@ -115,7 +117,7 @@ useHead({ title: computed(() => formatTitle(pixelLabel.value || 'Dashboard')) })
 const summaryData = ref<CounterSummaryResponse | null>(null)
 const seriesData = ref<CounterSeriesResponse | null>(null)
 const recentPurchases = ref<GroupedEvent[]>([])
-const geoData = ref<any[]>([])
+const geoData = ref<GeoStat[]>([])
 const totalRevenue = ref(0)
 const sourceBreakdown = ref<SourceBreakdown | null>(null)
 const panelAudit = ref<PanelAudit | null>(null)
@@ -173,10 +175,10 @@ const funnelSteps = computed(() => {
   return steps
 })
 
-const handleApiError = (err: any) => {
-  const code = err?.statusCode
+const handleApiError = (err: unknown) => {
+  const code = err && typeof err === 'object' ? (err as { statusCode?: number }).statusCode : undefined
   if (code === 404 || code === 410) { notFound.value = true; loadError.value = null }
-  else loadError.value = err?.message || 'Não foi possível carregar os dados no momento.'
+  else loadError.value = errorMessage(err, 'Não foi possível carregar os dados no momento.')
 }
 
 const fetchMeta = async () => {
@@ -184,7 +186,7 @@ const fetchMeta = async () => {
     const res = await api.meta()
     pixelLabel.value = res.pixel_label; dashboardConfig.value = res.dashboard_config
     metaLoaded.value = true; loadError.value = null
-  } catch (err: any) { handleApiError(err) }
+  } catch (err: unknown) { handleApiError(err) }
 }
 
 const fetchAll = async () => {
@@ -203,9 +205,9 @@ const fetchAll = async () => {
     panelAudit.value = revenue.panel_audit || null
     previousPeriod.value = revenue.previous_period || null
     heatmap.value = revenue.heatmap || null
-    geoData.value = [...(geo || []).map((g: any) => ({ ...g, event_name: 'PageView' })), ...(geoPurchases || [])]
+    geoData.value = [...(geo || []).map((g) => ({ ...g, event_name: 'PageView' })), ...(geoPurchases || [])]
     loadError.value = null
-  } catch (err: any) { handleApiError(err) }
+  } catch (err: unknown) { handleApiError(err) }
   finally { loading.value = false }
 }
 

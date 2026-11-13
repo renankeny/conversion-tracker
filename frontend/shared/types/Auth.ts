@@ -7,8 +7,8 @@ export interface AdminUser {
   role?: string
   account_id?: number | null
   parent_id?: number | null
-  permissions?: Record<string, any>
-  preferences?: Record<string, any>
+  permissions?: Record<string, unknown>
+  preferences?: Record<string, unknown>
   created_at?: string
   updated_at?: string
 }

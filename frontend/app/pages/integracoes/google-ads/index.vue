@@ -86,6 +86,7 @@ import GoogleAdsAccountForm from '~/components/google-ads/GoogleAdsAccountForm.v
 import type { GoogleAdsAccount, GoogleAdsAccountInput } from '#shared/types'
 import { useGoogleAdsStore } from '~/stores/useGoogleAdsStore'
 import { useTenantStore } from '~/stores/useTenantStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
 const { formatTitle } = useBranding()
@@ -108,8 +109,8 @@ const deletingLoading = ref(false)
 const fetchAccounts = async (force = false) => {
   try {
     await api.list(force)
-  } catch (error: any) {
-    toast.error('Erro ao carregar', error.message || 'Não foi possível listar contas')
+  } catch (error: unknown) {
+    toast.error('Erro ao carregar', errorMessage(error, 'Não foi possível listar contas'))
   }
 }
 
@@ -142,8 +143,8 @@ const onFormSubmit = async (input: GoogleAdsAccountInput) => {
       toast.success('Conta criada', `"${created.name}" pronta para autorizar OAuth.`)
       editing.value = created
     }
-  } catch (error: any) {
-    toast.error('Erro ao salvar', error.message || 'Falha ao salvar conta')
+  } catch (error: unknown) {
+    toast.error('Erro ao salvar', errorMessage(error, 'Falha ao salvar conta'))
   } finally {
     saving.value = false
   }
@@ -155,8 +156,8 @@ const onConnectNew = async (input: GoogleAdsAccountInput) => {
     const created = await api.create(input)
     editing.value = created
     await api.startOAuth(created.id)
-  } catch (error: any) {
-    toast.error('Erro ao conectar OAuth', error.message || 'Falha ao iniciar OAuth do Google Ads')
+  } catch (error: unknown) {
+    toast.error('Erro ao conectar OAuth', errorMessage(error, 'Falha ao iniciar OAuth do Google Ads'))
   } finally {
     saving.value = false
   }
@@ -168,8 +169,8 @@ const onReuseNew = async (input: GoogleAdsAccountInput) => {
     const created = await api.create(input)
     editing.value = created
     toast.success('Conta vinculada', 'Agora escolha a Conta Google Ads e as Conversion Actions.')
-  } catch (error: any) {
-    toast.error('Erro ao reutilizar conexão', error.message || 'Falha ao reutilizar login Google')
+  } catch (error: unknown) {
+    toast.error('Erro ao reutilizar conexão', errorMessage(error, 'Falha ao reutilizar login Google'))
   } finally {
     saving.value = false
   }
@@ -184,8 +185,8 @@ const onConfirmDelete = async () => {
     toast.success('Conta excluída', `"${removedName}" foi removida`)
     deleteModalOpen.value = false
     deleting.value = null
-  } catch (error: any) {
-    toast.error('Erro ao excluir', error.message || 'Falha ao excluir conta')
+  } catch (error: unknown) {
+    toast.error('Erro ao excluir', errorMessage(error, 'Falha ao excluir conta'))
   } finally {
     deletingLoading.value = false
   }

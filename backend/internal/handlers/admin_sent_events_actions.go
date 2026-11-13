@@ -80,6 +80,7 @@ func (h *AdminSentEvents) Retry(w http.ResponseWriter, r *http.Request) {
 			notFound++
 			continue
 		}
+		in.IsReplay = true
 		if err := h.enqueuer.EnqueueSendEvent(r.Context(), in); err != nil {
 			slog.Warn("retry: enqueue failed", "event_id", eventID, "err", err)
 			continue

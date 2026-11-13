@@ -60,7 +60,7 @@
       <div class="channels-section">
         <div class="flex items-center justify-between mb-1">
           <h4 class="channels-title">Canais de Transmissão</h4>
-          <span class="text-xs" style="color: var(--text-3)">Clique no canal para ver detalhes da transmissão</span>
+          <span class="channels-hint">Clique no canal para ver detalhes da transmissão</span>
         </div>
         <div class="channels-grid">
           <ChannelCard
@@ -92,6 +92,8 @@ import EventUserMatchCard from '~/components/events/EventUserMatchCard.vue'
 import EventSummaryStrip from '~/components/events/EventSummaryStrip.vue'
 import UserDetailsModal from '~/components/users/UserDetailsModal.vue'
 import type { Channel, EventDetail, GroupedEvent, SentEvent, TrackedUser } from '#shared/types'
+import { formatDateTimeSP } from '~/utils/formatDate'
+import { errorMessage as extractErrorMessage } from '~/utils/errorMessage'
 
 interface Props {
   modelValue: boolean
@@ -169,9 +171,9 @@ const fetchDetails = async () => {
     ])
     event.value = ev
     trackedUser.value = tu
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('Erro ao carregar detalhes', e)
-    errorMessage.value = e?.data?.error || e?.message || 'Erro ao carregar detalhes do evento'
+    errorMessage.value = extractErrorMessage(e, 'Erro ao carregar detalhes do evento')
     event.value = null
   } finally {
     loading.value = false
@@ -186,8 +188,7 @@ watch(
   },
 )
 
-const formatTime = (iso: string): string =>
-  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''
+const formatTime = (iso: string): string => formatDateTimeSP(iso, true)
 </script>
 
 <style scoped>
@@ -206,14 +207,14 @@ const formatTime = (iso: string): string =>
 .meta-item { display: inline-flex; align-items: center; gap: 0.35rem; }
 .meta-separator { opacity: 0.3; }
 .status-dot { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; }
-.status-dot.dot-success { background: var(--success); box-shadow: 0 0 6px rgba(34, 197, 94, 0.4); }
-.status-dot.dot-error { background: var(--danger); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+.status-dot.dot-success { background: var(--success); box-shadow: 0 0 6px var(--brand-border); }
+.status-dot.dot-error { background: var(--danger); box-shadow: 0 0 6px var(--danger-border); }
 
 .category-pill { font-size: var(--fs-2xs); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.05em; padding: 0.125rem 0.5rem; border-radius: 9999px; }
 .category-pill.cat-purchase { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
-.category-pill.cat-checkout { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.25); }
-.category-pill.cat-reg { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25); }
-.category-pill.cat-lead { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.25); }
+.category-pill.cat-checkout { background: var(--warning-soft); color: var(--warning-light); border: 1px solid var(--warning-border); }
+.category-pill.cat-reg { background: var(--accent-sky-soft); color: var(--accent-sky); border: 1px solid var(--accent-sky-border); }
+.category-pill.cat-lead { background: var(--accent-purple-soft); color: var(--accent-purple); border: 1px solid var(--accent-purple-border); }
 .category-pill.cat-contact { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
 .category-pill.cat-default { background: var(--surface-soft); color: var(--text-2); border: 1px solid var(--border); }
 
@@ -221,5 +222,6 @@ const formatTime = (iso: string): string =>
 .pixel-dot { width: 6px; height: 6px; border-radius: 9999px; background: var(--brand); }
 .channels-section { display: flex; flex-direction: column; gap: 0.5rem; }
 .channels-title { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text-1); margin: 0; }
+.channels-hint { font-size: var(--fs-base); color: var(--text-3); }
 .channels-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.75rem; }
 </style>

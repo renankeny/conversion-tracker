@@ -58,11 +58,19 @@ func (h *APIEvents) processEvent(
 	clientIP := req.ClientIP
 	clientUA := req.ClientUserAgent
 	if existingUser != nil {
-		if clientIP == "" && existingUser.ClientIP != "" { clientIP = existingUser.ClientIP }
-		if clientUA == "" && existingUser.ClientUserAgent != "" { clientUA = existingUser.ClientUserAgent }
+		if clientIP == "" && existingUser.ClientIP != "" {
+			clientIP = existingUser.ClientIP
+		}
+		if clientUA == "" && existingUser.ClientUserAgent != "" {
+			clientUA = existingUser.ClientUserAgent
+		}
 	}
-	if clientIP == "" { clientIP = extractClientIP(r) }
-	if clientUA == "" { clientUA = r.Header.Get("User-Agent") }
+	if clientIP == "" {
+		clientIP = extractClientIP(r)
+	}
+	if clientUA == "" {
+		clientUA = r.Header.Get("User-Agent")
+	}
 
 	// GeoIP: usa dados fornecidos, ou do tracked_user, ou faz lookup pelo IP
 	country := strings.ToLower(req.Country)
@@ -70,17 +78,33 @@ func (h *APIEvents) processEvent(
 	city := strings.ToLower(req.City)
 	postal := req.PostalCode
 	if existingUser != nil {
-		if country == "" && existingUser.Country != "" { country = existingUser.Country }
-		if state == "" && existingUser.State != "" { state = existingUser.State }
-		if city == "" && existingUser.City != "" { city = existingUser.City }
-		if postal == "" && existingUser.PostalCode != "" { postal = existingUser.PostalCode }
+		if country == "" && existingUser.Country != "" {
+			country = existingUser.Country
+		}
+		if state == "" && existingUser.State != "" {
+			state = existingUser.State
+		}
+		if city == "" && existingUser.City != "" {
+			city = existingUser.City
+		}
+		if postal == "" && existingUser.PostalCode != "" {
+			postal = existingUser.PostalCode
+		}
 	}
 	if country == "" || state == "" {
 		geo, _ := h.geo.Resolve(clientIP)
-		if country == "" { country = strings.ToLower(geo.Country) }
-		if state == "" { state = strings.ToLower(geo.State) }
-		if city == "" { city = util.NormalizeCity(geo.City) }
-		if postal == "" { postal = geo.PostalCode }
+		if country == "" {
+			country = strings.ToLower(geo.Country)
+		}
+		if state == "" {
+			state = strings.ToLower(geo.State)
+		}
+		if city == "" {
+			city = util.NormalizeCity(geo.City)
+		}
+		if postal == "" {
+			postal = geo.PostalCode
+		}
 	}
 
 	// Normaliza PII e identificadores de rastreamento
@@ -94,20 +118,20 @@ func (h *APIEvents) processEvent(
 	idWpp := req.IDWpp
 
 	if existingUser != nil {
-		if phone == "" && existingUser.Phone != "" { phone = existingUser.Phone }
-		if email == "" && existingUser.Email != "" { email = existingUser.Email }
-		if firstName == "" && existingUser.FirstName != "" { firstName = existingUser.FirstName }
-		if lastName == "" && existingUser.LastName != "" { lastName = existingUser.LastName }
-		if fbp == "" && existingUser.FBP != "" { fbp = existingUser.FBP }
-		if fbc == "" && existingUser.FBC != "" { fbc = existingUser.FBC }
-		if gclid == "" && existingUser.GCLID != "" { gclid = existingUser.GCLID }
-		if wbraid == "" && existingUser.WBraid != "" { wbraid = existingUser.WBraid }
-		if gbraid == "" && existingUser.GBraid != "" { gbraid = existingUser.GBraid }
-		if ttclid == "" && existingUser.TTClid != "" { ttclid = existingUser.TTClid }
-		if ttp == "" && existingUser.TTP != "" { ttp = existingUser.TTP }
-		if ga4ClientID == "" && existingUser.GA4ClientID != "" { ga4ClientID = existingUser.GA4ClientID }
-		if ga4SessionID == "" && existingUser.GA4SessionID != "" { ga4SessionID = existingUser.GA4SessionID }
-		if idWpp == "" && existingUser.IDWpp != "" { idWpp = existingUser.IDWpp }
+		phone = util.FirstNonEmpty(phone, existingUser.Phone)
+		email = util.FirstNonEmpty(email, existingUser.Email)
+		firstName = util.FirstNonEmpty(firstName, existingUser.FirstName)
+		lastName = util.FirstNonEmpty(lastName, existingUser.LastName)
+		fbp = util.FirstNonEmpty(fbp, existingUser.FBP)
+		fbc = util.FirstNonEmpty(fbc, existingUser.FBC)
+		gclid = util.FirstNonEmpty(gclid, existingUser.GCLID)
+		wbraid = util.FirstNonEmpty(wbraid, existingUser.WBraid)
+		gbraid = util.FirstNonEmpty(gbraid, existingUser.GBraid)
+		ttclid = util.FirstNonEmpty(ttclid, existingUser.TTClid)
+		ttp = util.FirstNonEmpty(ttp, existingUser.TTP)
+		ga4ClientID = util.FirstNonEmpty(ga4ClientID, existingUser.GA4ClientID)
+		ga4SessionID = util.FirstNonEmpty(ga4SessionID, existingUser.GA4SessionID)
+		idWpp = util.FirstNonEmpty(idWpp, existingUser.IDWpp)
 	}
 
 	mappedURL := req.SourceURL
@@ -127,14 +151,10 @@ func (h *APIEvents) processEvent(
 		if !claimed {
 			return map[string]any{"queued": false, "deduplicated": true, "event_id": eventID}, http.StatusOK, ""
 		}
-	} else if exists, err := h.sentEvents.ExistsSent(ctx, eventID, pixel.Name); err != nil {
+	} else if exists, err := h.sentEvents.ExistsSent(ctx, accountID, eventID, pixel.Name, ""); err != nil {
 		slog.Warn("dedup check failed", "err", err, "event_id", eventID)
 	} else if exists {
-		return map[string]any{
-			"queued":       false,
-			"deduplicated": true,
-			"event_id":     eventID,
-		}, http.StatusOK, ""
+		return map[string]any{"queued": false, "deduplicated": true, "event_id": eventID}, http.StatusOK, ""
 	}
 
 	tu := h.upsertTrackedUserAPI(ctx, req, pixel.Name, accountID, clientIP, clientUA, mappedURL, country, state, city, postal, email, phone)
@@ -146,12 +166,16 @@ func (h *APIEvents) processEvent(
 
 	eventTime := time.Now().Unix()
 	if req.EventTime != nil && *req.EventTime > 0 {
-		eventTime = *req.EventTime
+		eventTime = util.ClampEventTime(*req.EventTime, time.Now())
 	}
 	contentID := req.ContentID
-	if contentID == "" { contentID = pixel.Name }
+	if contentID == "" {
+		contentID = pixel.Name
+	}
 	contentType := req.ContentType
-	if contentType == "" { contentType = "product" }
+	if contentType == "" {
+		contentType = "product"
+	}
 
 	in := domain.SendEventInput{
 		PixelName:       pixel.Name,

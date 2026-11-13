@@ -53,7 +53,8 @@
 import CustomWebhookCard from '~/components/integrations/CustomWebhookCard.vue'
 import CustomWebhookModal from '~/components/integrations/CustomWebhookModal.vue'
 import CustomWebhookTestModal from '~/components/integrations/CustomWebhookTestModal.vue'
-import { useCustomWebhooksStore } from '~/stores/customWebhooks'
+import { useCustomWebhooksStore, type CustomMappingConfig, type CustomWebhook } from '~/stores/customWebhooks'
+import { errorMessage } from '~/utils/errorMessage'
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
 
@@ -68,25 +69,25 @@ const loading = computed(() => store.loading)
 const items = computed(() => store.items)
 
 const showModal = ref(false)
-const editingItem = ref<any | null>(null)
+const editingItem = ref<CustomWebhook | null>(null)
 const saving = ref(false)
 
 const showLogs = ref(false)
 const logsWebhookName = ref('')
 const logsWebhookId = ref('')
 
-const openLogs = (item: any) => {
+const openLogs = (item: CustomWebhook) => {
   logsWebhookId.value = String(item.id)
   logsWebhookName.value = item.name
   showLogs.value = true
 }
 
-const openModal = (item?: any) => {
+const openModal = (item?: CustomWebhook) => {
   editingItem.value = item || null
   showModal.value = true
 }
 
-const onSave = async (payload: { id: string | null; name: string; is_global: boolean; mapping_config: any }) => {
+const onSave = async (payload: { id: string | null; name: string; is_global: boolean; mapping_config: CustomMappingConfig }) => {
   saving.value = true
   try {
     if (payload.id) {
@@ -96,8 +97,8 @@ const onSave = async (payload: { id: string | null; name: string; is_global: boo
     }
     showModal.value = false
     toast.success('Sucesso', 'Integração salva com sucesso!')
-  } catch (e: any) {
-    toast.error('Erro ao salvar', e?.message || 'Não foi possível salvar a integração.')
+  } catch (e: unknown) {
+    toast.error('Erro ao salvar', errorMessage(e, 'Não foi possível salvar a integração.'))
   } finally {
     saving.value = false
   }
@@ -117,8 +118,8 @@ const executeDelete = async () => {
     await store.deleteItem(deletingId.value)
     showDeleteConfirm.value = false
     toast.success('Excluído', 'Integração excluída com sucesso.')
-  } catch (e: any) {
-    toast.error('Erro ao excluir', e?.message || 'Não foi possível excluir.')
+  } catch (e: unknown) {
+    toast.error('Erro ao excluir', errorMessage(e, 'Não foi possível excluir.'))
   } finally {
     deletingId.value = null
   }
@@ -137,7 +138,7 @@ onMounted(() => {
 <style scoped>
 .custom-webhooks-page { display: flex; flex-direction: column; gap: 1.5rem; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem; }
-.page-title { font-family: 'Instrument Sans'; font-size: var(--fs-3xl); font-weight: var(--fw-bold); }
+.page-title { font-family: var(--font-sans); font-size: var(--fs-3xl); font-weight: var(--fw-bold); }
 .page-subtitle { color: var(--text-2); font-size: var(--fs-lg); }
 .webhooks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 1rem; }
 </style>

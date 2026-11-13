@@ -82,6 +82,7 @@ import MetaAdsAccountForm from '~/components/meta-ads/MetaAdsAccountForm.vue'
 import type { MetaAccount, MetaAccountInput } from '#shared/types'
 import { useMetaAdsStore } from '~/stores/useMetaAdsStore'
 import { useTenantStore } from '~/stores/useTenantStore'
+import { errorMessage } from '~/utils/errorMessage'
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
 const { formatTitle } = useBranding()
@@ -104,8 +105,8 @@ const deletingLoading = ref(false)
 const fetchAccounts = async (force = false) => {
   try {
     await api.list(force)
-  } catch (error: any) {
-    toast.error('Erro ao carregar', error.message || 'Não foi possível listar contas Meta Ads')
+  } catch (error: unknown) {
+    toast.error('Erro ao carregar', errorMessage(error, 'Não foi possível listar contas Meta Ads'))
   }
 }
 
@@ -138,8 +139,8 @@ const onFormSubmit = async (input: MetaAccountInput) => {
       toast.success('Conta criada', `"${created.name}" pronta para conectar OAuth.`)
       editing.value = created
     }
-  } catch (error: any) {
-    toast.error('Erro ao salvar', error.message || 'Falha ao salvar conta Meta Ads')
+  } catch (error: unknown) {
+    toast.error('Erro ao salvar', errorMessage(error, 'Falha ao salvar conta Meta Ads'))
   } finally {
     saving.value = false
   }
@@ -151,8 +152,8 @@ const onConnectNew = async ({ input, switchAccount }: { input: MetaAccountInput;
     const created = await api.create(input)
     editing.value = created
     await api.startOAuth(created.id, switchAccount)
-  } catch (error: any) {
-    toast.error('Erro ao conectar OAuth', error.message || 'Falha ao iniciar OAuth da Meta')
+  } catch (error: unknown) {
+    toast.error('Erro ao conectar OAuth', errorMessage(error, 'Falha ao iniciar OAuth da Meta'))
   } finally {
     saving.value = false
   }
@@ -164,8 +165,8 @@ const onReuseNew = async (input: MetaAccountInput) => {
     const created = await api.create(input)
     editing.value = created
     toast.success('Conta vinculada', 'Agora escolha a Conta de Anúncios e a Página padrão.')
-  } catch (error: any) {
-    toast.error('Erro ao reutilizar conexão', error.message || 'Falha ao reutilizar login Meta')
+  } catch (error: unknown) {
+    toast.error('Erro ao reutilizar conexão', errorMessage(error, 'Falha ao reutilizar login Meta'))
   } finally {
     saving.value = false
   }
@@ -180,8 +181,8 @@ const onConfirmDelete = async () => {
     toast.success('Conta excluída', `"${removedName}" foi removida.`)
     deleteModalOpen.value = false
     deleting.value = null
-  } catch (error: any) {
-    toast.error('Erro ao excluir', error.message || 'Falha ao excluir conta')
+  } catch (error: unknown) {
+    toast.error('Erro ao excluir', errorMessage(error, 'Falha ao excluir conta'))
   } finally {
     deletingLoading.value = false
   }

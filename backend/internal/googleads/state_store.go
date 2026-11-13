@@ -1,8 +1,12 @@
 package googleads
 
 import (
-	"sync"
+	"context"
 	"time"
+
+	"github.com/redis/go-redis/v9"
+
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 )
 
 type StateEntry struct {
@@ -12,54 +16,38 @@ type StateEntry struct {
 	ExpiresAt          time.Time
 }
 
+// StateStore delega o armazenamento de state OAuth para cache.OAuthStateStore (Redis GETDEL + fallback local),
+// sem goroutine em background vazando.
 type StateStore struct {
-	mu      sync.Mutex
-	entries map[string]StateEntry
+	inner *cache.OAuthStateStore
 }
 
-func NewStateStore() *StateStore {
-	s := &StateStore{entries: map[string]StateEntry{}}
-	go func() {
-		t := time.NewTicker(2 * time.Minute)
-		defer t.Stop()
-		for range t.C {
-			s.gc()
-		}
-	}()
-	return s
-}
-
-func (s *StateStore) Put(state string, e StateEntry) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if e.ExpiresAt.IsZero() {
-		e.ExpiresAt = time.Now().Add(5 * time.Minute)
+func NewStateStore(rdb ...*redis.Client) *StateStore {
+	var client *redis.Client
+	if len(rdb) > 0 {
+		client = rdb[0]
 	}
-	s.entries[state] = e
+	return &StateStore{inner: cache.NewOAuthStateStore(client)}
 }
 
-func (s *StateStore) Take(state string) (StateEntry, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	e, ok := s.entries[state]
+func (s *StateStore) Put(ctx context.Context, state string, e StateEntry) {
+	s.inner.Put(ctx, state, cache.OAuthStateEntry{
+		GoogleAdsAccountID: e.GoogleAdsAccountID,
+		AccountID:          e.AccountID,
+		UserID:             e.UserID,
+		ExpiresAt:          e.ExpiresAt,
+	})
+}
+
+func (s *StateStore) Take(ctx context.Context, state string) (StateEntry, bool) {
+	entry, ok := s.inner.Take(ctx, state)
 	if !ok {
 		return StateEntry{}, false
 	}
-	delete(s.entries, state)
-	if time.Now().After(e.ExpiresAt) {
-		return StateEntry{}, false
-	}
-	return e, true
+	return StateEntry{
+		GoogleAdsAccountID: entry.GoogleAdsAccountID,
+		AccountID:          entry.AccountID,
+		UserID:             entry.UserID,
+		ExpiresAt:          entry.ExpiresAt,
+	}, true
 }
-
-func (s *StateStore) gc() {
-	now := time.Now()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for k, e := range s.entries {
-		if now.After(e.ExpiresAt) {
-			delete(s.entries, k)
-		}
-	}
-}
-

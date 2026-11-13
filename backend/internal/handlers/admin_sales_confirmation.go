@@ -32,7 +32,7 @@ func (h *AdminSalesConfirmation) List(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
-	items, total, err := h.sentEventsRepo.ListSalesForConfirmation(r.Context(), scope.AccountID, pixelName, limit, offset)
+	items, total, err := h.sentEventsRepo.ListSalesForConfirmation(r.Context(), scope.EffectiveAccountID(0), pixelName, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error fetching sales")
 		return
@@ -61,7 +61,8 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 	}
 
 	scope := TenantFromContext(r.Context())
-	events, err := h.sentEventsRepo.FindByEventID(r.Context(), req.EventID, req.PixelName, scope.AccountID)
+	scopedAccountID := scope.EffectiveAccountID(0)
+	events, err := h.sentEventsRepo.FindByEventID(r.Context(), req.EventID, req.PixelName, scopedAccountID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "error finding event")
 		return
@@ -79,7 +80,7 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 	// Gera EventID dedicado para o novo disparo Purchase sem colidir com o AddPaymentInfo original
 	// em GetSuccessfulChannels (que antes pulava todos os canais já com status='sent').
 	purchaseEventID := BuildConfirmedPurchaseEventID(req.EventID)
-	if exists, err := h.sentEventsRepo.ExistsSent(r.Context(), purchaseEventID, pixelName); err == nil && exists {
+	if exists, err := h.sentEventsRepo.ExistsSent(r.Context(), scopedAccountID, purchaseEventID, pixelName, ""); err == nil && exists {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "already_confirmed": true, "event_id": purchaseEventID})
 		return
 	}
@@ -89,7 +90,7 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "error finding user")
 		return
 	}
-	effAccountID := scope.AccountID
+	effAccountID := scopedAccountID
 	if user != nil && effAccountID == 0 {
 		effAccountID = user.AccountID
 	}
@@ -101,7 +102,7 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if err := h.sentEventsRepo.MarkAsConfirmed(r.Context(), req.EventID, pixelName, scope.AccountID); err != nil {
+	if err := h.sentEventsRepo.MarkAsConfirmed(r.Context(), req.EventID, pixelName, scopedAccountID); err != nil {
 		slog.Warn("failed to mark sales event as confirmed in db", "err", err, "event_id", req.EventID)
 	}
 

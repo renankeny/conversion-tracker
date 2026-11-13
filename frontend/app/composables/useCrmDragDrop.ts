@@ -1,6 +1,8 @@
 import { ref, watch, type Ref } from 'vue'
 import type { CrmLead, CrmStage } from '#shared/types'
 import { useAPI } from '~/composables/useAPI'
+import { resolveStageEffectiveEvent } from '~/utils/crmEffectiveEvent'
+import { errorMessage } from '~/utils/errorMessage'
 
 interface UseCrmDragDropDeps {
   stages: Ref<CrmStage[]>
@@ -34,8 +36,8 @@ export const useCrmDragDrop = (deps: UseCrmDragDropDeps) => {
     try {
       await api.put('/admin/crm/stages/reorder', payload)
       if (!silent) toast.success('Sucesso', 'Ordem do funil atualizada.')
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Falha ao salvar ordem das etapas.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Falha ao salvar ordem das etapas.'))
       await deps.fetchBoard(true)
     }
   }
@@ -75,30 +77,30 @@ export const useCrmDragDrop = (deps: UseCrmDragDropDeps) => {
     try {
       await api.put(`/admin/crm/leads/${lead.id}/move`, { stage_id: parsedStage, value })
       return true
-    } catch (err: any) {
-      toast.error('Erro ao mover lead', err?.message || 'Não foi possível mover o lead para esta etapa.')
+    } catch (err: unknown) {
+      toast.error('Erro ao mover lead', errorMessage(err, 'Não foi possível mover o lead para esta etapa.'))
       await deps.fetchBoard(true)
       return false
     }
   }
 
-  const onDragEnd = (evt: any) => {
+  interface SortableDragEvent {
+    from?: { dataset?: { stageId?: string } }
+    to?: { dataset?: { stageId?: string } }
+    oldIndex?: number
+    newIndex?: number
+  }
+
+  const onDragEnd = (evt: SortableDragEvent) => {
     const fromStageId = evt.from?.dataset?.stageId
     const toStageId = evt.to?.dataset?.stageId
     if (!fromStageId || !toStageId || fromStageId === toStageId) return
 
-    const movedLead = deps.leadsByStage.value[toStageId]?.[evt.newIndex]
+    const newIndex = evt.newIndex ?? 0
+    const movedLead = deps.leadsByStage.value[toStageId]?.[newIndex]
     if (!movedLead) return
     const targetStage = deps.stages.value.find((s) => String(s.id) === String(toStageId))
-
-    const isCtwa = Boolean(
-      movedLead.tracked_user?.ctwa_clid ||
-      movedLead.tracked_user?.id_wpp ||
-      (movedLead.tracked_user?.external_id && movedLead.tracked_user.external_id.startsWith('wpp:'))
-    )
-    const effectiveEvent = isCtwa
-      ? (targetStage?.trigger_event_ctwa || targetStage?.trigger_event)
-      : targetStage?.trigger_event
+    const effectiveEvent = resolveStageEffectiveEvent(targetStage, movedLead.tracked_user)
 
     if (effectiveEvent === 'Purchase' && (!movedLead.value || movedLead.value <= 0)) {
       pendingMoveEvent = {
@@ -106,7 +108,7 @@ export const useCrmDragDrop = (deps: UseCrmDragDropDeps) => {
         from: String(fromStageId),
         to: String(toStageId),
         fromIndex: evt.oldIndex ?? 0,
-        toIndex: evt.newIndex ?? 0,
+        toIndex: newIndex,
       }
       purchaseValue.value = null
       showPurchaseModal.value = true
@@ -155,12 +157,17 @@ export const useCrmDragDrop = (deps: UseCrmDragDropDeps) => {
     }
     isConfirmingPurchase.value = true
     const { lead, to } = pendingMoveEvent
-    pendingMoveEvent = null
+    const prevValue = lead.value
     const chosenValue = purchaseValue.value
     lead.value = chosenValue
     try {
-      await executeMove(lead, to, chosenValue)
-      showPurchaseModal.value = false
+      const ok = await executeMove(lead, to, chosenValue)
+      if (ok) {
+        pendingMoveEvent = null
+        showPurchaseModal.value = false
+      } else {
+        lead.value = prevValue
+      }
     } finally {
       isConfirmingPurchase.value = false
     }

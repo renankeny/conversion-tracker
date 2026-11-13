@@ -34,7 +34,7 @@ export const useDashboard = () => {
   }
 
   const geoStats = (filters: CounterFilters = {}) => {
-    return api.get<any[]>('/admin/stats/geo' + buildQuery(filters))
+    return api.get<GeoStatPoint[]>('/admin/stats/geo' + buildQuery(filters))
   }
 
   const revenue = (filters: CounterFilters = {}) => {
@@ -51,7 +51,7 @@ export const useDashboard = () => {
   }
 
   const geoStatsByEvent = (filters: CounterFilters & { event?: string } = {}) => {
-    return api.get<any[]>('/admin/stats/geo-by-event' + buildQuery(filters))
+    return api.get<GeoStatPoint[]>('/admin/stats/geo-by-event' + buildQuery(filters))
   }
 
   const metaLiveInsights = (filters: { pixel_name: string; from: string; to: string }) => {
@@ -84,6 +84,15 @@ export const useDashboard = () => {
   }
 }
 
+export interface GeoStatPoint {
+  country: string
+  state?: string
+  city?: string
+  lat?: number
+  lon?: number
+  count: number
+}
+
 export interface MetaCreativeInsight {
   ad_id: string
   ad_name: string
@@ -96,8 +105,8 @@ export interface MetaCreativeInsight {
   thumbnail_url?: string
 }
 
-const buildQuery = (params: Record<string, any>): string => {
-  const entries = Object.entries(params).filter(
+const buildQuery = (params: object): string => {
+  const entries = Object.entries(params as Record<string, unknown>).filter(
     ([, v]) => v !== undefined && v !== '' && v !== null
   )
   if (entries.length === 0) return ''

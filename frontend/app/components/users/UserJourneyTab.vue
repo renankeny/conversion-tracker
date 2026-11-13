@@ -7,7 +7,7 @@
     <section class="section">
       <div class="section-header-row">
         <h4 class="section-title">Histórico de Compras Aprovadas ({{ purchaseHistory.length }})</h4>
-        <span v-if="purchaseHistory.length && user" class="text-xs text-success font-semibold">
+        <span v-if="purchaseHistory.length && user" class="ltv-summary">
           Total: {{ formatCurrency(user.ltv) }}
         </span>
       </div>
@@ -32,13 +32,13 @@
           <h4 class="section-title !mb-0">Jornada do Cliente (Linha do Tempo)</h4>
           <span
             v-if="journeyData && journeyData.sessions_count > 1"
-            class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-pink-500/15 text-pink-400 border border-pink-500/30"
+            class="sessions-pill"
             title="Identidade unificada em múltiplos dispositivos"
           >
             {{ journeyData.sessions_count }} dispositivos unificados
           </span>
         </div>
-        <span class="text-xs" style="color: var(--text-3)">{{ timelineEvents.length }} marcos identificados</span>
+        <span class="milestones-count">{{ timelineEvents.length }} marcos identificados</span>
       </div>
 
       <UserJourneyTimeline
@@ -53,6 +53,7 @@
 import UserTrafficAuditBox from '~/components/users/UserTrafficAuditBox.vue'
 import UserJourneyTimeline, { type TimelineItem } from '~/components/users/UserJourneyTimeline.vue'
 import type { GroupedEvent, TrackedUser, CustomerJourneyResponse } from '#shared/types'
+import { formatDateTimeSP } from '~/utils/formatDate'
 
 interface Props {
   user: TrackedUser | null
@@ -69,20 +70,13 @@ const formatCurrency = (val: number | undefined): string => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0)
 }
 
-const formatDate = (iso: string): string => {
-  if (!iso) return ''
-  return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
+const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
 </script>
 
 <style scoped>
+.ltv-summary { font-size: var(--fs-base); color: var(--success); font-weight: var(--fw-semibold); }
+.sessions-pill { padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: var(--fs-xs); font-weight: var(--fw-bold); background: var(--accent-pink-soft); color: var(--accent-pink); border: 1px solid var(--accent-pink-border); }
+.milestones-count { font-size: var(--fs-base); color: var(--text-3); }
 .user-journey-tab {
   display: flex;
   flex-direction: column;

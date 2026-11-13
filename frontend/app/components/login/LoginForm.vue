@@ -72,6 +72,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight } from 'lucide-vue-next'
 import { useAuth } from '~/composables/useAuth'
+import { errorMessage as extractErrorMessage } from '~/utils/errorMessage'
 
 const { login } = useAuth()
 
@@ -116,8 +117,8 @@ const handleSubmit = async () => {
       return
     }
     await navigateTo('/', { replace: true })
-  } catch (err: any) {
-    errorMessage.value = err.message || 'Credenciais inválidas ou erro no servidor.'
+  } catch (err: unknown) {
+    errorMessage.value = extractErrorMessage(err, 'Credenciais inválidas ou erro no servidor.')
   } finally {
     loading.value = false
   }

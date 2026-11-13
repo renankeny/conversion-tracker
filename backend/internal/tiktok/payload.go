@@ -76,10 +76,7 @@ func buildProperties(eventName string, in domain.SendEventInput) map[string]any 
 		contents := make([]map[string]any, 0, len(in.AggregatedItems))
 		firstID := ""
 		for i, agg := range in.AggregatedItems {
-			cid := strings.TrimSpace(agg.OrderID)
-			if cid == "" {
-				cid = firstNonEmpty(in.ContentID, in.PixelName)
-			}
+			cid := firstNonEmpty(agg.ProductID, agg.OrderID, in.ContentID, in.PixelName)
 			if i == 0 {
 				firstID = cid
 			}

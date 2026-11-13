@@ -77,9 +77,9 @@ const statusText = computed(() => {
   transition: all 0.18s;
 }
 
-.channel-card[data-state="ok"] { border-color: rgba(34, 197, 94, 0.4); }
-.channel-card[data-state="pending"] { border-color: rgba(245, 158, 11, 0.4); }
-.channel-card[data-state="error"] { border-color: rgba(239, 68, 68, 0.4); }
+.channel-card[data-state="ok"] { border-color: var(--brand-border); }
+.channel-card[data-state="pending"] { border-color: var(--warning-border); }
+.channel-card[data-state="error"] { border-color: var(--danger-border); }
 .channel-card[data-state="absent"] { opacity: 0.65; }
 .channel-card[data-expanded="true"] { grid-column: 1 / -1; }
 
@@ -109,7 +109,7 @@ const statusText = computed(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: var(--surface-qr);
   border: 1px solid var(--border-soft);
 }
 
@@ -156,21 +156,21 @@ const statusText = computed(() => {
 }
 
 .card-code[data-state="ok"] {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: var(--success-soft);
+  color: var(--status-ok);
+  border: 1px solid var(--brand-border);
 }
 
 .card-code[data-state="pending"] {
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--warning-soft);
   color: var(--warning);
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  border: 1px solid var(--warning-border);
 }
 
 .card-code[data-state="error"] {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--danger-soft);
+  color: var(--danger-light);
+  border: 1px solid var(--danger-border);
 }
 
 .chevron {

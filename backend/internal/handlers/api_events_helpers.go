@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 )
@@ -91,16 +90,5 @@ func (h *APIEvents) upsertTrackedUserAPI(
 
 // extractClientIP pega o IP real do client (considerando proxies/CDNs).
 func extractClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	if real := r.Header.Get("X-Real-IP"); real != "" {
-		return real
-	}
-	host, _, found := strings.Cut(r.RemoteAddr, ":")
-	if found {
-		return host
-	}
-	return r.RemoteAddr
+	return clientIP(r)
 }

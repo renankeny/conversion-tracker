@@ -3,10 +3,10 @@ export type Channel = 'meta' | 'tiktok' | 'google_ads' | 'ga4'
 
 export interface SentEvent {
   id: number
+  event_id: string
   pixel_name: string
   event_name: string
   external_id: string
-  id_wpp: string
   channel: Channel
   status: EventStatus
   response_code: number
@@ -14,10 +14,9 @@ export interface SentEvent {
   response_body: string
   /** Payload JSON enviado para a plataforma (com PII hasheada, tokens redatados). */
   payload?: string
+  purchase_value: number
   created_at: string
   updated_at: string
-  /** Mantido pra compat com listagem antiga. */
-  sent_at?: string | null
 }
 
 export type EventStatus = 'sent' | 'pending' | 'failed' | 'queued'
@@ -54,6 +53,7 @@ export interface ChannelBrief {
 
 export interface AggregatedItem {
   order_id?: string
+  product_id?: string
   product_title?: string
   item_type?: 'main' | 'order_bump' | 'upsell' | string
   value: number

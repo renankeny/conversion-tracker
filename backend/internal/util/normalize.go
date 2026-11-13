@@ -10,17 +10,36 @@ import (
 var nonDigit = regexp.MustCompile(`\D+`)
 var nonAlpha = regexp.MustCompile(`[^a-z]`)
 
+var validBRDDDs = map[string]bool{
+	"11": true, "12": true, "13": true, "14": true, "15": true, "16": true, "17": true, "18": true, "19": true,
+	"21": true, "22": true, "24": true, "27": true, "28": true,
+	"31": true, "32": true, "33": true, "34": true, "35": true, "37": true, "38": true,
+	"41": true, "42": true, "43": true, "44": true, "45": true, "46": true, "47": true, "48": true, "49": true,
+	"51": true, "53": true, "54": true, "55": true,
+	"61": true, "62": true, "63": true, "64": true, "65": true, "66": true, "67": true, "68": true, "69": true,
+	"71": true, "73": true, "74": true, "75": true, "77": true, "79": true,
+	"81": true, "82": true, "83": true, "84": true, "85": true, "86": true, "87": true, "88": true, "89": true,
+	"91": true, "92": true, "93": true, "94": true, "95": true, "96": true, "97": true, "98": true, "99": true,
+}
+
 // NormalizePhone remove caracteres não numéricos, remove zero à esquerda no DDD brasileiro
-// se presente (ex: 011999999999 -> 5511999999999) e prefixa 55 quando for número brasileiro sem DDI.
-// Quando a entrada já começa explicitamente com "+" (ex: "+1 415 555 2671"), preserva o DDI original.
+// se presente (ex: 011999999999 -> 5511999999999) e prefixa 55 apenas quando o DDD brasileiro for válido.
+// Quando a entrada já começa explicitamente com "+" ou "00" internacional, preserva o DDI original.
 func NormalizePhone(s string) string {
-	hasExplicitPlus := strings.HasPrefix(strings.TrimSpace(s), "+")
+	trimmed := strings.TrimSpace(s)
+	hasExplicitPlus := strings.HasPrefix(trimmed, "+")
 	s = nonDigit.ReplaceAllString(s, "")
 	if !hasExplicitPlus {
-		if len(s) >= 11 && len(s) <= 12 && strings.HasPrefix(s, "0") {
-			s = strings.TrimPrefix(s, "0")
+		if strings.HasPrefix(s, "00") && len(s) > 4 {
+			return strings.TrimPrefix(s, "00")
 		}
-		if len(s) >= 10 && len(s) <= 11 {
+		if len(s) >= 11 && len(s) <= 12 && strings.HasPrefix(s, "0") {
+			candidate := strings.TrimPrefix(s, "0")
+			if len(candidate) >= 2 && validBRDDDs[candidate[:2]] {
+				s = candidate
+			}
+		}
+		if (len(s) == 10 || len(s) == 11) && validBRDDDs[s[:2]] {
 			s = "55" + s
 		}
 	}
@@ -131,22 +150,11 @@ func NormalizeCountry(s string) string {
 		return s
 	}
 
-	// Busca no mapa canônico
+	// Busca no mapa canônico; nomes desconhecidos retornam "" em vez de truncar 2 letras erradas.
 	if code, ok := countryMap[s]; ok {
 		return code
 	}
-
-	// Fallback: extrai os 2 primeiros caracteres alfabéticos
-	out := make([]rune, 0, len(s))
-	for _, r := range s {
-		if r >= 'a' && r <= 'z' {
-			out = append(out, r)
-		}
-	}
-	if len(out) > 2 {
-		out = out[:2]
-	}
-	return string(out)
+	return ""
 }
 
 var brStates = map[string]string{

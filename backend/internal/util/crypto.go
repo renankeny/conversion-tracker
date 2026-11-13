@@ -36,25 +36,28 @@ func DeriveEncryptionKey(secret string) string {
 }
 
 // Encrypt encrypts a plaintext string using AES-GCM and the package key.
-// It returns a hex-encoded string containing the nonce and ciphertext.
-func Encrypt(plaintext string) string {
-	if plaintext == "" || len(encryptionKey) != 32 {
-		return plaintext
+// Returns an error instead of plaintext if the key is uninitialized or encryption fails.
+func Encrypt(plaintext string) (string, error) {
+	if plaintext == "" {
+		return "", nil
+	}
+	if len(encryptionKey) != 32 {
+		return "", ErrInvalidKey
 	}
 	block, err := aes.NewCipher(ApplyShardKeyMask(encryptionKey))
 	if err != nil {
-		return plaintext
+		return "", err
 	}
 	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
-		return plaintext
+		return "", err
 	}
 	nonce := make([]byte, aesGCM.NonceSize())
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
-		return plaintext
+		return "", err
 	}
 	ciphertext := aesGCM.Seal(nonce, nonce, []byte(plaintext), nil)
-	return hex.EncodeToString(ciphertext)
+	return hex.EncodeToString(ciphertext), nil
 }
 
 // Decrypt decrypts a hex-encoded AES-GCM ciphertext using the package key.

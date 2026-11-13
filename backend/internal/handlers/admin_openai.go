@@ -9,14 +9,15 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
+	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
 type AdminOpenAI struct {
-	pool *pgxpool.Pool
+	users *repo.AdminUserRepo
 }
 
 func NewAdminOpenAI(pool *pgxpool.Pool) *AdminOpenAI {
-	return &AdminOpenAI{pool: pool}
+	return &AdminOpenAI{users: repo.NewAdminUserRepo(pool)}
 }
 
 type GenerateMappingInput struct {
@@ -36,7 +37,7 @@ func (h *AdminOpenAI) GenerateMapping(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiKey := loadDecryptedOpenAIKey(r.Context(), h.pool, claims.UserID)
+	apiKey := loadDecryptedOpenAIKey(r.Context(), h.users, claims.UserID)
 	if apiKey == "" {
 		writeError(w, http.StatusBadRequest, "Chave da OpenAI não configurada. Vá em Configurações > Meu Perfil para configurar.")
 		return

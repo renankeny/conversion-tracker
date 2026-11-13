@@ -73,61 +73,24 @@ import EventsFilters from '~/components/events/EventsFilters.vue'
 import EventsTable from '~/components/events/EventsTable.vue'
 import EventDetailsModal from '~/components/events/EventDetailsModal.vue'
 import ConfirmModal from '~/components/ConfirmModal.vue'
-import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
-import { useTenantStore } from '~/stores/useTenantStore'
-import type { EventFilters, GroupedEvent } from '#shared/types'
+import { useEventsFilters } from '~/composables/useEventsFilters'
+import { errorMessage } from '~/utils/errorMessage'
+import type { GroupedEvent } from '#shared/types'
 
 definePageMeta({ layout: 'app', middleware: 'auth' })
 const { formatTitle } = useBranding()
 useHead({ title: computed(() => formatTitle('Eventos')) })
 
 const eventsApi = useEvents()
-const accountsApi = useAccounts()
 const toast = useToast()
-const liveStore = useLiveEventsStore()
-const tenantStore = useTenantStore()
 
-const PAGE_SIZE = 50
-const filters = ref<EventFilters>({})
-const eventsFilterMap = ref<Record<string, string[]>>({})
-let eventsFilterLoaded = false
+const {
+  filters, events, total, offset, loading, modalOpen, selected, selectedIds,
+  offsetFrom, offsetTo, fetchEvents, refresh, prevPage, nextPage,
+} = useEventsFilters()
 
-const events = ref<GroupedEvent[]>([])
-const total = ref(0)
-const offset = ref(0)
-const loading = ref(false)
-
-const modalOpen = ref(false)
-const selected = ref<GroupedEvent | null>(null)
-
-const selectedIds = ref<string[]>([])
 const deleteModalOpen = ref(false)
 const deleting = ref(false)
-
-const offsetFrom = computed(() => (events.value.length ? offset.value + 1 : 0))
-const offsetTo = computed(() => offset.value + events.value.length)
-
-const fetchEvents = async () => {
-  loading.value = true
-  try {
-    const response = await eventsApi.listGrouped({
-      ...filters.value,
-      limit: PAGE_SIZE,
-      offset: offset.value,
-      include_user_context: true,
-    })
-    events.value = response.data || []
-    total.value = response.total || 0
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Não foi possível carregar os eventos')
-  } finally {
-    loading.value = false
-  }
-}
-
-const refresh = () => { offset.value = 0; fetchEvents() }
-const prevPage = () => { offset.value = Math.max(0, offset.value - PAGE_SIZE); fetchEvents() }
-const nextPage = () => { offset.value += PAGE_SIZE; fetchEvents() }
 
 const onSelect = (ev: GroupedEvent) => { selected.value = ev; modalOpen.value = true }
 const onSelectionChange = (ids: string[]) => { selectedIds.value = ids }
@@ -139,8 +102,8 @@ const onRetry = async (eventIds: string[]) => {
     const r = await eventsApi.retryByEventIDs(eventIds)
     toast.success('Reenfileirado', `${r.queued} evento${r.queued !== 1 ? 's' : ''} adicionado${r.queued !== 1 ? 's' : ''} à fila.`)
     await fetchEvents()
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Não foi possível reenfileirar')
+  } catch (err: unknown) {
+    toast.error('Erro', errorMessage(err, 'Não foi possível reenfileirar'))
   }
 }
 
@@ -153,88 +116,21 @@ const doDelete = async () => {
     selectedIds.value = []
     offset.value = 0
     await fetchEvents()
-  } catch (error: any) {
-    toast.error('Erro', error.message || 'Não foi possível deletar os eventos')
+  } catch (err: unknown) {
+    toast.error('Erro', errorMessage(err, 'Não foi possível deletar os eventos'))
   } finally {
     deleting.value = false
   }
 }
 
-let isRestoringEventFilter = false
-
-watch(filters, () => {
-  if (isRestoringEventFilter) return
-  offset.value = 0
-  fetchEvents()
-}, { deep: true })
-
-watch(() => filters.value.pixel, (pixel) => {
-  if (!eventsFilterLoaded) return
-  const key = pixel || ''
-  const saved = (eventsFilterMap.value[key] || []).join(',')
-  if ((filters.value.event || '') !== saved) {
-    isRestoringEventFilter = true
-    filters.value = { ...filters.value, event: saved || undefined }
-    isRestoringEventFilter = false
-    offset.value = 0
-    fetchEvents()
-  }
-})
-
-watch(() => filters.value.event, (eventCSV) => {
-  if (!eventsFilterLoaded) return
-  const key = filters.value.pixel || ''
-  const arr = (eventCSV || '').split(',').map((s) => s.trim()).filter(Boolean)
-  eventsFilterMap.value = { ...eventsFilterMap.value, [key]: arr }
-  accountsApi.updateEventsFilter(key, arr).catch(() => {})
-})
-
 const formatNumber = (n: number): string => new Intl.NumberFormat('pt-BR').format(n)
-
-let liveRefreshTimer: ReturnType<typeof setTimeout> | null = null
-watch(() => liveStore.lastEventSeq, () => {
-  if (offset.value > 0 || selectedIds.value.length > 0 || modalOpen.value) return
-  if (liveRefreshTimer) clearTimeout(liveRefreshTimer)
-  liveRefreshTimer = setTimeout(fetchEvents, 500)
-})
-
-const loadAccountFilterAndEvents = async () => {
-  eventsFilterLoaded = false
-  try {
-    const res = await accountsApi.getEventsFilter()
-    eventsFilterMap.value = res.events_filter || {}
-  } catch {
-    eventsFilterMap.value = {}
-  }
-  eventsFilterLoaded = true
-  const saved = (eventsFilterMap.value[filters.value.pixel || ''] || []).join(',')
-  if (saved && saved !== (filters.value.event || '')) {
-    filters.value = { ...filters.value, event: saved }
-  } else {
-    fetchEvents()
-  }
-}
-
-watch(() => tenantStore.switchVersion, () => {
-  modalOpen.value = false
-  selected.value = null
-  selectedIds.value = []
-  offset.value = 0
-  isRestoringEventFilter = true
-  filters.value = {}
-  isRestoringEventFilter = false
-  void loadAccountFilterAndEvents()
-})
-
-onMounted(() => void loadAccountFilterAndEvents())
-onUnmounted(() => { if (liveRefreshTimer) clearTimeout(liveRefreshTimer) })
 </script>
 
 <style scoped>
 .events-page { display: flex; flex-direction: column; gap: 1.25rem; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
 .page-header > div:first-child { flex: 1; min-width: 280px; }
-.page-title { font-family: 'Instrument Sans', sans-serif; font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.25rem; }
+.page-title { font-family: var(--font-heading); font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.25rem; }
 .page-subtitle { color: var(--text-2); font-size: var(--fs-lg); max-width: 640px; }
 .header-actions { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
 .selection-bar { display: flex; align-items: center; gap: 0.5rem; background: var(--danger-soft); border: 1px solid var(--danger); border-radius: 8px; padding: 0.375rem 0.75rem; }

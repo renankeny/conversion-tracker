@@ -20,61 +20,6 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
 
-func dispatchGoogleAds(ctx context.Context, deps Deps, pixel *domain.Pixel, in domain.SendEventInput, doneTargets map[string]bool) []googleads.SendResult {
-	accID := pixel.GoogleAdsAccountID
-	if in.OverrideGadsAccountID != nil {
-		accID = in.OverrideGadsAccountID
-	}
-	if accID == nil {
-		return nil
-	}
-	account, ferr := deps.GoogleAdsAcc.FindByID(ctx, *accID)
-	if ferr != nil {
-		slog.Warn("google ads account lookup failed", "err", ferr, "pixel", pixel.Name, "account_id", *accID)
-		return nil
-	}
-	if !account.Enabled || !account.HasCredentials() {
-		return nil
-	}
-
-	var actions []*domain.GoogleAdsConversionAction
-	if in.OverrideGadsActionID != "" {
-		actions = append(actions, &domain.GoogleAdsConversionAction{
-			ConversionActionID: in.OverrideGadsActionID,
-			EventType:          in.EventName,
-			Enabled:            true,
-		})
-	} else {
-		actions = account.FindActionsForEvent(in.EventName)
-	}
-	if len(actions) == 0 {
-		return nil
-	}
-
-	var (
-		gaWg    sync.Mutex
-		inner   sync.WaitGroup
-		results []googleads.SendResult
-	)
-	for _, action := range actions {
-		action := action
-		targetKey := "google_ads:" + account.CustomerID + ":" + action.ConversionActionID
-		if doneTargets[targetKey] {
-			continue
-		}
-		inner.Add(1)
-		go func() {
-			defer inner.Done()
-			res := deps.GoogleAds.Send(ctx, account, action, in)
-			gaWg.Lock()
-			results = append(results, res...)
-			gaWg.Unlock()
-		}()
-	}
-	inner.Wait()
-	return results
-}
-
 func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventInput) error {
 	pixel, err := deps.Pixels.FindByName(ctx, in.PixelName)
 	if err != nil {
@@ -107,6 +52,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer recoverDispatchPanic("meta", in)
 			metaResults = dispatchMetaWithOAuthFallback(ctx, deps, pixel, in, func(pid string) bool { return doneTargets["meta:"+pid] })
 		}()
 	}
@@ -114,6 +60,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer recoverDispatchPanic("tiktok", in)
 			tiktokResults = deps.TikTok.SendFiltered(ctx, pixel, in, func(pid string) bool { return doneTargets["tiktok:"+pid] })
 		}()
 	}
@@ -122,6 +69,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer recoverDispatchPanic("google_ads", in)
 			googleAdsResults = dispatchGoogleAds(ctx, deps, pixel, in, doneTargets)
 		}()
 	}
@@ -131,6 +79,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer recoverDispatchPanic("ga4", in)
 			ga4Result = deps.GA4.SendEvents(ctx, pixel.GA4APISecret, pixel.GA4MeasurementID, &in)
 		}()
 	}
@@ -181,7 +130,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 	for _, r := range collapseChannelResults(results) {
 		if r.Err != nil {
 			hasErr = true
-			if !isPermanentHTTPStatus(r.StatusCode) {
+			if !isPermanentResult(r) {
 				hasRetryableErr = true
 			}
 			slog.Error("send failed", "channel", r.Channel, "pixel_id", r.PixelID, "event", in.EventName, "event_id", in.EventID, "status", r.StatusCode, "err", util.RedactSecrets(r.Err.Error()))
@@ -189,24 +138,13 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 			hasSuccess = true
 			slog.Info("send ok", "channel", r.Channel, "pixel_id", r.PixelID, "event", in.EventName, "event_id", in.EventID, "status", r.StatusCode)
 		}
-		if storeFullPayload || r.Err != nil {
+		if storeFullPayload || r.Err != nil || retryCount > 0 || in.IsReplay {
 			persistResult(ctx, deps.Pool, pixel.AccountID, in, r)
 		}
 	}
 
-	if deps.Counters != nil && (len(results) > 0 || len(alreadySent) == 0) {
-		if retryCount == 0 {
-			delta := domain.CounterDelta{Total: 1}
-			if hasErr && !hasSuccess {
-				delta.Failed = 1
-			} else {
-				delta.Sent = 1
-			}
-			_ = deps.Counters.Increment(ctx, pixel.AccountID, pixel.Name, in.EventName, eventTime, delta)
-		} else if !hasErr && hasSuccess && len(alreadySent) == 0 {
-			// Transição failed -> sent em retry: corrige os contadores sem inflar count_total.
-			_ = deps.Counters.Increment(ctx, pixel.AccountID, pixel.Name, in.EventName, eventTime, domain.CounterDelta{Sent: 1, Failed: -1})
-		}
+	if len(results) > 0 || len(alreadySent) == 0 {
+		applyCounters(ctx, deps, pixel, in, eventTime, retryCount, hasErr, hasSuccess)
 	}
 
 	if deps.Redis != nil && len(results) > 0 && (retryCount == 0 || !hasErr) {

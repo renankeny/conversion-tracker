@@ -2,11 +2,14 @@ import type { Ref } from 'vue'
 import type { CrmLead, CrmStage, CrmTag, TrackedUser } from '#shared/types'
 import { useAPI } from '~/composables/useAPI'
 import { useTrackedUsers } from '~/composables/useTrackedUsers'
+import { useCrmLeadNotes } from '~/composables/useCrmLeadNotes'
+import { resolveStageEffectiveEvent } from '~/utils/crmEffectiveEvent'
+import { errorMessage } from '~/utils/errorMessage'
 
 export const useCrmLeadActions = (
   modals: ReturnType<typeof import('~/composables/useCrmModals').useCrmModals>,
   stages: Ref<CrmStage[]>,
-  allTags: Ref<CrmTag[]>,
+  _allTags: Ref<CrmTag[]>,
   selectedPixel: Ref<string>,
   fetchBoard: (silent?: boolean) => Promise<void>,
   loadAllTags: () => Promise<void>,
@@ -14,6 +17,8 @@ export const useCrmLeadActions = (
   const api = useAPI()
   const toast = useToast()
   const trackedUsersApi = useTrackedUsers()
+  const noteActions = useCrmLeadNotes(modals, fetchBoard)
+  let leadDetailSeq = 0
 
   const openCreateLeadModal = (defaultStageId?: number) => {
     modals.newLeadForm.first_name = ''
@@ -36,7 +41,7 @@ export const useCrmLeadActions = (
       return
     }
     const targetStage = stages.value.find((s) => Number(s.id) === Number(f.stage_id))
-    const isPurchaseTrigger = targetStage?.trigger_event === 'Purchase' || targetStage?.trigger_event_ctwa === 'Purchase'
+    const isPurchaseTrigger = resolveStageEffectiveEvent(targetStage, null) === 'Purchase'
     if (isPurchaseTrigger && (!Number(f.value) || Number(f.value) <= 0)) {
       toast.error('Valor obrigatório', 'Informe um valor maior que R$ 0,00 para cadastrar na etapa de Venda (Purchase).')
       return
@@ -60,15 +65,17 @@ export const useCrmLeadActions = (
       toast.success('Sucesso', 'Lead adicionado ao funil.')
       modals.showCreateLeadModal.value = false
       await fetchBoard(true)
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Falha ao cadastrar lead.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Falha ao cadastrar lead.'))
     } finally {
       modals.isCreatingManualLead.value = false
     }
   }
 
   const openLeadDetails = async (lead: CrmLead) => {
-    modals.selectedLeadId.value = lead.id
+    const openedId = lead.id
+    const reqSeq = ++leadDetailSeq
+    modals.selectedLeadId.value = openedId
     modals.selectedLeadTrackedUser.value = lead.tracked_user ? { ...lead.tracked_user } : null
     modals.setOriginalStageId(lead.stage_id ?? stages.value[0]?.id ?? null)
     modals.leadEdit.first_name = lead.tracked_user?.first_name || ''
@@ -84,7 +91,8 @@ export const useCrmLeadActions = (
     void loadAllTags()
 
     try {
-      const data = await api.get<CrmLead>(`/admin/crm/leads/${lead.id}`)
+      const data = await api.get<CrmLead>(`/admin/crm/leads/${openedId}`)
+      if (reqSeq !== leadDetailSeq || modals.selectedLeadId.value !== openedId) return
       modals.selectedLeadTrackedUser.value = data.tracked_user
         ? { ...(lead.tracked_user || {}), ...data.tracked_user }
         : modals.selectedLeadTrackedUser.value
@@ -98,8 +106,9 @@ export const useCrmLeadActions = (
       modals.setOriginalStageId(resolvedStageId)
       modals.leadEdit.notes = data.notes || []
       modals.leadEdit.tags = data.tags || []
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Não foi possível carregar os detalhes completos do lead.')
+    } catch (err: unknown) {
+      if (reqSeq !== leadDetailSeq || modals.selectedLeadId.value !== openedId) return
+      toast.error('Erro', errorMessage(err, 'Não foi possível carregar os detalhes completos do lead.'))
     }
   }
 
@@ -119,21 +128,22 @@ export const useCrmLeadActions = (
       } else {
         toast.error('Atenção', 'Dados de rastreamento do visitante não encontrados.')
       }
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Falha ao abrir jornada do visitante.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Falha ao abrir jornada do visitante.'))
     }
   }
 
   const saveLeadInfo = async () => {
-    if (!modals.selectedLeadId.value) return
+    const leadId = modals.selectedLeadId.value
+    if (!leadId) return
     const nextValue = Number(modals.leadEdit.value) || 0
     const originalStageId = modals.getOriginalStageId()
-    const isMovingStage = !!(modals.leadEdit.stage_id && modals.leadEdit.stage_id !== originalStageId)
+    const isMovingStage = Boolean(modals.leadEdit.stage_id && modals.leadEdit.stage_id !== originalStageId)
 
     if (isMovingStage) {
       const targetStage = stages.value.find((s) => Number(s.id) === Number(modals.leadEdit.stage_id))
-      const isPurchaseTrigger = targetStage?.trigger_event === 'Purchase' || targetStage?.trigger_event_ctwa === 'Purchase'
-      if (isPurchaseTrigger && nextValue <= 0) {
+      const isPurchase = resolveStageEffectiveEvent(targetStage, modals.selectedLeadTrackedUser.value) === 'Purchase'
+      if (isPurchase && nextValue <= 0) {
         toast.error('Valor obrigatório', 'Defina um valor maior que R$ 0,00 antes de mover o lead para a etapa de Venda (Purchase).')
         return
       }
@@ -141,63 +151,38 @@ export const useCrmLeadActions = (
 
     modals.isSavingLead.value = true
     try {
-      await api.put(`/admin/crm/leads/${modals.selectedLeadId.value}`, {
-        first_name: modals.leadEdit.first_name,
-        last_name: modals.leadEdit.last_name,
-        email: modals.leadEdit.email,
-        phone: modals.leadEdit.phone,
-        value: nextValue,
-      })
-
       if (isMovingStage && modals.leadEdit.stage_id) {
-        await api.put(`/admin/crm/leads/${modals.selectedLeadId.value}/move`, {
+        await api.put(`/admin/crm/leads/${leadId}/move`, {
           stage_id: modals.leadEdit.stage_id,
           value: nextValue,
         })
         modals.setOriginalStageId(modals.leadEdit.stage_id)
       }
 
+      try {
+        await api.put(`/admin/crm/leads/${leadId}`, {
+          first_name: modals.leadEdit.first_name,
+          last_name: modals.leadEdit.last_name,
+          email: modals.leadEdit.email,
+          phone: modals.leadEdit.phone,
+          value: nextValue,
+        })
+      } catch (saveErr: unknown) {
+        await fetchBoard(true)
+        if (isMovingStage) {
+          toast.error('Salvo parcialmente', `Etapa atualizada, mas falhou ao salvar os dados: ${errorMessage(saveErr)}`)
+          return
+        }
+        throw saveErr
+      }
+
       await fetchBoard(true)
       modals.showLeadModal.value = false
       toast.success('Sucesso', 'Lead atualizado.')
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Falha ao atualizar lead.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Falha ao atualizar lead.'))
     } finally {
       modals.isSavingLead.value = false
-    }
-  }
-
-  const addNote = async () => {
-    if (!modals.newNoteContent.value.trim() || !modals.selectedLeadId.value) return
-    modals.isAddingNote.value = true
-    try {
-      const note = await api.post<any>(`/admin/crm/leads/${modals.selectedLeadId.value}/notes`, {
-        content: modals.newNoteContent.value.trim(),
-      })
-      modals.leadEdit.notes.unshift(note)
-      modals.newNoteContent.value = ''
-      await fetchBoard(true)
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Não foi possível salvar a anotação.')
-    } finally {
-      modals.isAddingNote.value = false
-    }
-  }
-
-  const confirmDeleteNote = (noteId: number) => {
-    modals.noteToDeleteId.value = noteId
-    modals.showDeleteNoteModal.value = true
-  }
-
-  const doDeleteNote = async () => {
-    if (!modals.noteToDeleteId.value) return
-    try {
-      await api.delete(`/admin/crm/notes/${modals.noteToDeleteId.value}`)
-      modals.leadEdit.notes = modals.leadEdit.notes.filter((n) => n.id !== modals.noteToDeleteId.value)
-      modals.showDeleteNoteModal.value = false
-      await fetchBoard(true)
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Falha ao excluir anotação.')
     }
   }
 
@@ -220,8 +205,8 @@ export const useCrmLeadActions = (
       modals.showLeadModal.value = false
       toast.success('Sucesso', 'Lead excluído.')
       await fetchBoard(true)
-    } catch (err: any) {
-      toast.error('Erro', err?.message || 'Falha ao excluir lead.')
+    } catch (err: unknown) {
+      toast.error('Erro', errorMessage(err, 'Falha ao excluir lead.'))
     }
   }
 
@@ -231,11 +216,9 @@ export const useCrmLeadActions = (
     openLeadDetails,
     openTrackedUserJourney,
     saveLeadInfo,
-    addNote,
-    confirmDeleteNote,
-    doDeleteNote,
     openConfirmDeleteLead,
     cancelDeleteLead,
     doDeleteLead,
+    ...noteActions,
   }
 }
