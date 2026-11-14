@@ -2,7 +2,7 @@
   <div class="ranking-card">
     <div class="ranking-header">
       <div>
-        <h3 class="ranking-title">Top 3 Criativos — Meta Ads</h3>
+        <h3 class="ranking-title">Top 3 Criativos • Meta Ads</h3>
         <p class="ranking-sub">Pódio visual com miniatura, posicionamento, leads, vendas e CPL por criativo</p>
       </div>
       <span class="platform-badge badge-meta">
@@ -104,7 +104,7 @@ const formatCurrency = (n: number) => formatMoney(n || 0, props.currency)
 const computeCPL = (item: MetaCreativeInsight) => {
   const spend = Number(item.spend || 0)
   const leads = Number(item.leads || 0)
-  if (leads <= 0 || spend <= 0) return '—'
+  if (leads <= 0 || spend <= 0) return '-'
   return formatCurrency(spend / leads)
 }
 </script>

@@ -55,7 +55,7 @@
         <div class="customer-stat">
           <span class="stat-label">Tempo até Compra</span>
           <span class="stat-value stat-mono truncate" style="color: var(--text-1)" :title="trackedUser.time_to_purchase">
-            {{ trackedUser.time_to_purchase || '—' }}
+            {{ trackedUser.time_to_purchase || '-' }}
           </span>
         </div>
         <div class="customer-stat">
@@ -69,6 +69,19 @@
           <span class="stat-value stat-mono truncate" style="color: var(--text-2)" :title="decodeUTM(trackedUser.last_utm_source)">
             {{ decodeUTM(trackedUser.last_utm_source) || 'Direto / Orgânico' }}
           </span>
+        </div>
+      </div>
+    </div>
+    <div v-else-if="source?.ltv !== undefined" class="customer-block">
+      <h4 class="customer-title">Resumo do Cliente</h4>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="customer-stat">
+          <span class="stat-label">LTV Acumulado do Cliente</span>
+          <span class="stat-value text-success">{{ formatCurrency(source.ltv) }}</span>
+        </div>
+        <div class="customer-stat">
+          <span class="stat-label">Valor desta Compra</span>
+          <span class="stat-value" style="color: var(--text-1)">{{ formatCurrency(source.purchase_value) }}</span>
         </div>
       </div>
     </div>
@@ -199,7 +212,7 @@ const itemTypeClass = (item: AggregatedItem, idx: number): string => {
   white-space: nowrap;
 }
 
-.item-ord { font-size: var(--fs-sm); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-3); }
+.item-ord { font-size: var(--fs-sm); font-family: var(--font-mono); color: var(--text-3); }
 .item-price { font-weight: var(--fw-semibold); color: var(--success); }
 
 .customer-title {

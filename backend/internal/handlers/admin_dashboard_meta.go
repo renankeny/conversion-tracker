@@ -169,31 +169,22 @@ func (h *AdminDashboardMeta) LiveInsights(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(raw)
 }
 
-func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Request) {
-	src, err := h.resolveMetaSource(r)
-	if err != nil {
-		writeJSON(w, http.StatusOK, []meta.CreativeInsight{})
-		return
-	}
-	since, until := parseSinceUntilDates(r)
+func (h *AdminDashboardMeta) loadCachedCreatives(ctx context.Context, src *resolvedMetaSource, since, until string, fromTime, toTime time.Time) ([]byte, error) {
 	timeRange := marshalMetaRange(since, until)
 	if timeRange == "" {
-		writeError(w, http.StatusBadRequest, "missing from and to dates")
-		return
+		return []byte("[]"), nil
 	}
-	fromTime, toTime := parseDashboardTimeBounds(r)
-	ver := h.qcache.DashboardVersion(r.Context(), src.accountID)
-
+	ver := h.qcache.DashboardVersion(ctx, src.accountID)
 	key := cache.HashQueryKey("meta:creatives:v4", strconv.FormatInt(src.accountID, 10), ver, src.credKey(), src.pixelName, src.adAccountID, timeRange)
-	raw, err := h.qcache.GetOrLoadWithNegCache(r.Context(), key, 3*time.Minute, 20*time.Second, []byte("[]"), func(ctx context.Context) ([]byte, error) {
+	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte("[]"), func(lctx context.Context) ([]byte, error) {
 		var (
 			ranking []meta.CreativeInsight
 			ferr    error
 		)
 		if src.oauthAcc != nil {
-			ranking, ferr = h.metaOAuth.FetchCreativeRanking(ctx, src.oauthAcc, src.adAccountID, timeRange)
+			ranking, ferr = h.metaOAuth.FetchCreativeRanking(lctx, src.oauthAcc, src.adAccountID, timeRange)
 		} else {
-			ranking, ferr = meta.FetchCreativeRanking(ctx, src.adAccountID, src.legacyToken, timeRange)
+			ranking, ferr = meta.FetchCreativeRanking(lctx, src.adAccountID, src.legacyToken, timeRange)
 		}
 		if ferr != nil {
 			return nil, ferr
@@ -202,7 +193,7 @@ func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Requ
 			ranking = ranking[:3]
 		}
 		if h.statsRepo != nil && len(ranking) > 0 {
-			h.statsRepo.EnrichCreativesWithTrackedConversions(ctx, repo.StatsFilter{
+			h.statsRepo.EnrichCreativesWithTrackedConversions(lctx, repo.StatsFilter{
 				AccountID: src.accountID, PixelName: src.pixelName, From: fromTime, To: toTime,
 			}, ranking)
 		}
@@ -211,6 +202,36 @@ func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Requ
 		}
 		return json.Marshal(ranking)
 	})
+}
+
+func (h *AdminDashboardMeta) LoadCreativeRankingBytesForPixel(ctx context.Context, p *domain.Pixel, since, until string, fromTime, toTime time.Time) []byte {
+	if since == "" || until == "" {
+		return []byte("[]")
+	}
+	src, err := h.resolveMetaSourceForPixel(ctx, p)
+	if err != nil {
+		return []byte("[]")
+	}
+	raw, err := h.loadCachedCreatives(ctx, src, since, until, fromTime, toTime)
+	if err != nil || len(raw) == 0 {
+		return []byte("[]")
+	}
+	return raw
+}
+
+func (h *AdminDashboardMeta) CreativeRanking(w http.ResponseWriter, r *http.Request) {
+	src, err := h.resolveMetaSource(r)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []meta.CreativeInsight{})
+		return
+	}
+	since, until := parseSinceUntilDates(r)
+	if since == "" || until == "" {
+		writeError(w, http.StatusBadRequest, "missing from and to dates")
+		return
+	}
+	fromTime, toTime := parseDashboardTimeBounds(r)
+	raw, err := h.loadCachedCreatives(r.Context(), src, since, until, fromTime, toTime)
 	if err != nil {
 		writeJSON(w, http.StatusOK, []meta.CreativeInsight{})
 		return

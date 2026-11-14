@@ -2,7 +2,7 @@
   <div class="ranking-card">
     <div class="ranking-header">
       <div>
-        <h3 class="ranking-title">Top 5 Palavras-Chave — Google Ads</h3>
+        <h3 class="ranking-title">Top 5 Palavras-Chave • Google Ads</h3>
         <p class="ranking-sub">Cliques, CPC, investimento e conversões reais atribuídas por GCLID</p>
       </div>
       <span class="platform-badge badge-google">

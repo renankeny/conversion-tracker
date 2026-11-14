@@ -52,9 +52,9 @@ export const useDashboardView = () => {
   const sentOf = (event: string): number => sumOf(event, 'count_sent')
   const failedTotal = computed(() => (summaryData.value?.events || []).reduce((s: number, r: CounterSummaryRow) => s + r.count_failed, 0))
 
-  const headerSubtitle = computed(() => `Visão executiva e auditoria de conversões — ${PERIOD_LABELS[dashboardStore.period]}`)
-  const chartSubtitle = computed(() => `Comparativo de eventos — ${PERIOD_LABELS[dashboardStore.period]}`)
-  const funnelSubtitle = computed(() => `Eventos do funil no período — ${PERIOD_LABELS[dashboardStore.period]}`)
+  const headerSubtitle = computed(() => `Visão executiva e auditoria de conversões • ${PERIOD_LABELS[dashboardStore.period]}`)
+  const chartSubtitle = computed(() => `Comparativo de eventos • ${PERIOD_LABELS[dashboardStore.period]}`)
+  const funnelSubtitle = computed(() => `Eventos do funil no período • ${PERIOD_LABELS[dashboardStore.period]}`)
   const purchasesSubtitle = computed(() => `${recentPurchases.value.length} compras recentes`)
   const selectedPixelObj = computed(() => pixelStore.pixels.find((p) => p.name === selectedPixel.value) || null)
   const activeCurrency = computed(() => selectedPixelObj.value?.tracker_config?.product_currency || 'BRL')

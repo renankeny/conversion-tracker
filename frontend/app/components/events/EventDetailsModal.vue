@@ -47,6 +47,7 @@
       <EventUserMatchCard
         :external-id="event.external_id"
         :tracked-user="trackedUser"
+        :source="source"
         :allow-user-details="allowUserDetails"
         @open-profile="openUserDetails"
       />

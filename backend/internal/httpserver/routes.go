@@ -17,10 +17,11 @@ func registerRoutes(r *chi.Mux, deps Deps, h routeHandlers) {
 	rlAPIEvents := rl.LimitByIP("api_events", 300, 1*time.Minute)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// WebSocket e streaming de mídia ficam fora do timeout curto de 15s.
+		// WebSocket, mídia e rotas públicas com janelas próprias de timeout.
 		r.Get("/ws/events", h.wsEvents.Handle)
 		r.Get("/media/whatsapp/{messageID}", h.whatsappMedia.ServeHTTP)
 		registerWhatsAppPublicRoutes(r, h)
+		registerPublicDashboardRoutes(r, h, rlPublicDash)
 
 		// Rotas HTTP padrão com timeout de 15s.
 		r.Group(func(r chi.Router) {
@@ -59,20 +60,6 @@ func registerRoutes(r *chi.Mux, deps Deps, h routeHandlers) {
 			})
 
 			registerWebhookRoutes(r, h)
-
-			r.Group(func(r chi.Router) {
-				r.Use(rlPublicDash)
-				r.Route("/public/dashboard/{token}", func(r chi.Router) {
-					r.Get("/meta", h.publicDashboard.Meta)
-					r.Get("/ads-summary", h.publicDashboard.AdsSummary)
-					r.Get("/summary", h.publicDashboard.Summary)
-					r.Get("/series", h.publicDashboard.Series)
-					r.Get("/geo", h.publicDashboard.Geo)
-					r.Get("/geo-by-event", h.publicDashboard.GeoByEvent)
-					r.Get("/purchases", h.publicDashboard.Purchases)
-					r.Get("/revenue", h.publicDashboard.Revenue)
-				})
-			})
 
 			r.Group(func(r chi.Router) {
 				r.Use(ShardSyncMiddleware(h.calibrator))
