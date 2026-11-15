@@ -109,7 +109,7 @@ func (h *Webhooks) Eduzz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fullName := util.FirstNonEmpty(p.Data.Buyer.Name, p.CusName)
-	first, last := util.SplitFullName(strings.ToLower(fullName))
+	first, last := util.SplitFullName(fullName)
 	email := util.FirstNonEmpty(p.Data.Buyer.Email, p.CusEmail)
 	phone := util.FirstNonEmpty(
 		p.Data.Buyer.CellphoneNullable, p.Data.Buyer.PhoneNullable,
@@ -154,6 +154,7 @@ func (h *Webhooks) Eduzz(w http.ResponseWriter, r *http.Request) {
 		ProductName: productName,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

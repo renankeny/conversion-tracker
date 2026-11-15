@@ -8,13 +8,11 @@
       </button>
       <button type="button" class="tab" :class="{ active: activeTab === 'meta' }" @click="activeTab = 'meta'">
         Meta
-        <span v-if="form.pixel_ids.filter(Boolean).length || form.meta_account_id" class="tab-count">
-          {{ form.pixel_ids.filter(Boolean).length || 1 }}
-        </span>
+        <span v-if="metaTabCount > 0" class="tab-count">{{ metaTabCount }}</span>
       </button>
       <button type="button" class="tab" :class="{ active: activeTab === 'tiktok' }" @click="activeTab = 'tiktok'">
         TikTok
-        <span v-if="form.tiktok_pixel_ids.filter(Boolean).length" class="tab-count">{{ form.tiktok_pixel_ids.filter(Boolean).length }}</span>
+        <span v-if="tiktokTabCount > 0" class="tab-count">{{ tiktokTabCount }}</span>
       </button>
       <button type="button" class="tab" :class="{ active: activeTab === 'gads' }" @click="activeTab = 'gads'">
         Google Ads
@@ -38,13 +36,16 @@
       :form="form"
       :pixel-ids-error="errors.pixel_ids"
       :is-editing="isEditing"
+      :has-saved-manual-meta-token="hasSavedManualMetaToken"
       v-model:show-tokens="showTokens"
+      @clear-manual-meta-token="clearManualMetaToken"
     />
 
     <PixelAdvancedSection
       v-show="activeTab === 'gads' || activeTab === 'ga4'"
       :active-tab="activeTab"
       :form="form"
+      :has-saved-ga4-secret="Boolean(pixel?.ga4_api_secret)"
     />
 
     <div v-show="activeTab === 'tracker'" class="tab-content">
@@ -81,9 +82,14 @@ const {
   domainsInput,
   showTokens,
   errors,
+  hasSavedManualMetaToken,
+  clearManualMetaToken,
   validate,
   buildPayload,
 } = usePixelForm(props)
+
+const metaTabCount = computed(() => form.pixel_ids.map((s) => s.trim()).filter(Boolean).length)
+const tiktokTabCount = computed(() => form.tiktok_pixel_ids.map((s) => s.trim()).filter(Boolean).length)
 
 const onSubmit = () => {
   if (!validate()) return
@@ -96,7 +102,7 @@ defineExpose({ submit: onSubmit })
 <style scoped>
 .pixel-form { display: flex; flex-direction: column; gap: 1.25rem; }
 .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); padding: 0; margin: 0; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
-.tab { padding: 0.75rem 1.25rem; background: transparent; border: none; color: var(--text-2); font-size: var(--fs-lg); font-weight: var(--fw-medium); cursor: pointer; position: relative; transition: color 0.15s; flex-shrink: 0; }
+.tab { padding: 0.75rem 1.25rem; background: transparent; border: none; color: var(--text-2); font-size: var(--fs-lg); font-weight: var(--fw-medium); cursor: pointer; position: relative; transition: color 0.15s; flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.375rem; }
 .tab:hover { color: var(--text-1); }
 .tab.active { color: var(--brand); }
 .tab.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--brand); }

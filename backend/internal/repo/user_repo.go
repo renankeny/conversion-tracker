@@ -147,12 +147,8 @@ func (r *UserRepo) Update(ctx context.Context, u *domain.TrackedUser) error {
 }
 
 // UpdateByID atualiza um tracked_user por ID (PK), permitindo editar
-// qualquer campo editável a partir do painel admin. Diferente do Upsert,
-// não usa external_id como chave de conflito e não preserva valores —
-// sobrescreve com o que vier no payload (admin assume responsabilidade).
-//
-// Campos não-editáveis (preservados): id, account_id (uso por owner via
-// outra rota), created_at; updated_at é sempre atualizado pra NOW().
+// qualquer campo editável a partir do painel admin, sobrescrevendo os valores
+// diretamente conforme enviado no payload administrativo.
 func (r *UserRepo) UpdateByID(ctx context.Context, u *domain.TrackedUser) error {
 	const q = `
 	UPDATE tracked_users SET
@@ -166,11 +162,12 @@ func (r *UserRepo) UpdateByID(ctx context.Context, u *domain.TrackedUser) error 
 		country = $14, state = $15, city = $16, postal_code = $17,
 		first_name = $18, last_name = $19, email = $20, phone = $21,
 		url = $22,
-		first_url = CASE WHEN tracked_users.first_url = '' THEN $22 ELSE tracked_users.first_url END,
-		first_utm_source = $23, first_utm_medium = $24,
-		first_utm_campaign = $25, first_utm_content = $26, first_utm_term = $27,
-		last_utm_source = $28, last_utm_medium = $29,
-		last_utm_campaign = $30, last_utm_content = $31, last_utm_term = $32,
+		first_url = $23,
+		first_utm_source = $24, first_utm_medium = $25,
+		first_utm_campaign = $26, first_utm_content = $27, first_utm_term = $28,
+		last_utm_source = $29, last_utm_medium = $30,
+		last_utm_campaign = $31, last_utm_content = $32, last_utm_term = $33,
+		ctwa_clid = $34, ga4_client_id = $35, ga4_session_id = $36,
 		updated_at = NOW()
 	WHERE id = $1
 	`
@@ -183,11 +180,12 @@ func (r *UserRepo) UpdateByID(ctx context.Context, u *domain.TrackedUser) error 
 		u.ClientIP, u.ClientUserAgent,
 		u.Country, u.State, u.City, u.PostalCode,
 		u.FirstName, u.LastName, u.Email, u.Phone,
-		u.URL,
+		u.URL, u.FirstURL,
 		u.FirstUTMSource, u.FirstUTMMedium,
 		u.FirstUTMCampaign, u.FirstUTMContent, u.FirstUTMTerm,
 		u.LastUTMSource, u.LastUTMMedium,
 		u.LastUTMCampaign, u.LastUTMContent, u.LastUTMTerm,
+		u.CtwaClid, u.GA4ClientID, u.GA4SessionID,
 	)
 	if err != nil {
 		return err
@@ -207,4 +205,3 @@ func (r *UserRepo) UpdateEmail(ctx context.Context, id int64, email string) erro
 	_, err := r.pool.Exec(ctx, `UPDATE tracked_users SET email = $1, updated_at = NOW() WHERE id = $2`, email, id)
 	return err
 }
-

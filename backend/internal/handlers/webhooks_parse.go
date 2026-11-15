@@ -149,6 +149,9 @@ func anyString(v any) string {
 }
 
 func webhookPixelQuery(r *http.Request) string {
-	return util.FirstNonEmpty(r.URL.Query().Get("pixel"), r.URL.Query().Get("token"))
+	return util.FirstNonEmpty(
+		strings.TrimSpace(r.URL.Query().Get("pixel")),
+		strings.TrimSpace(r.URL.Query().Get("pixel_token")),
+	)
 }
 

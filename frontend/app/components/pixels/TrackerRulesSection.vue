@@ -1,6 +1,5 @@
 <template>
   <div class="rules-sections">
-    <!-- 5. Page rules -->
     <section class="config-section">
       <header class="section-header">
         <div class="section-title-row">
@@ -33,10 +32,10 @@
             @update:model-value="(v) => updateRuleField(idx, 'event', v)"
           />
           <BaseInput
-            :model-value="formatPrice(rule.value)"
+            :model-value="ruleValueDrafts[idx] ?? ''"
             label="Valor (opcional)"
-            type="number"
-            placeholder="0"
+            inputmode="decimal"
+            placeholder="0.00"
             @update:model-value="(v) => updateRuleValue(idx, v)"
           />
           <BaseInput
@@ -57,7 +56,6 @@
       </div>
     </section>
 
-    <!-- 6. Form mappings -->
     <section class="config-section">
       <header class="section-header">
         <h4 class="section-title">Mapeamento de campos de formulário</h4>
@@ -109,33 +107,50 @@ const config = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
-const formatPrice = (n: number | undefined | null): string => {
-  if (n === undefined || n === null || typeof n !== 'number' || Number.isNaN(n)) return ''
-  return n === 0 ? '' : String(n)
-}
+const ruleValueDrafts = ref<string[]>([])
+let internalRuleUpdate = false
 
-const parsePrice = (raw: string): number => {
-  if (!raw) return 0
-  const n = parseFloat(String(raw).replace(',', '.').trim())
-  return Number.isNaN(n) ? 0 : n
+watch(
+  () => props.modelValue.page_rules,
+  (rules) => {
+    if (internalRuleUpdate) {
+      internalRuleUpdate = false
+      return
+    }
+    ruleValueDrafts.value = (rules || []).map((r) =>
+      typeof r.value === 'number' && Number.isFinite(r.value) ? String(r.value) : '',
+    )
+  },
+  { immediate: true },
+)
+
+const parsePrice = (raw: string): number | undefined => {
+  const clean = String(raw || '').replace(',', '.').trim()
+  if (!clean) return undefined
+  const n = parseFloat(clean)
+  return Number.isNaN(n) || n < 0 ? undefined : n
 }
 
 const updateRuleField = (idx: number, field: 'page' | 'event' | 'currency', value: string) => {
   const rules = [...(config.value.page_rules || [])]
   if (!rules[idx]) return
   rules[idx] = { ...rules[idx], [field]: value }
+  internalRuleUpdate = true
   config.value = { ...config.value, page_rules: rules }
 }
 
 const updateRuleValue = (idx: number, raw: string) => {
+  ruleValueDrafts.value[idx] = raw
   const rules = [...(config.value.page_rules || [])]
   if (!rules[idx]) return
-  const v = raw.trim() === '' ? undefined : parsePrice(raw)
-  rules[idx] = { ...rules[idx], value: v }
+  rules[idx] = { ...rules[idx], value: parsePrice(raw) }
+  internalRuleUpdate = true
   config.value = { ...config.value, page_rules: rules }
 }
 
 const addPageRule = () => {
+  ruleValueDrafts.value.push('')
+  internalRuleUpdate = true
   config.value = {
     ...config.value,
     page_rules: [...(config.value.page_rules || []), { page: '', event: '', currency: 'BRL' }],
@@ -143,8 +158,10 @@ const addPageRule = () => {
 }
 
 const removePageRule = (idx: number) => {
+  ruleValueDrafts.value.splice(idx, 1)
   const next = [...(config.value.page_rules || [])]
   next.splice(idx, 1)
+  internalRuleUpdate = true
   config.value = { ...config.value, page_rules: next }
 }
 
@@ -175,7 +192,7 @@ const formLastName = makeMappingComputed('last_name')
 .section-title-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .section-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--text-strong); }
 .section-hint { font-size: var(--fs-base); color: var(--text-2); line-height: 1.5; }
-.section-hint code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-soft); padding: 0.0625rem 0.375rem; border-radius: 4px; }
+.section-hint code { font-family: var(--font-mono); background: var(--surface-soft); padding: 0.0625rem 0.375rem; border-radius: 4px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
 .rule-row { position: relative; display: flex; align-items: flex-end; gap: 0.5rem; background: var(--surface-2); padding: 0.75rem; border: 1px solid var(--border-soft); border-radius: 10px; margin-top: 0.5rem; }

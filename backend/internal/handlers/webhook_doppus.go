@@ -94,7 +94,7 @@ func (h *Webhooks) Doppus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Customer.Name))
+	first, last := util.SplitFullName(p.Customer.Name)
 
 	var prodID, prodName string
 	if len(p.Items) > 0 {
@@ -122,6 +122,7 @@ func (h *Webhooks) Doppus(w http.ResponseWriter, r *http.Request) {
 		ProductName: prodName,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

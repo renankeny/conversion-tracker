@@ -124,6 +124,7 @@ func (h *Webhooks) PagTrust(w http.ResponseWriter, r *http.Request) {
 		ProductName: p.Data.Product.Name,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  raw,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

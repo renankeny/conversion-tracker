@@ -12,7 +12,6 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
-// GoogleAdsAccountRepo persiste contas Google Ads conectadas via OAuth.
 type GoogleAdsAccountRepo struct {
 	pool *pgxpool.Pool
 }
@@ -21,7 +20,7 @@ func NewGoogleAdsAccountRepo(pool *pgxpool.Pool) *GoogleAdsAccountRepo {
 	return &GoogleAdsAccountRepo{pool: pool}
 }
 
-const googleAdsAccountColumns = `id, account_id, name, customer_id, login_customer_id,
+const googleAdsAccountColumns = `id, account_id, name, customer_id, customer_name, login_customer_id,
 		conversion_action_id, conversion_actions, refresh_token, oauth_email, oauth_picture_url, enabled,
 		created_at, updated_at`
 
@@ -30,8 +29,6 @@ func (r *GoogleAdsAccountRepo) FindByID(ctx context.Context, id int64) (*domain.
 	return scanGoogleAdsAccount(r.pool.QueryRow(ctx, q, id))
 }
 
-// List retorna todas as contas (uso owner). Use ListByAccount para filtrar
-// por conta TrackFind (uso member).
 func (r *GoogleAdsAccountRepo) List(ctx context.Context) ([]domain.GoogleAdsAccount, error) {
 	q := `SELECT ` + googleAdsAccountColumns + ` FROM google_ads_accounts ORDER BY id DESC`
 	rows, err := r.pool.Query(ctx, q)
@@ -50,7 +47,6 @@ func (r *GoogleAdsAccountRepo) List(ctx context.Context) ([]domain.GoogleAdsAcco
 	return out, rows.Err()
 }
 
-// ListByAccount filtra por conta TrackFind (multi-tenant).
 func (r *GoogleAdsAccountRepo) ListByAccount(ctx context.Context, accountID int64) ([]domain.GoogleAdsAccount, error) {
 	if accountID == 0 {
 		return r.List(ctx)
@@ -91,19 +87,16 @@ func (r *GoogleAdsAccountRepo) Create(ctx context.Context, a *domain.GoogleAdsAc
 		return err
 	}
 	const q = `INSERT INTO google_ads_accounts
-	    (account_id, name, customer_id, login_customer_id, conversion_action_id,
+	    (account_id, name, customer_id, customer_name, login_customer_id, conversion_action_id,
 	     conversion_actions, refresh_token, oauth_email, oauth_picture_url, enabled)
-	    VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10)
+	    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11)
 	    RETURNING id, created_at, updated_at`
 	return r.pool.QueryRow(ctx, q,
-		a.AccountID, a.Name, a.CustomerID, a.LoginCustomerID, a.ConversionActionID,
+		a.AccountID, a.Name, a.CustomerID, a.CustomerName, a.LoginCustomerID, a.ConversionActionID,
 		actionsJSON, encTok, a.OAuthEmail, a.OAuthPictureURL, a.Enabled,
 	).Scan(&a.ID, &a.CreatedAt, &a.UpdatedAt)
 }
 
-// Update atualiza campos editaveis pelo painel (nome + IDs + actions + enabled).
-// refresh_token e oauth_email sao gerenciados pelo fluxo OAuth via
-// SetTokens / ClearTokens.
 func (r *GoogleAdsAccountRepo) Update(ctx context.Context, a *domain.GoogleAdsAccount) error {
 	if a.ConversionActions == nil {
 		a.ConversionActions = []domain.GoogleAdsConversionAction{}
@@ -115,14 +108,15 @@ func (r *GoogleAdsAccountRepo) Update(ctx context.Context, a *domain.GoogleAdsAc
 	const q = `UPDATE google_ads_accounts
 	           SET name = $1,
 	               customer_id = $2,
-	               login_customer_id = $3,
-	               conversion_actions = $4::jsonb,
-	               enabled = $5,
+	               customer_name = $3,
+	               login_customer_id = $4,
+	               conversion_actions = $5::jsonb,
+	               enabled = $6,
 	               updated_at = NOW()
-	           WHERE id = $6
+	           WHERE id = $7
 	           RETURNING updated_at`
 	err = r.pool.QueryRow(ctx, q,
-		a.Name, a.CustomerID, a.LoginCustomerID, actionsJSON, a.Enabled, a.ID,
+		a.Name, a.CustomerID, a.CustomerName, a.LoginCustomerID, actionsJSON, a.Enabled, a.ID,
 	).Scan(&a.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
@@ -175,6 +169,10 @@ func (r *GoogleAdsAccountRepo) ClearTokens(ctx context.Context, id int64) error 
 	           SET refresh_token = '',
 	               oauth_email = '',
 	               oauth_picture_url = '',
+	               customer_id = '',
+	               customer_name = '',
+	               login_customer_id = '',
+	               conversion_actions = '[]'::jsonb,
 	               updated_at = NOW()
 	           WHERE id = $1`
 	_, err := r.pool.Exec(ctx, q, id)
@@ -185,7 +183,7 @@ func scanGoogleAdsAccount(row rowScanner) (*domain.GoogleAdsAccount, error) {
 	var a domain.GoogleAdsAccount
 	var actionsJSON []byte
 	err := row.Scan(
-		&a.ID, &a.AccountID, &a.Name, &a.CustomerID, &a.LoginCustomerID,
+		&a.ID, &a.AccountID, &a.Name, &a.CustomerID, &a.CustomerName, &a.LoginCustomerID,
 		&a.ConversionActionID, &actionsJSON, &a.RefreshToken, &a.OAuthEmail, &a.OAuthPictureURL, &a.Enabled,
 		&a.CreatedAt, &a.UpdatedAt,
 	)

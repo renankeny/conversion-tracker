@@ -82,7 +82,7 @@ const emit = defineEmits<{
 
 .card-tag {
   font-size: var(--fs-xs);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-weight: var(--fw-semibold);
   background: var(--surface-soft);
   color: var(--text-2);
@@ -128,7 +128,6 @@ const emit = defineEmits<{
   background: var(--brand-text);
   border-radius: 50%;
   transition: transform 0.2s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .toggle.checked .slider {

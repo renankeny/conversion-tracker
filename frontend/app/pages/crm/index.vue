@@ -143,7 +143,12 @@
         @delete-note="confirmDeleteNote"
       />
 
-      <UserDetailsModal v-model="showTrackedUserModal" :user="selectedTrackedUser" />
+      <UserDetailsModal
+        v-model="showTrackedUserModal"
+        :user="selectedTrackedUser"
+        @saved="(u) => { selectedTrackedUser = u; if (selectedLeadTrackedUser?.id === u.id) selectedLeadTrackedUser = u; fetchBoard(true) }"
+        @deleted="() => { showTrackedUserModal = false; selectedTrackedUser = null; selectedLeadTrackedUser = null; fetchBoard(true) }"
+      />
     </ClientOnly>
   </div>
 </template>

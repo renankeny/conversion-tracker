@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,16 +21,16 @@ func (h *AdminPixels) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+		writeError(w, http.StatusBadRequest, "ID inválido")
 		return
 	}
 	existing, err := h.repo.FindByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "not found")
+			writeError(w, http.StatusNotFound, "pixel não encontrado")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "load error")
+		writeError(w, http.StatusInternalServerError, "erro ao carregar pixel")
 		return
 	}
 	scope := TenantFromContext(r.Context())
@@ -39,111 +40,89 @@ func (h *AdminPixels) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	var in pixelInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+		writeError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
 	if err := validatePixelInput(in, false); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	oldName := existing.Name
-	if in.Name != "" {
-		existing.Name = strings.TrimSpace(in.Name)
+	if trimmedName := strings.TrimSpace(in.Name); trimmedName != "" && trimmedName != existing.Name {
+		writeError(w, http.StatusBadRequest, "o identificador (slug) do pixel não pode ser alterado após a criação; altere o campo Rótulo")
+		return
 	}
-	if in.Label != "" {
-		existing.Label = in.Label
+	if in.Label != nil {
+		existing.Label = strings.TrimSpace(*in.Label)
 	}
-	oldMetaTokens := make(map[string]string, len(existing.PixelIDs))
-	for i, pid := range existing.PixelIDs {
-		if i < len(existing.AccessTokens) {
-			oldMetaTokens[pid] = existing.AccessTokens[i]
-		}
-	}
-	oldMetaSlice := append([]string(nil), existing.AccessTokens...)
 
-	oldTikTokTokens := make(map[string]string, len(existing.TikTokPixelIDs))
-	for i, pid := range existing.TikTokPixelIDs {
-		if i < len(existing.TikTokAccessTokens) {
-			oldTikTokTokens[pid] = existing.TikTokAccessTokens[i]
-		}
-	}
-	oldTikTokSlice := append([]string(nil), existing.TikTokAccessTokens...)
+	oldMetaTokens := indexTokensByPixelID(existing.PixelIDs, existing.AccessTokens)
+	oldTikTokTokens := indexTokensByPixelID(existing.TikTokPixelIDs, existing.TikTokAccessTokens)
 
 	if in.PixelIDs != nil {
-		existing.PixelIDs = in.PixelIDs
+		existing.PixelIDs = cleanStringSlice(in.PixelIDs)
 	}
 	if in.AccessTokens != nil {
-		existing.AccessTokens = mergeTokens(existing.PixelIDs, in.AccessTokens, oldMetaTokens, oldMetaSlice)
+		existing.AccessTokens = mergeTokens(existing.PixelIDs, in.AccessTokens, oldMetaTokens)
 	} else if in.PixelIDs != nil {
-		existing.AccessTokens = mergeTokens(existing.PixelIDs, make([]string, len(existing.PixelIDs)), oldMetaTokens, oldMetaSlice)
+		existing.AccessTokens = mergeTokens(existing.PixelIDs, nil, oldMetaTokens)
 	}
-	if in.TestCodes != nil {
-		existing.TestCodes = padOrTrim(in.TestCodes, len(existing.PixelIDs))
-	}
+	existing.TestCodes = []string{}
 	if in.Domains != nil {
 		existing.Domains = cleanDomains(in.Domains)
 	}
 	if in.TikTokPixelIDs != nil {
-		existing.TikTokPixelIDs = in.TikTokPixelIDs
+		existing.TikTokPixelIDs = cleanStringSlice(in.TikTokPixelIDs)
 	}
 	if in.TikTokAccessTokens != nil {
-		existing.TikTokAccessTokens = mergeTokens(existing.TikTokPixelIDs, in.TikTokAccessTokens, oldTikTokTokens, oldTikTokSlice)
+		existing.TikTokAccessTokens = mergeTokens(existing.TikTokPixelIDs, in.TikTokAccessTokens, oldTikTokTokens)
 	} else if in.TikTokPixelIDs != nil {
-		existing.TikTokAccessTokens = mergeTokens(existing.TikTokPixelIDs, make([]string, len(existing.TikTokPixelIDs)), oldTikTokTokens, oldTikTokSlice)
+		existing.TikTokAccessTokens = mergeTokens(existing.TikTokPixelIDs, nil, oldTikTokTokens)
 	}
-	if in.TikTokTestCodes != nil {
-		existing.TikTokTestCodes = padOrTrim(in.TikTokTestCodes, len(existing.TikTokPixelIDs))
-	}
+	existing.TikTokTestCodes = []string{}
 	if in.GoogleAdsAccountID != nil {
 		existing.GoogleAdsAccountID = nilIfZeroInt64(*in.GoogleAdsAccountID)
+		if existing.GoogleAdsAccountID == nil {
+			existing.GoogleAdsCustomerID = ""
+			existing.GoogleAdsCustomerName = ""
+			existing.GoogleAdsLoginCustomerID = ""
+		}
 	}
 	if in.MetaAccountID != nil {
 		existing.MetaAccountID = nilIfZeroInt64(*in.MetaAccountID)
+		if existing.MetaAccountID == nil && in.MetaAdAccountID == nil {
+			existing.MetaAdAccountID = ""
+		}
 	}
 	if in.TrackerConfig != nil {
 		existing.TrackerConfig = *in.TrackerConfig
 	}
-	if in.Enabled != nil {
-		existing.Enabled = *in.Enabled
+	applyOptionalPixelFields(existing, in)
+	if existing.GA4MeasurementID == "" {
+		existing.GA4APISecret = ""
 	}
-	if in.TrackingHost != nil {
-		existing.TrackingHost = normalizeHost(*in.TrackingHost)
-	}
-	if in.GA4MeasurementID != nil {
-		existing.GA4MeasurementID = strings.TrimSpace(*in.GA4MeasurementID)
-	}
-	if in.GA4APISecret != nil {
-		val := strings.TrimSpace(*in.GA4APISecret)
-		if !isMaskedOrEmpty(val) {
-			existing.GA4APISecret = val
-		} else if val == "" && existing.GA4MeasurementID == "" {
-			existing.GA4APISecret = ""
-		}
-	}
-	if in.MetaPermanentToken != nil {
-		val := strings.TrimSpace(*in.MetaPermanentToken)
-		if !isMaskedOrEmpty(val) {
-			existing.MetaPermanentToken = val
-		}
-	}
-	if in.MetaAdAccountID != nil {
-		existing.MetaAdAccountID = strings.TrimSpace(*in.MetaAdAccountID)
-	}
+
+	prevAccountID := existing.AccountID
+	isAccountTransfer := false
 	if in.AccountID != nil && *in.AccountID > 0 && *in.AccountID != existing.AccountID {
 		targetAccID, accErr := ResolveTargetAccountID(r.Context(), h.pool, in.AccountID)
 		if accErr != nil {
 			writeError(w, http.StatusForbidden, accErr.Error())
 			return
 		}
+		isAccountTransfer = true
 		existing.AccountID = targetAccID
 		if in.GoogleAdsAccountID == nil && existing.GoogleAdsAccountID != nil {
 			if RequireAccountGoogleAds(r.Context(), h.gads, existing.AccountID, existing.GoogleAdsAccountID) != nil {
 				existing.GoogleAdsAccountID = nil
+				existing.GoogleAdsCustomerID = ""
+				existing.GoogleAdsCustomerName = ""
+				existing.GoogleAdsLoginCustomerID = ""
 			}
 		}
 		if in.MetaAccountID == nil && existing.MetaAccountID != nil {
 			if RequireAccountMetaAds(r.Context(), h.metaAccs, existing.AccountID, existing.MetaAccountID) != nil {
 				existing.MetaAccountID = nil
+				existing.MetaAdAccountID = ""
 			}
 		}
 	}
@@ -155,26 +134,37 @@ func (h *AdminPixels) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
-	if in.AggregationEnabled != nil {
-		existing.AggregationEnabled = *in.AggregationEnabled
+	if !isAccountTransfer {
+		hasOtherChannels := len(existing.TikTokPixelIDs) > 0 || existing.GoogleAdsAccountID != nil || existing.GA4MeasurementID != ""
+		if len(existing.PixelIDs) == 0 && existing.MetaAccountID != nil && !hasOtherChannels {
+			writeError(w, http.StatusBadRequest, "selecione pelo menos um Pixel ID da Meta para disparar eventos via OAuth")
+			return
+		}
+		if len(existing.PixelIDs) == 0 && existing.MetaAccountID == nil && !hasOtherChannels {
+			writeError(w, http.StatusBadRequest, "configure pelo menos um canal (Meta, TikTok, Google Ads ou GA4)")
+			return
+		}
 	}
-	if in.AggregationWindowMinutes != nil {
-		existing.AggregationWindowMinutes = *in.AggregationWindowMinutes
-	}
-	if len(existing.PixelIDs) == 0 && existing.MetaAccountID == nil && len(existing.TikTokPixelIDs) == 0 && existing.GoogleAdsAccountID == nil && existing.GA4MeasurementID == "" {
-		writeError(w, http.StatusBadRequest, "configure pelo menos um canal (Meta, TikTok, Google Ads ou GA4)")
-		return
-	}
+	syncPixelGoogleAdsDefaults(r.Context(), h.gads, existing)
 	if err := h.repo.Update(r.Context(), existing); err != nil {
-		writeError(w, http.StatusInternalServerError, "update error: "+err.Error())
+		if isDuplicateKey(err) {
+			writeError(w, http.StatusConflict, "já existe um pixel com este nome (slug)")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "erro ao atualizar pixel: "+err.Error())
 		return
+	}
+	if isAccountTransfer {
+		if migErr := h.repo.MigratePixelAccountData(r.Context(), existing.Name, prevAccountID, existing.AccountID); migErr != nil {
+			slog.Warn("migrate pixel account data", "pixel_name", existing.Name, "error", migErr)
+		}
 	}
 	h.refreshDomains(r.Context())
-	h.repo.InvalidateCache(r.Context(), oldName, existing.Name, existing.PublicToken, existing.DashboardShareToken)
+	h.repo.InvalidateCache(r.Context(), existing.Name, existing.PublicToken, existing.DashboardShareToken)
+	h.repo.BumpDashboardCache(r.Context(), existing.AccountID)
 	writeJSON(w, http.StatusOK, existing.PublicView())
 }
 
-// Delete remove o pixel. Exige `confirm: true` no body.
 func (h *AdminPixels) Delete(w http.ResponseWriter, r *http.Request) {
 	if !auth.CanEditPixels(r.Context()) {
 		writeError(w, http.StatusForbidden, "você não tem permissão para editar pixels")
@@ -182,16 +172,16 @@ func (h *AdminPixels) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+		writeError(w, http.StatusBadRequest, "ID inválido")
 		return
 	}
 	existing, err := h.repo.FindByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "not found")
+			writeError(w, http.StatusNotFound, "pixel não encontrado")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "load error")
+		writeError(w, http.StatusInternalServerError, "erro ao carregar pixel")
 		return
 	}
 	scope := TenantFromContext(r.Context())
@@ -204,14 +194,15 @@ func (h *AdminPixels) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if !body.Confirm {
-		writeError(w, http.StatusConflict, "destructive operation requires {\"confirm\": true} in body")
+		writeError(w, http.StatusConflict, "operação destrutiva exige {\"confirm\": true}")
 		return
 	}
 	if err := h.repo.Delete(r.Context(), id); err != nil {
-		writeError(w, http.StatusInternalServerError, "delete error")
+		writeError(w, http.StatusInternalServerError, "erro ao excluir pixel")
 		return
 	}
 	h.refreshDomains(r.Context())
 	h.repo.InvalidateCache(r.Context(), existing.Name, existing.PublicToken, existing.DashboardShareToken)
+	h.repo.BumpDashboardCache(r.Context(), existing.AccountID)
 	w.WriteHeader(http.StatusNoContent)
 }

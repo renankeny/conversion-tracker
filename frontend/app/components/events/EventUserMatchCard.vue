@@ -15,7 +15,7 @@
 
         <div v-if="externalId" class="user-id-line">
           <span class="id-label">ID:</span>
-          <span class="id-val font-mono">{{ externalId }}</span>
+          <span class="id-val">{{ externalId }}</span>
           <button
             type="button"
             class="id-copy-action"
@@ -141,7 +141,7 @@ const copyExternalId = async () => {
 .badge-identified { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--brand); background: var(--brand-soft); padding: 0.0625rem 0.375rem; border-radius: 4px; }
 .user-id-line { display: flex; align-items: center; gap: 0.375rem; font-size: var(--fs-xs); color: var(--text-3); }
 .id-label { font-weight: var(--fw-semibold); color: var(--text-3); }
-.id-val { color: var(--text-2); }
+.id-val { font-family: var(--font-mono); color: var(--text-2); }
 .id-copy-action { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.35rem; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); border-radius: 4px; background: var(--surface-deep); border: 1px solid var(--border-soft); color: var(--text-3); cursor: pointer; transition: all 0.15s ease; }
 .id-copy-action:hover { border-color: var(--brand); color: var(--brand); }
 .id-copy-action.copied { color: var(--success); border-color: var(--success); }

@@ -26,8 +26,19 @@ type MetaAccount struct {
 	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
-func (a MetaAccount) IsConnected() bool {
+func (a MetaAccount) HasRawToken() bool {
 	return strings.TrimSpace(a.VaultTokenEncrypted) != ""
+}
+
+func (a MetaAccount) IsTokenExpired() bool {
+	if !a.HasRawToken() || a.TokenExpiresAt == nil || a.TokenExpiresAt.IsZero() {
+		return false
+	}
+	return time.Now().After(*a.TokenExpiresAt)
+}
+
+func (a MetaAccount) IsConnected() bool {
+	return a.HasRawToken() && !a.IsTokenExpired()
 }
 
 func (a MetaAccount) HasAdAccount() bool {
@@ -48,6 +59,8 @@ func (a MetaAccount) PublicView() map[string]any {
 		"name":                     a.Name,
 		"connected":                a.IsConnected(),
 		"oauth_connected":          a.IsConnected(),
+		"token_expired":            a.IsTokenExpired(),
+		"ready":                    a.HasAdAccount(),
 		"oauth_user_id":            a.OAuthUserID,
 		"oauth_name":               a.OAuthName,
 		"oauth_email":              a.OAuthEmail,

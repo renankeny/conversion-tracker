@@ -83,7 +83,7 @@ func (h *Webhooks) Ticto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Customer.Name))
+	first, last := util.SplitFullName(p.Customer.Name)
 	phone := parseTictoPhone(p.Customer.Phone)
 
 	value := util.ParseMoneyCents(p.Order.PaidAmount)
@@ -115,6 +115,7 @@ func (h *Webhooks) Ticto(w http.ResponseWriter, r *http.Request) {
 		ProductName: util.FirstNonEmpty(p.Item.ProductName, p.Item.Name),
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

@@ -90,18 +90,22 @@ func ReleaseWebhookDedup(ctx context.Context, rdb *redis.Client, accountID int64
 	_ = rdb.Del(ctx, key).Err()
 }
 
-func dispatchDoneKey(pixelName, eventID string) string {
+func dispatchDoneKey(accountID int64, pixelName, eventID string) string {
+	return fmt.Sprintf("dispatch:done:%d:%s:%s", accountID, pixelName, eventID)
+}
+
+func legacyDispatchDoneKey(pixelName, eventID string) string {
 	return fmt.Sprintf("dispatch:done:%s:%s", pixelName, eventID)
 }
 
 // LoadDoneTargets retorna todos os sub-destinos (<channel>:<target_id>) que já receberam
 // com sucesso este event_id em tentativas anteriores do worker.
-func LoadDoneTargets(ctx context.Context, rdb *redis.Client, pixelName, eventID string) map[string]bool {
+func LoadDoneTargets(ctx context.Context, rdb *redis.Client, accountID int64, pixelName, eventID string) map[string]bool {
 	out := make(map[string]bool)
 	if rdb == nil || pixelName == "" || eventID == "" {
 		return out
 	}
-	members, err := rdb.SMembers(ctx, dispatchDoneKey(pixelName, eventID)).Result()
+	members, err := rdb.SUnion(ctx, dispatchDoneKey(accountID, pixelName, eventID), legacyDispatchDoneKey(pixelName, eventID)).Result()
 	if err != nil {
 		return out
 	}
@@ -114,7 +118,7 @@ func LoadDoneTargets(ctx context.Context, rdb *redis.Client, pixelName, eventID 
 }
 
 // MarkTargetsDone grava os sub-destinos concluídos com sucesso no Redis (TTL 48h).
-func MarkTargetsDone(ctx context.Context, rdb *redis.Client, pixelName, eventID string, targets []string) {
+func MarkTargetsDone(ctx context.Context, rdb *redis.Client, accountID int64, pixelName, eventID string, targets []string) {
 	if rdb == nil || pixelName == "" || eventID == "" || len(targets) == 0 {
 		return
 	}
@@ -127,10 +131,18 @@ func MarkTargetsDone(ctx context.Context, rdb *redis.Client, pixelName, eventID 
 	if len(args) == 0 {
 		return
 	}
-	key := dispatchDoneKey(pixelName, eventID)
+	key := dispatchDoneKey(accountID, pixelName, eventID)
 	pipe := rdb.Pipeline()
 	pipe.SAdd(ctx, key, args...)
 	pipe.Expire(ctx, key, DispatchTargetsTTL)
 	_, _ = pipe.Exec(ctx)
+}
+
+// ClearDoneTargets remove os sub-destinos concluídos do Redis (chave nova e legada).
+func ClearDoneTargets(ctx context.Context, rdb *redis.Client, accountID int64, pixelName, eventID string) {
+	if rdb == nil || pixelName == "" || eventID == "" {
+		return
+	}
+	_ = rdb.Del(ctx, dispatchDoneKey(accountID, pixelName, eventID), legacyDispatchDoneKey(pixelName, eventID)).Err()
 }
 

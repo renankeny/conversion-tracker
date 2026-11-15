@@ -13,12 +13,10 @@ export interface FormMappings {
 }
 
 export interface TrackerConfig {
-  // Produto / checkout
   product_value: number[]
   product_currency: string
   product_checkout: string
 
-  // Auto-triggers
   auto_page_view: boolean
   auto_checkout_buttons: boolean
   auto_form_scraping: boolean
@@ -31,16 +29,9 @@ export interface TrackerConfig {
   send_timer_1min: boolean
   send_view_video: boolean
 
-  // Page rules
   page_rules: PageRule[]
-
-  // Form mappings
   form_mappings: FormMappings
-
-  // Meta
   meta_init_pixel_id: string
-
-  // UTM
   utm_origin_param: string
 }
 
@@ -56,7 +47,7 @@ export interface Pixel {
   id: number
   name: string
   label: string
-  /** Token opaco de 32 chars hex — usar no snippet HTML em vez do name */
+  /** Token opaco de 32 chars hex usado no snippet HTML no lugar do name. */
   public_token: string
   pixel_ids: string[]
   access_tokens: string[]
@@ -67,9 +58,9 @@ export interface Pixel {
   account_id: number
   pixel_count: number
 
-  /** Config da dashboard web (cards/ordem/funil/nomes) — por pixel. */
+  /** Config da dashboard web por pixel. */
   dashboard_config?: DashboardConfig
-  /** Token do link público view-only. Vazio = link não gerado. */
+  /** Token do link público somente leitura. Vazio = link não gerado. */
   dashboard_share_token?: string
 
   // TikTok Events API (opcional)
@@ -78,13 +69,10 @@ export interface Pixel {
   tiktok_test_codes: string[]
   tiktok_pixel_count: number
 
-  /**
-   * Vinculo opcional a uma conta Google Ads (entidade propria, gerenciada
-   * em /integracoes/google-ads). Quando definido, eventos elegiveis
-   * desse pixel sao tambem despachados pra essa conta como conversoes
-   * offline.
-   */
   google_ads_account_id?: number | null
+  google_ads_customer_id?: string
+  google_ads_customer_name?: string
+  google_ads_login_customer_id?: string
   meta_account_id?: number | null
   meta_ad_account_id?: string
 
@@ -108,25 +96,24 @@ export interface PixelInput {
   domains?: string[]
   tracker_config?: TrackerConfig
   enabled?: boolean
-  // Multi-tenant: ownership da empresa que recebe o pixel.
-  // Owner pode definir; member é ignorado (backend força a própria conta).
   account_id?: number
 
-  // TikTok (opcional)
   tiktok_pixel_ids?: string[]
   tiktok_access_tokens?: string[]
   tiktok_test_codes?: string[]
 
-  /** Vinculo a uma conta Google Ads. 0 ou null desfaz o vinculo. */
+  /** Vínculo a uma conta Google Ads. 0 ou null desfaz o vínculo. */
   google_ads_account_id?: number | null
-  /** Vinculo opcional a uma conta Meta Ads OAuth. 0 ou null desfaz o vinculo. */
+  google_ads_customer_id?: string
+  google_ads_customer_name?: string
+  google_ads_login_customer_id?: string
+  /** Vínculo opcional a uma conta Meta Ads OAuth. 0 ou null desfaz o vínculo. */
   meta_account_id?: number | null
   meta_ad_account_id?: string
 
   ga4_measurement_id?: string
   ga4_api_secret?: string
 
-  /** Agrupamento de Conversões (Order Bump & Upsell) */
   aggregation_enabled?: boolean
   aggregation_window_minutes?: number
 }
@@ -150,14 +137,15 @@ export interface TestEventInput {
   last_name?: string
   value?: number
   currency?: string
-  // 'meta' (default), 'tiktok', 'google_ads' ou 'all'
-  channel?: 'meta' | 'tiktok' | 'google_ads' | 'all'
+  channel?: 'meta' | 'tiktok' | 'all'
+  test_event_code?: string
 }
 
 export interface TestEventPixelResult {
-  channel?: 'meta' | 'tiktok' | 'google_ads'
+  channel?: 'meta' | 'tiktok'
   pixel_id: string
   status_code: number
+  used_test_code?: boolean
   response?: string
   error?: string
 }
@@ -165,6 +153,6 @@ export interface TestEventPixelResult {
 export interface TestEventResponse {
   event_id: string
   event_name: string
-  channel?: 'meta' | 'tiktok' | 'google_ads' | 'all'
+  channel?: 'meta' | 'tiktok' | 'all'
   results: TestEventPixelResult[]
 }

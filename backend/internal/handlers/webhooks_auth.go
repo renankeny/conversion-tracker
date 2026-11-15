@@ -10,7 +10,9 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
@@ -18,11 +20,12 @@ import (
 type webhookAuthAttemptKey struct{}
 
 type webhookAuthAttempt struct {
-	platform   string
-	rawBody    []byte
-	hmacSHA256 string
-	hmacSHA1   string
-	candidates []string
+	platform      string
+	rawBody       []byte
+	hmacSHA256    string
+	hmacSHA1      string
+	payloadTokens []string
+	candidates    []string
 }
 
 func constantTimeEqual(a, b string) bool {
@@ -39,13 +42,19 @@ func constantTimeEqualFold(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(strings.ToLower(a)), []byte(strings.ToLower(b))) == 1
 }
 
-func collectRequestTokenCandidates(r *http.Request, payloadCandidates []string) []string {
-	out := make([]string, 0, len(payloadCandidates)+15)
-	for _, c := range payloadCandidates {
+func trimNonEmpty(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, c := range items {
 		if t := strings.TrimSpace(c); t != "" {
 			out = append(out, t)
 		}
 	}
+	return out
+}
+
+func collectRequestTokenCandidates(r *http.Request, payloadCandidates []string) []string {
+	out := make([]string, 0, len(payloadCandidates)+14)
+	out = append(out, trimNonEmpty(payloadCandidates)...)
 	if r == nil {
 		return out
 	}
@@ -53,7 +62,6 @@ func collectRequestTokenCandidates(r *http.Request, payloadCandidates []string) 
 		r.Header.Get("X-Webhook-Token"),
 		r.Header.Get("X-Platform-Token"),
 		r.Header.Get("X-Hotmart-Hottok"),
-		r.Header.Get("X-Kiwify-Signature"),
 		r.Header.Get("X-Lastlink-Token"),
 		r.Header.Get("X-Hubla-Token"),
 		r.Header.Get("X-Greenn-Token"),
@@ -62,13 +70,9 @@ func collectRequestTokenCandidates(r *http.Request, payloadCandidates []string) 
 		r.Header.Get("X-Api-Key"),
 		stripAuthPrefix(r.Header.Get("Authorization")),
 	}
-	for _, hVal := range headers {
-		if t := strings.TrimSpace(hVal); t != "" {
-			out = append(out, t)
-		}
-	}
+	out = append(out, trimNonEmpty(headers)...)
 	q := r.URL.Query()
-	for _, qKey := range []string{"token", "secret", "hottok", "signature"} {
+	for _, qKey := range []string{"token", "secret", "hottok"} {
 		if t := strings.TrimSpace(q.Get(qKey)); t != "" {
 			out = append(out, t)
 		}
@@ -103,12 +107,18 @@ func matchWebhookAttemptAgainstSecret(secret string, att webhookAuthAttempt) boo
 		if constantTimeEqualFold(cand, expectedHex) || constantTimeEqual(cand, expectedB64) {
 			return true
 		}
+		if len(att.payloadTokens) == 0 {
+			return false
+		}
 	}
 
 	if att.hmacSHA1 != "" && len(att.rawBody) > 0 {
 		expectedSHA1 := util.GenerateHMACSHA1(att.rawBody, secret)
 		if constantTimeEqualFold(strings.TrimSpace(att.hmacSHA1), expectedSHA1) {
 			return true
+		}
+		if len(att.payloadTokens) == 0 {
+			return false
 		}
 	}
 
@@ -120,13 +130,29 @@ func matchWebhookAttemptAgainstSecret(secret string, att webhookAuthAttempt) boo
 	return false
 }
 
+func (h *Webhooks) logWebhookAuthFailure(ctx context.Context, accountID int64, platform string, rawBody []byte) {
+	if h.webhookLogs == nil || accountID <= 0 {
+		return
+	}
+	logEntry := &domain.WebhookLog{
+		AccountID:  accountID,
+		Source:     platform,
+		EventName:  domain.EventPurchase,
+		Status:     "failed",
+		Error:      "token de segurança inválido (verifique o token/secret da plataforma)",
+		ReceivedAt: time.Now(),
+	}
+	if err := h.webhookLogs.CreateWithRawPayload(ctx, logEntry, nil, rawBody, ""); err != nil {
+		slog.Warn("webhook_log auth failure write failed", "platform", platform, "account_id", accountID, "error", err)
+	}
+}
+
 func (h *Webhooks) verifyAttemptAgainstAccount(ctx context.Context, accountID int64, att webhookAuthAttempt) bool {
 	if accountID <= 0 || h.tokens == nil {
 		return true
 	}
 	tokenInfo, err := h.tokens.FindByPlatform(ctx, accountID, att.platform)
 	if err != nil && !errors.Is(err, repo.ErrNotFound) {
-		// Fail-closed: erro de banco não pode desligar a autenticação.
 		slog.Error("platform token lookup failed", "platform", att.platform, "account_id", accountID, "error", err)
 		return false
 	}
@@ -137,6 +163,7 @@ func (h *Webhooks) verifyAttemptAgainstAccount(ctx context.Context, accountID in
 		return true
 	}
 	slog.Warn("platform token mismatch", "platform", att.platform, "account_id", accountID)
+	h.logWebhookAuthFailure(ctx, accountID, att.platform, att.rawBody)
 	return false
 }
 
@@ -149,12 +176,16 @@ func (h *Webhooks) verifyDeferredWebhookAuth(ctx context.Context, accountID int6
 }
 
 // ValidatePlatformToken verifica em tempo constante se o token da plataforma bate com a conta.
-// Se accountID == 0 e não houver ?pixel= na URL, registra a tentativa no contexto da request
-// para validação obrigatória assim que o pixel/usuário for resolvido.
 func (h *Webhooks) ValidatePlatformToken(ctx context.Context, r *http.Request, accountID int64, platform string, payloadCandidates ...string) bool {
+	var rawBody []byte
+	if r != nil && r.Body != nil {
+		rawBody, _ = readWebhookBody(r)
+	}
 	att := webhookAuthAttempt{
-		platform:   platform,
-		candidates: collectRequestTokenCandidates(r, payloadCandidates),
+		platform:      platform,
+		rawBody:       rawBody,
+		payloadTokens: trimNonEmpty(payloadCandidates),
+		candidates:    collectRequestTokenCandidates(r, payloadCandidates),
 	}
 	effectiveAcc := h.resolveWebhookAccountID(ctx, r, accountID)
 	if effectiveAcc > 0 {
@@ -178,11 +209,12 @@ func (h *Webhooks) validateHMACOrToken(
 	payloadTokens ...string,
 ) bool {
 	att := webhookAuthAttempt{
-		platform:   platform,
-		rawBody:    rawBody,
-		hmacSHA256: hmacSHA256Candidate,
-		hmacSHA1:   hmacSHA1Candidate,
-		candidates: collectRequestTokenCandidates(r, payloadTokens),
+		platform:      platform,
+		rawBody:       rawBody,
+		hmacSHA256:    hmacSHA256Candidate,
+		hmacSHA1:      hmacSHA1Candidate,
+		payloadTokens: trimNonEmpty(payloadTokens),
+		candidates:    collectRequestTokenCandidates(r, payloadTokens),
 	}
 	effectiveAcc := h.resolveWebhookAccountID(ctx, r, accountID)
 	if effectiveAcc > 0 {

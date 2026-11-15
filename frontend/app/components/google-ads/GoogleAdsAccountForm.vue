@@ -1,11 +1,11 @@
 <template>
   <div class="ga-form">
     <GoogleAdsOAuthCard
+      ref="oauthRef"
       :account="account"
+      :default-name="form.name"
+      @connected="onOAuthConnected"
       @disconnected="onOAuthDisconnected"
-      @reused="$emit('refresh')"
-      @connect-new="onConnectNew"
-      @reuse-new="onReuseNew"
     />
 
     <GoogleAdsCustomerSection
@@ -16,7 +16,7 @@
       :remote-customers="remoteCustomers"
       :loading-customers="loadingCustomers"
       @refresh-customers="loadRemoteCustomers"
-      @customer-selected="loadRemoteActions"
+      @customer-selected="() => loadRemoteActions(false)"
     />
 
     <GoogleAdsConversionMappings
@@ -28,15 +28,16 @@
     />
 
     <GoogleAdsTestSection
-      v-if="account"
       :account="account"
+      :oauth-connected="oauthConnected"
+      :customer-id="form.customer_id"
+      :login-customer-id="form.login_customer_id"
       :actions="form.conversion_actions"
     />
 
     <section class="form-section">
       <BaseCheckbox v-model="form.enabled">
-        <strong>Conta ativa</strong> — quando desligado, nenhuma conversão
-        dessa conta é enviada.
+        <strong>Conta ativa:</strong> quando desmarcada, o envio de conversões offline desta conta fica pausado.
       </BaseCheckbox>
     </section>
   </div>
@@ -56,68 +57,87 @@ import type {
   GoogleAdsRemoteCustomer,
 } from '#shared/types'
 
-interface Props {
+const props = defineProps<{
   account?: GoogleAdsAccount | null
-}
-const props = defineProps<Props>()
+}>()
 
 const emit = defineEmits<{
   submit: [input: GoogleAdsAccountInput]
-  'connect-new': [input: GoogleAdsAccountInput]
-  'reuse-new': [input: GoogleAdsAccountInput]
+  connected: [account: GoogleAdsAccount]
   refresh: []
 }>()
 
 const googleAdsApi = useGoogleAdsAccounts()
 const toast = useToast()
 
-const form = reactive<{
-  name: string
-  customer_id: string
-  login_customer_id: string
-  conversion_actions: GoogleAdsConversionAction[]
-  enabled: boolean
-}>({
+const form = reactive({
   name: '',
   customer_id: '',
+  customer_name: '',
   login_customer_id: '',
-  conversion_actions: [],
+  conversion_actions: [] as GoogleAdsConversionAction[],
   enabled: true,
 })
 
 const errors = reactive({ name: '' })
+const oauthRef = ref<{ triggerDefaultAction: () => void } | null>(null)
 const oauthPictureUrl = ref('')
 const remoteCustomers = ref<GoogleAdsRemoteCustomer[]>([])
 const loadingCustomers = ref(false)
 const remoteActions = ref<GoogleAdsRemoteConversionAction[]>([])
 const loadingActions = ref(false)
 
-const oauthConnected = computed(
-  () => !!(props.account?.oauth_connected || props.account?.connected || props.account?.oauth_email),
-)
+const isAccConnected = (acc?: GoogleAdsAccount | null) =>
+  Boolean(acc?.oauth_connected || acc?.connected || acc?.oauth_email)
 
+const oauthConnected = computed(() => isAccConnected(props.account))
 const canLoadRemoteActions = computed(
-  () => oauthConnected.value && !!form.customer_id.replace(/\D/g, ''),
+  () => oauthConnected.value && Boolean(form.customer_id.replace(/\D/g, '')),
 )
 
-const loadRemoteCustomers = async () => {
-  if (!props.account || !oauthConnected.value) return
+const defaultConversionRow = (): GoogleAdsConversionAction => ({
+  event_type: 'Purchase', conversion_action_id: '', name: '', enabled: true,
+})
+
+const loadRemoteActions = async (forceRefresh = false, targetAccount?: GoogleAdsAccount) => {
+  const acc = targetAccount ?? props.account
+  if (!acc || !form.customer_id.replace(/\D/g, '')) return
+  loadingActions.value = true
+  try {
+    const res = await googleAdsApi.listConversionActions(
+      acc.id, form.customer_id, form.login_customer_id, forceRefresh,
+    )
+    remoteActions.value = res.conversion_actions || []
+  } catch (e: unknown) {
+    toast.error('Erro ao buscar Ações de Conversão', errorMessage(e, 'Tente novamente'))
+  } finally {
+    loadingActions.value = false
+  }
+}
+
+const loadRemoteCustomers = async (forceRefresh = false, targetAccount?: GoogleAdsAccount) => {
+  const acc = targetAccount ?? props.account
+  if (!acc || !isAccConnected(acc)) return
   loadingCustomers.value = true
   try {
-    const res = await googleAdsApi.listCustomers(props.account.id)
+    const res = await googleAdsApi.listCustomers(acc.id, forceRefresh)
     remoteCustomers.value = res.customers || []
     if (res.oauth_picture_url) oauthPictureUrl.value = res.oauth_picture_url
-    if (res.warning && !remoteCustomers.value.length) {
-      toast.warning('Aviso do Google Ads', res.warning)
+    if (res.warning && !remoteCustomers.value.length) toast.warning('Aviso do Google Ads', res.warning)
+
+    const nonManager = remoteCustomers.value.filter((c) => !c.is_manager)
+    const autoPick = nonManager.length === 1 ? nonManager[0] : (remoteCustomers.value.length === 1 ? remoteCustomers.value[0] : undefined)
+    if (!form.customer_id && autoPick) {
+      form.customer_id = autoPick.formatted_id || autoPick.id
+      form.customer_name = autoPick.name || ''
+      form.login_customer_id = autoPick.manager_customer_id || ''
+      if (!form.name.trim() || form.name === 'Google Ads') form.name = autoPick.name
+    } else if (form.customer_id && !form.customer_name) {
+      const clean = form.customer_id.replace(/\D/g, '')
+      const found = remoteCustomers.value.find((c) => c.id.replace(/\D/g, '') === clean)
+      if (found?.name) form.customer_name = found.name
     }
-    if (!form.customer_id && remoteCustomers.value.length === 1) {
-      const only = remoteCustomers.value[0]!
-      form.customer_id = only.formatted_id || only.id
-      form.login_customer_id = only.manager_customer_id || ''
-      if (!form.name.trim() || form.name === 'Google Ads') {
-        form.name = only.name
-      }
-    }
+    if (form.customer_id) await loadRemoteActions(forceRefresh, acc)
   } catch (e: unknown) {
     toast.error('Erro ao buscar contas Google Ads', errorMessage(e, 'Tente novamente'))
   } finally {
@@ -125,112 +145,86 @@ const loadRemoteCustomers = async () => {
   }
 }
 
-const loadRemoteActions = async () => {
-  if (!props.account || !canLoadRemoteActions.value) return
-  loadingActions.value = true
-  try {
-    const res = await googleAdsApi.listConversionActions(
-      props.account.id,
-      form.customer_id,
-      form.login_customer_id,
-    )
-    remoteActions.value = res.conversion_actions || []
-  } catch (e: unknown) {
-    toast.error('Erro ao buscar Conversion Actions', errorMessage(e, 'Tente novamente'))
-  } finally {
-    loadingActions.value = false
-  }
-}
-
-const defaultConversionRow = (): GoogleAdsConversionAction => ({
-  event_type: 'Purchase',
-  conversion_action_id: '',
-  name: '',
-  enabled: true,
-})
-
 const fillFromAccount = (a: GoogleAdsAccount) => {
-  form.name = a.name
-  form.customer_id = a.customer_id || ''
-  form.login_customer_id = a.login_customer_id || ''
-  form.enabled = a.enabled
+  Object.assign(form, {
+    name: a.name, customer_id: a.customer_id || '', customer_name: a.customer_name || '',
+    login_customer_id: a.login_customer_id || '', enabled: a.enabled,
+  })
   oauthPictureUrl.value = a.picture_url || a.oauth_picture_url || ''
   const mapped = (a.conversion_actions || []).map((ca) => ({
-    event_type: ca.event_type,
-    conversion_action_id: ca.conversion_action_id,
-    name: ca.name || '',
-    enabled: ca.enabled !== false,
+    event_type: ca.event_type, conversion_action_id: ca.conversion_action_id,
+    name: ca.name || '', enabled: ca.enabled !== false,
   }))
   form.conversion_actions = mapped.length ? mapped : [defaultConversionRow()]
 }
 
-watch(
-  () => props.account,
-  async (acc) => {
-    remoteCustomers.value = []
-    remoteActions.value = []
-    if (acc) {
-      fillFromAccount(acc)
-      if (acc.oauth_connected || acc.connected || acc.oauth_email) {
-        await loadRemoteCustomers()
-        if (form.customer_id) {
-          await loadRemoteActions()
-        }
-      }
-    } else {
-      form.name = ''
-      form.customer_id = ''
-      form.login_customer_id = ''
-      form.conversion_actions = [defaultConversionRow()]
-      form.enabled = true
-    }
-  },
-  { immediate: true },
-)
+watch(() => props.account, async (acc) => {
+  remoteCustomers.value = []
+  remoteActions.value = []
+  if (acc) {
+    fillFromAccount(acc)
+    if (isAccConnected(acc)) await loadRemoteCustomers(false, acc)
+  } else {
+    oauthPictureUrl.value = ''
+    Object.assign(form, {
+      name: '', customer_id: '', customer_name: '', login_customer_id: '',
+      conversion_actions: [defaultConversionRow()], enabled: true,
+    })
+  }
+}, { immediate: true })
 
-const validate = (): boolean => {
+const onOAuthConnected = async (updated: GoogleAdsAccount) => {
+  if (form.name.trim() && form.name !== 'Google Ads') {
+    updated = { ...updated, name: form.name.trim() }
+  }
+  emit('connected', updated)
+  await loadRemoteCustomers(true, updated)
+}
+
+const onOAuthDisconnected = () => {
+  remoteCustomers.value = []
+  remoteActions.value = []
+  form.customer_id = ''
+  form.customer_name = ''
+  form.login_customer_id = ''
+  form.conversion_actions = [defaultConversionRow()]
+  emit('refresh')
+}
+
+const onSubmit = () => {
+  if (!props.account) {
+    oauthRef.value?.triggerDefaultAction()
+    return
+  }
   errors.name = ''
   if (!form.name.trim()) {
     errors.name = 'Nome é obrigatório'
-    return false
+    return
   }
-  return true
-}
-
-const buildPayload = (): GoogleAdsAccountInput => ({
-  name: form.name.trim() || 'Google Ads',
-  customer_id: form.customer_id.trim(),
-  login_customer_id: form.login_customer_id.trim(),
-  conversion_actions: form.conversion_actions
+  const seen = new Set<string>()
+  const dedupedActions = form.conversion_actions
     .map((ca) => ({
       event_type: ca.event_type,
       conversion_action_id: ca.conversion_action_id.trim(),
       name: ca.name.trim(),
       enabled: ca.enabled,
     }))
-    .filter((ca) => ca.event_type && ca.conversion_action_id),
-  enabled: form.enabled,
-})
+    .filter((ca) => {
+      if (!ca.event_type || !ca.conversion_action_id) return false
+      const key = `${ca.event_type}:${ca.conversion_action_id}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
 
-const onOAuthDisconnected = () => {
-  remoteCustomers.value = []
-  remoteActions.value = []
-  emit('refresh')
-}
-
-const onSubmit = () => {
-  if (!validate()) return
-  emit('submit', buildPayload())
-}
-
-const onConnectNew = () => {
-  if (!form.name.trim()) form.name = 'Google Ads'
-  emit('connect-new', buildPayload())
-}
-
-const onReuseNew = (sourceAccountId: number) => {
-  if (!form.name.trim()) form.name = 'Google Ads'
-  emit('reuse-new', { ...buildPayload(), reuse_oauth_from_id: sourceAccountId })
+  emit('submit', {
+    name: form.name.trim(),
+    customer_id: form.customer_id.trim(),
+    customer_name: form.customer_name.trim(),
+    login_customer_id: form.login_customer_id.trim(),
+    conversion_actions: dedupedActions,
+    enabled: form.enabled,
+  })
 }
 
 defineExpose({ submit: onSubmit })

@@ -72,7 +72,14 @@ export const useGoogleAdsStore = defineStore('googleAds', () => {
       ...accounts.value[idx]!,
       connected: false,
       oauth_connected: false,
+      ready: false,
       oauth_email: '',
+      oauth_picture_url: '',
+      picture_url: '',
+      customer_id: '',
+      customer_name: '',
+      login_customer_id: '',
+      conversion_actions: [],
     }
     accounts.value[idx] = updated
     return updated

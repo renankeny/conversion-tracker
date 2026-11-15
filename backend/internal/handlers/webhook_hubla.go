@@ -79,10 +79,10 @@ func (h *Webhooks) Hubla(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first := strings.ToLower(util.FirstNonEmpty(p.Event.Payer.FirstName, p.Event.User.FirstName))
-	last := strings.ToLower(util.FirstNonEmpty(p.Event.Payer.LastName, p.Event.User.LastName))
+	first := strings.TrimSpace(util.FirstNonEmpty(p.Event.Payer.FirstName, p.Event.User.FirstName))
+	last := strings.TrimSpace(util.FirstNonEmpty(p.Event.Payer.LastName, p.Event.User.LastName))
 	if first == "" && last == "" {
-		first, last = util.SplitFullName(strings.ToLower(util.FirstNonEmpty(p.Event.Payer.Name, p.Event.User.Name)))
+		first, last = util.SplitFullName(util.FirstNonEmpty(p.Event.Payer.Name, p.Event.User.Name))
 	}
 
 	value := util.ParseMoneyCents(p.Event.Invoice.AmountCents)
@@ -122,6 +122,7 @@ func (h *Webhooks) Hubla(w http.ResponseWriter, r *http.Request) {
 		ProductName: prodName,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

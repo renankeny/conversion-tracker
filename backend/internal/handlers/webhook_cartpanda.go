@@ -75,10 +75,10 @@ func (h *Webhooks) Cartpanda(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first := strings.ToLower(ord.Customer.FirstName)
-	last := strings.ToLower(ord.Customer.LastName)
+	first := strings.TrimSpace(ord.Customer.FirstName)
+	last := strings.TrimSpace(ord.Customer.LastName)
 	if first == "" && last == "" {
-		first, last = util.SplitFullName(strings.ToLower(ord.Customer.Name))
+		first, last = util.SplitFullName(ord.Customer.Name)
 	}
 
 	value := util.ParseMoneyAny(ord.TotalPrice)
@@ -112,6 +112,7 @@ func (h *Webhooks) Cartpanda(w http.ResponseWriter, r *http.Request) {
 		ProductName: prodName,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

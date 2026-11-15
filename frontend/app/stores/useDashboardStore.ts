@@ -2,8 +2,21 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { setBrowserCookie } from '~/utils/cookies'
 
-export type PeriodValue = 'today' | 'yesterday' | '7d' | '30d' | '60d' | '90d' | 'custom'
+export type PeriodValue =
+  | 'today'
+  | 'yesterday'
+  | '7d'
+  | '30d'
+  | '60d'
+  | '90d'
+  | 'this_month'
+  | 'last_month'
+  | 'custom'
 export type DashboardTrafficSource = 'all' | 'meta' | 'google'
+
+const VALID_PERIODS = new Set<PeriodValue>([
+  'today', 'yesterday', '7d', '30d', '60d', '90d', 'this_month', 'last_month', 'custom',
+])
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 const SAO_PAULO_OFFSET = '-03:00'
@@ -21,13 +34,16 @@ function getTodaySaoPauloYMD(now: Date = new Date()): string {
   return `${y}-${m}-${d}`
 }
 
-function shiftYMD(ymd: string, deltaDays: number): string {
-  const [y = 1970, m = 1, d = 1] = ymd.split('-').map(Number)
-  const utc = new Date(Date.UTC(y, m - 1, d + deltaDays))
+function formatUTCDateYMD(utc: Date): string {
   const yy = utc.getUTCFullYear()
   const mm = String(utc.getUTCMonth() + 1).padStart(2, '0')
   const dd = String(utc.getUTCDate()).padStart(2, '0')
   return `${yy}-${mm}-${dd}`
+}
+
+function shiftYMD(ymd: string, deltaDays: number): string {
+  const [y = 1970, m = 1, d = 1] = ymd.split('-').map(Number)
+  return formatUTCDateYMD(new Date(Date.UTC(y, m - 1, d + deltaDays)))
 }
 
 function spStartOfDayISO(ymd: string): string {
@@ -67,6 +83,17 @@ export function computeSaoPauloRange(
     case '90d':
       fromYMD = shiftYMD(todayYMD, -89)
       break
+    case 'this_month': {
+      const [y = 1970, m = 1] = todayYMD.split('-').map(Number)
+      fromYMD = `${y}-${String(m).padStart(2, '0')}-01`
+      break
+    }
+    case 'last_month': {
+      const [y = 1970, m = 1] = todayYMD.split('-').map(Number)
+      fromYMD = formatUTCDateYMD(new Date(Date.UTC(y, m - 2, 1)))
+      toYMD = formatUTCDateYMD(new Date(Date.UTC(y, m - 1, 0)))
+      break
+    }
     case 'custom':
       fromYMD = /^\d{4}-\d{2}-\d{2}$/.test(customFromVal) ? customFromVal : todayYMD
       toYMD = /^\d{4}-\d{2}-\d{2}$/.test(customToVal) ? customToVal : todayYMD
@@ -99,7 +126,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     trafficSource?: DashboardTrafficSource | string | null
     privacyMode?: boolean | null
   }): void {
-    if (init.period) period.value = init.period
+    if (init.period && VALID_PERIODS.has(init.period)) period.value = init.period
     if (typeof init.customFrom === 'string') customFrom.value = init.customFrom
     if (typeof init.customTo === 'string') customTo.value = init.customTo
     if (typeof init.selectedPixel === 'string') selectedPixel.value = init.selectedPixel
@@ -132,7 +159,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   )
 
   const periodIncludesToday = computed<boolean>(() => {
-    if (period.value === 'yesterday') return false
+    if (period.value === 'yesterday' || period.value === 'last_month') return false
     if (period.value === 'custom') {
       if (!customTo.value) return true
       return customTo.value >= getTodaySaoPauloYMD()

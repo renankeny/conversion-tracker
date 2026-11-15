@@ -136,7 +136,7 @@ const copy = async (text: string, kind: 'payload' | 'response') => {
   border: 1px solid var(--border-soft);
   border-radius: 6px;
   padding: 0.75rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   line-height: 1.55;
   color: var(--text-1);

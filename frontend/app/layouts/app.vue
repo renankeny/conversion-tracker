@@ -15,23 +15,35 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from '~/stores/useAuthStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
+import { useTenantStore } from '~/stores/useTenantStore'
 
 // Conecta o WebSocket de eventos ao vivo quando o usuário entra no painel.
-// Uma única conexão por sessão autenticada — todas as páginas compartilham
-// via useLiveEventsStore (singleton Pinia).
+// Uma única conexão por sessão autenticada compartilhada via singleton Pinia.
 const { token } = useAuth()
+const authStore = useAuthStore()
+const tenantStore = useTenantStore()
 const liveStore = useLiveEventsStore()
 
-onMounted(() => {
+onMounted(async () => {
+  if (!token.value) return
+  if (authStore.canManageAccounts && !tenantStore.loaded) {
+    await tenantStore.fetchAccounts().catch(() => {})
+  }
   if (token.value) {
     void liveStore.connect(token.value)
   }
 })
 
-watch(token, (newToken) => {
+watch(token, async (newToken) => {
   if (newToken) {
-    void liveStore.connect(newToken)
+    if (authStore.canManageAccounts && !tenantStore.loaded) {
+      await tenantStore.fetchAccounts().catch(() => {})
+    }
+    if (token.value === newToken) {
+      void liveStore.connect(newToken)
+    }
   } else {
     liveStore.disconnect()
   }

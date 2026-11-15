@@ -178,7 +178,7 @@ func (r *UserRepo) EnrichLTV(ctx context.Context, u *domain.TrackedUser) error {
 		}
 		u.TimeToPurchase = formatDuration(diff)
 	} else {
-		u.TimeToPurchase = "Nenhuma compra"
+		u.TimeToPurchase = "Sem compra"
 	}
 	return nil
 }

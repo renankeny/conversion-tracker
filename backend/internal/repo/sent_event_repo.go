@@ -11,67 +11,64 @@ import (
 )
 
 // excludeHighVolumeEvents é sempre aplicado em List/ListGrouped: PageView e
-// ViewContent são altíssimo volume e sem valor de auditoria individual — não
-// aparecem na página de Eventos, só agregados em event_counters. É uma
-// exclusão fixa (não vem de input do usuário), por isso vai direto no SQL.
+// ViewContent são altíssimo volume e sem valor de auditoria individual, não
+// aparecendo na página de Eventos, apenas agregados em event_counters.
 const excludeHighVolumeEvents = "event_name NOT IN ('PageView', 'ViewContent')"
 
-// SentEvent é a representação leve de uma linha de sent_events pra
-// listagem no painel admin. Inclui também o payload enviado para a Meta
-// (campo `payload` JSONB no banco) — útil pra debugar o que de fato foi
-// transmitido (PII hasheada, custom_data, etc).
+const sentEventsSearchSQL = `(event_id ILIKE $N OR external_id ILIKE $N OR EXISTS (
+	SELECT 1 FROM tracked_users u
+	WHERE u.external_id = sent_events.external_id
+	  AND u.account_id = sent_events.account_id
+	  AND (
+	    (u.email <> '' AND u.email ILIKE $N)
+	    OR (u.phone <> '' AND u.phone ILIKE $N)
+	    OR (u.first_name <> '' AND u.first_name ILIKE $N)
+	    OR (u.last_name <> '' AND u.last_name ILIKE $N)
+	  )
+))`
+
+// SentEvent é a representação leve de uma linha de sent_events para
+// listagem no painel admin, incluindo o payload JSONB transmitido ao canal.
 type SentEvent struct {
 	ID            int64     `json:"id"`
 	EventID       string    `json:"event_id"`
 	EventName     string    `json:"event_name"`
 	PixelName     string    `json:"pixel_name"`
 	ExternalID    string    `json:"external_id"`
-	Channel       string    `json:"channel"` // 'meta' | 'tiktok' | 'google_ads'
+	Channel       string    `json:"channel"`
 	Status        string    `json:"status"`
 	ResponseCode  int       `json:"response_code"`
 	ResponseBody  string    `json:"response_body,omitempty"`
-	Payload       string    `json:"payload,omitempty"` // JSON enviado à plataforma
+	Payload       string    `json:"payload,omitempty"`
 	Error         string    `json:"error,omitempty"`
-	PurchaseValue float64   `json:"purchase_value"` // valor monetário (0 se não aplicável)
+	PurchaseValue float64   `json:"purchase_value"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// GroupedEvent agrega todos os envios (Meta, TikTok, Google Ads) de um
-// mesmo evento (event_id + pixel) em uma unica linha. Usado pelo painel
-// pra mostrar 1 row por evento com pills de status por canal.
+// GroupedEvent agrega todos os envios (Meta, TikTok, Google Ads, GA4) de um
+// mesmo evento (event_id + pixel) em uma única linha.
 type GroupedEvent struct {
-	EventID       string         `json:"event_id"`
-	EventName     string         `json:"event_name"`
-	PixelName     string         `json:"pixel_name"`
-	ExternalID    string         `json:"external_id"`
-	PurchaseValue float64        `json:"purchase_value"` // valor monetário (0 se não aplicável)
-	CreatedAt     time.Time      `json:"created_at"`
-	Channels      []ChannelBrief `json:"channels"`
-	// LTV é o valor total (todas as compras, todo o histórico) do external_id
-	// dono desse evento. Só preenchido quando ListFilter.IncludeLTV=true —
-	// usado na Dashboard pra mostrar o valor vendido junto do LTV do cliente.
-	LTV *float64 `json:"ltv,omitempty"`
-	// FirstUTMSource/LastUTMSource vêm de tracked_users (primeiro e último
-	// acesso do dono do evento). Só preenchidos quando
-	// ListFilter.IncludeUserContext=true — usado na página de Eventos.
-	FirstUTMSource string `json:"first_utm_source,omitempty"`
-	LastUTMSource  string `json:"last_utm_source,omitempty"`
-
-	// Dados do comprador (preenchidos quando ListFilter.IncludeBuyer=true).
-	BuyerFirstName string `json:"buyer_first_name,omitempty"`
-	BuyerLastName  string `json:"buyer_last_name,omitempty"`
-	BuyerPhone     string `json:"buyer_phone,omitempty"`
-
-	// Agrupamento de Conversões (Order Bump & Upsell)
-	AggregatedCount int                     `json:"aggregated_count"`
-	AggregatedItems []domain.AggregatedItem `json:"aggregated_items,omitempty"`
+	EventID            string                  `json:"event_id"`
+	EventName          string                  `json:"event_name"`
+	PixelName          string                  `json:"pixel_name"`
+	ExternalID         string                  `json:"external_id"`
+	PurchaseValue      float64                 `json:"purchase_value"`
+	CreatedAt          time.Time               `json:"created_at"`
+	Channels           []ChannelBrief          `json:"channels"`
+	LTV                *float64                `json:"ltv,omitempty"`
+	FirstUTMSource     string                  `json:"first_utm_source,omitempty"`
+	LastUTMSource      string                  `json:"last_utm_source,omitempty"`
+	BuyerFirstName     string                  `json:"buyer_first_name,omitempty"`
+	BuyerLastName      string                  `json:"buyer_last_name,omitempty"`
+	BuyerPhone         string                  `json:"buyer_phone,omitempty"`
+	AggregatedCount    int                     `json:"aggregated_count"`
+	AggregatedItems    []domain.AggregatedItem `json:"aggregated_items,omitempty"`
 }
 
-// ChannelBrief e a vista resumida de um canal dentro de GroupedEvent.
-// Sem payload completo - so o necessario pra mostrar status na lista.
+// ChannelBrief é a visão resumida de um canal dentro de GroupedEvent.
 type ChannelBrief struct {
-	ID           int64  `json:"id"` // pra o front conseguir buscar detalhe
+	ID           int64  `json:"id"`
 	Channel      string `json:"channel"`
 	Status       string `json:"status"`
 	ResponseCode int    `json:"response_code"`
@@ -87,8 +84,6 @@ func NewSentEventRepo(pool *pgxpool.Pool) *SentEventRepo {
 }
 
 // ExistsSent retorna true se já houver envio concluído (status='sent') para a conta/pixel/evento.
-// Quando channel é vazio, exige também que não exista canal pendente em 'failed' (evitando que
-// sucesso apenas no TikTok bloqueie o reenvio para a Meta).
 func (r *SentEventRepo) ExistsSent(ctx context.Context, accountID int64, eventID, pixelName, channel string) (bool, error) {
 	if eventID == "" || pixelName == "" {
 		return false, nil
@@ -118,9 +113,9 @@ func (r *SentEventRepo) ExistsSent(ctx context.Context, accountID int64, eventID
 	return exists, err
 }
 
-// ExistsRecentEvent verifica se já foi registrado um evento do mesmo tipo para o mesmo external_id e pixel
-// dentro de uma janela recente (ex: 2 segundos). Evita duplicações por duplo clique ou cliques simultâneos de form.
-func (r *SentEventRepo) ExistsRecentEvent(ctx context.Context, pixelName, externalID, eventName string, window time.Duration) (bool, error) {
+// ExistsRecentEvent verifica se já foi registrado um evento do mesmo tipo para o mesmo
+// external_id, pixel e conta dentro de uma janela recente.
+func (r *SentEventRepo) ExistsRecentEvent(ctx context.Context, accountID int64, pixelName, externalID, eventName string, window time.Duration) (bool, error) {
 	if pixelName == "" || externalID == "" || eventName == "" {
 		return false, nil
 	}
@@ -128,25 +123,26 @@ func (r *SentEventRepo) ExistsRecentEvent(ctx context.Context, pixelName, extern
 	var n int
 	err := r.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM sent_events
-		WHERE pixel_name = $1 AND external_id = $2 AND event_name = $3 AND created_at >= $4
-	`, pixelName, externalID, eventName, since).Scan(&n)
+		WHERE ($1::bigint = 0 OR account_id = $1)
+		  AND pixel_name = $2 AND external_id = $3 AND event_name = $4 AND created_at >= $5
+	`, accountID, pixelName, externalID, eventName, since).Scan(&n)
 	if err != nil {
 		return false, err
 	}
 	return n > 0, nil
 }
 
-// GetSuccessfulChannels retorna o conjunto de canais (meta, tiktok, google_ads, ga4)
-// que já foram despachados com status = 'sent' para este (event_id, pixel_name).
-// Usado para garantir que retries reenviem APENAS os canais que falharam.
-func (r *SentEventRepo) GetSuccessfulChannels(ctx context.Context, eventID, pixelName string) (map[string]bool, error) {
+// GetSuccessfulChannels retorna o conjunto de canais já despachados com status = 'sent'
+// para (account_id, event_id, pixel_name).
+func (r *SentEventRepo) GetSuccessfulChannels(ctx context.Context, accountID int64, eventID, pixelName string) (map[string]bool, error) {
 	if eventID == "" || pixelName == "" {
 		return nil, nil
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT channel FROM sent_events
-		WHERE event_id = $1 AND pixel_name = $2 AND status = 'sent'
-	`, eventID, pixelName)
+		WHERE ($1::bigint = 0 OR account_id = $1)
+		  AND event_id = $2 AND pixel_name = $3 AND status = 'sent'
+	`, accountID, eventID, pixelName)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +158,7 @@ func (r *SentEventRepo) GetSuccessfulChannels(ctx context.Context, eventID, pixe
 	return sent, rows.Err()
 }
 
-// List devolve as linhas filtradas + total count (pra paginação).
+// List devolve as linhas filtradas + total count (para paginação).
 func (r *SentEventRepo) List(ctx context.Context, f ListFilter) ([]SentEvent, int64, error) {
 	if f.Limit <= 0 {
 		f.Limit = 50
@@ -174,17 +170,20 @@ func (r *SentEventRepo) List(ctx context.Context, f ListFilter) ([]SentEvent, in
 		f.Offset = 0
 	}
 
-	args := make([]any, 0, 6)
-	conds := make([]string, 0, 6)
+	args := make([]any, 0, 8)
+	conds := make([]string, 0, 8)
 	add := func(cond string, value any) {
 		args = append(args, value)
-		conds = append(conds, strings.Replace(cond, "$N", "$"+itoa(len(args)), 1))
+		conds = append(conds, strings.ReplaceAll(cond, "$N", "$"+itoa(len(args))))
 	}
 	if f.AccountID != 0 {
 		add("account_id = $N", f.AccountID)
 	}
 	if f.PixelName != "" {
 		add("pixel_name = $N", f.PixelName)
+	}
+	if f.Channel != "" {
+		add("channel = $N", f.Channel)
 	}
 	if len(f.EventNames) > 0 {
 		add("event_name = ANY($N::text[])", f.EventNames)
@@ -194,8 +193,14 @@ func (r *SentEventRepo) List(ctx context.Context, f ListFilter) ([]SentEvent, in
 	} else if f.ExternalID != "" {
 		add("external_id = $N", f.ExternalID)
 	}
+	if search := strings.TrimSpace(f.Search); search != "" {
+		add(sentEventsSearchSQL, "%"+search+"%")
+	}
 	if f.Status != "" {
 		add("status = $N", f.Status)
+	}
+	if f.Status != "contested" {
+		conds = append(conds, "status <> 'contested'")
 	}
 	if !f.From.IsZero() {
 		add("created_at >= $N", f.From)
@@ -207,9 +212,7 @@ func (r *SentEventRepo) List(ctx context.Context, f ListFilter) ([]SentEvent, in
 	where := "WHERE " + strings.Join(conds, " AND ")
 
 	var total int64
-	if err := r.pool.QueryRow(ctx,
-		"SELECT COUNT(*) FROM sent_events "+where, args...,
-	).Scan(&total); err != nil {
+	if err := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM sent_events "+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 

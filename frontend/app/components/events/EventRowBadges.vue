@@ -22,15 +22,23 @@
 
   <div v-else class="channels">
     <span
-      v-for="ch in CHANNELS"
-      :key="ch.id"
-      class="channel-chip"
-      :data-state="channelState(event, ch.id)"
-      :title="channelTooltip(event, ch.id, ch.label)"
+      v-if="isInternalOnly(event)"
+      class="internal-chip"
+      title="Registrado internamente (nenhum canal externo configurado no pixel)"
     >
-      <BrandIcon :channel="ch.id" size="sm" :colored="false" />
-      <span class="dot" />
+      Apenas interno
     </span>
+    <template v-else>
+      <span
+        v-for="ch in CHANNELS"
+        :key="ch.id"
+        class="channel-chip"
+        :data-state="channelState(event, ch.id)"
+        :title="channelTooltip(event, ch.id, ch.label)"
+      >
+        <BrandIcon :channel="ch.id" size="sm" :colored="false" />
+      </span>
+    </template>
   </div>
 </template>
 
@@ -52,6 +60,9 @@ const CHANNELS: Array<{ id: Channel; label: string }> = [
 
 type ChannelState = 'ok' | 'pending' | 'error' | 'absent'
 
+const isInternalOnly = (ev: GroupedEvent): boolean =>
+  ev.channels.length === 1 && ev.channels[0]?.channel === 'internal'
+
 const channelState = (ev: GroupedEvent, id: Channel): ChannelState => {
   const c = ev.channels.find((x) => x.channel === id)
   if (!c) return 'absent'
@@ -70,8 +81,8 @@ const channelTooltip = (ev: GroupedEvent, id: Channel, label: string): string =>
 }
 
 const importantEvents = new Set([
-  'Lead', 'InitiateCheckout', 'Purchase', 'AddPaymentInfo',
-  'CompleteRegistration', 'AddToCart', 'Contact',
+  'Lead', 'QualifiedLead', 'LeadSubmitted', 'InitiateCheckout',
+  'Purchase', 'AddPaymentInfo', 'CompleteRegistration', 'AddToCart', 'Contact',
 ])
 
 const eventClass = (name: string): string =>
@@ -122,11 +133,24 @@ const eventClass = (name: string): string =>
 
 .channels { display: flex; gap: 0.375rem; align-items: center; }
 
+.internal-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  height: 22px;
+}
+
 .channel-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.3125rem;
   padding: 0.1875rem 0.4375rem;
   border-radius: 6px;
   border: 1px solid var(--border-soft);

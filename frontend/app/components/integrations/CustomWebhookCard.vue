@@ -13,13 +13,14 @@
     <div class="card-actions">
       <BaseButton size="sm" variant="ghost" @click="$emit('logs', item)">📋 Logs</BaseButton>
       <BaseButton size="sm" variant="ghost" @click="$emit('edit', item)">Editar</BaseButton>
-      <BaseButton size="sm" variant="danger" ghost @click="$emit('delete', String(item.id))">Excluir</BaseButton>
+      <BaseButton size="sm" variant="danger" @click="$emit('delete', String(item.id))">Excluir</BaseButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { CustomWebhook } from '#shared/types'
+import { resolvePublicApiBase } from '~/utils/apiOrigin'
 
 const props = defineProps<{
   item: CustomWebhook
@@ -33,7 +34,7 @@ defineEmits<{
 
 const config = useRuntimeConfig()
 const webhookUrl = computed(() => {
-  const base = String(config.public.apiUrl || 'http://localhost:8080/api/v1')
+  const base = resolvePublicApiBase(String(config.public.apiUrl || ''))
   return `${base}/webhooks/custom/${props.item.id}`
 })
 </script>

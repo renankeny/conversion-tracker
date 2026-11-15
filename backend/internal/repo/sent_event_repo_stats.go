@@ -6,8 +6,7 @@ import (
 )
 
 // populateLTV preenche GroupedEvent.LTV com o valor total histórico de compras
-// da pessoa dona de cada external_id presente em `out`, filtrando estritamente
-// por accountID e apenas pelos external_ids relevantes da página.
+// da pessoa dona de cada external_id presente em out, filtrando por accountID.
 func (r *SentEventRepo) populateLTV(ctx context.Context, accountID int64, out []GroupedEvent) error {
 	extIDs := uniqueGroupedExtIDs(out)
 	if len(extIDs) == 0 {
@@ -21,15 +20,15 @@ func (r *SentEventRepo) populateLTV(ctx context.Context, accountID int64, out []
 
 	rows, err := r.pool.Query(ctx, `
 		WITH keys AS (
-			SELECT DISTINCT account_id, COALESCE(group_id, id) AS gkey
+			SELECT DISTINCT account_id, COALESCE(group_id, -id) AS gkey
 			FROM tracked_users
 			WHERE external_id = ANY($1::text[])
 			  AND ($2::bigint = 0 OR account_id = $2)
 		),
 		members AS (
-			SELECT t.account_id, t.external_id, COALESCE(t.group_id, t.id) AS gkey
+			SELECT t.account_id, t.external_id, COALESCE(t.group_id, -t.id) AS gkey
 			FROM tracked_users t
-			JOIN keys k ON k.gkey = COALESCE(t.group_id, t.id) AND k.account_id = t.account_id
+			JOIN keys k ON k.gkey = COALESCE(t.group_id, -t.id) AND k.account_id = t.account_id
 		)
 		SELECT m.gkey, COALESCE(SUM(s.max_value), 0)
 		FROM members m
@@ -75,7 +74,7 @@ func (r *SentEventRepo) populateLTV(ctx context.Context, accountID int64, out []
 
 func (r *SentEventRepo) groupKeysFor(ctx context.Context, accountID int64, extIDs []string) (map[string]int64, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT external_id, COALESCE(group_id, id)
+		SELECT external_id, COALESCE(group_id, -id)
 		FROM tracked_users
 		WHERE external_id = ANY($1::text[])
 		  AND ($2::bigint = 0 OR account_id = $2)
@@ -109,15 +108,15 @@ func (r *SentEventRepo) populateUserContext(ctx context.Context, accountID int64
 
 	rows, err := r.pool.Query(ctx, `
 		WITH keys AS (
-			SELECT DISTINCT account_id, COALESCE(group_id, id) AS gkey
+			SELECT DISTINCT account_id, COALESCE(group_id, -id) AS gkey
 			FROM tracked_users
 			WHERE external_id = ANY($1::text[])
 			  AND ($2::bigint = 0 OR account_id = $2)
 		),
 		members AS (
-			SELECT t.*, COALESCE(t.group_id, t.id) AS gkey
+			SELECT t.*, COALESCE(t.group_id, -t.id) AS gkey
 			FROM tracked_users t
-			JOIN keys k ON k.gkey = COALESCE(t.group_id, t.id) AND k.account_id = t.account_id
+			JOIN keys k ON k.gkey = COALESCE(t.group_id, -t.id) AND k.account_id = t.account_id
 		)
 		SELECT k.gkey,
 			COALESCE(
@@ -175,14 +174,14 @@ func (r *SentEventRepo) populateBuyerInfo(ctx context.Context, accountID int64, 
 	}
 	rows, err := r.pool.Query(ctx, `
 		WITH keys AS (
-			SELECT DISTINCT account_id, COALESCE(group_id, id) AS gkey
+			SELECT DISTINCT account_id, COALESCE(group_id, -id) AS gkey
 			FROM tracked_users
 			WHERE external_id = ANY($1::text[]) AND ($2::bigint = 0 OR account_id = $2)
 		),
 		members AS (
-			SELECT t.account_id, t.first_name, t.last_name, t.phone, t.updated_at, COALESCE(t.group_id, t.id) AS gkey
+			SELECT t.account_id, t.first_name, t.last_name, t.phone, t.updated_at, COALESCE(t.group_id, -t.id) AS gkey
 			FROM tracked_users t
-			JOIN keys k ON k.gkey = COALESCE(t.group_id, t.id) AND k.account_id = t.account_id
+			JOIN keys k ON k.gkey = COALESCE(t.group_id, -t.id) AND k.account_id = t.account_id
 		)
 		SELECT k.gkey,
 			COALESCE((SELECT m.first_name FROM members m WHERE m.gkey = k.gkey AND m.first_name <> '' ORDER BY m.updated_at DESC LIMIT 1), ''),

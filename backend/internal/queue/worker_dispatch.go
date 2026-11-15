@@ -42,11 +42,11 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 	)
 	alreadySent := make(map[string]bool)
 	if deps.SentEvents != nil && in.EventID != "" {
-		if sentMap, err := deps.SentEvents.GetSuccessfulChannels(ctx, in.EventID, pixel.Name); err == nil {
+		if sentMap, err := deps.SentEvents.GetSuccessfulChannels(ctx, pixel.AccountID, in.EventID, pixel.Name); err == nil {
 			alreadySent = sentMap
 		}
 	}
-	doneTargets := cache.LoadDoneTargets(ctx, deps.Redis, pixel.Name, in.EventID)
+	doneTargets := cache.LoadDoneTargets(ctx, deps.Redis, pixel.AccountID, pixel.Name, in.EventID)
 
 	if len(pixel.PixelIDs) > 0 && deps.Meta != nil && !alreadySent["meta"] {
 		wg.Add(1)
@@ -61,7 +61,9 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		go func() {
 			defer wg.Done()
 			defer recoverDispatchPanic("tiktok", in)
-			tiktokResults = deps.TikTok.SendFiltered(ctx, pixel, in, func(pid string) bool { return doneTargets["tiktok:"+pid] })
+			sub := *pixel
+			sub.TikTokTestCodes = nil
+			tiktokResults = deps.TikTok.SendFiltered(ctx, &sub, in, func(pid string) bool { return doneTargets["tiktok:"+pid] })
 		}()
 	}
 	if (pixel.HasGoogleAds() || in.OverrideGadsAccountID != nil || in.OverrideGadsActionID != "") &&
@@ -97,7 +99,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 				newlyDone = append(newlyDone, r.Channel+":"+r.PixelID)
 			}
 		}
-		cache.MarkTargetsDone(ctx, deps.Redis, pixel.Name, in.EventID, newlyDone)
+		cache.MarkTargetsDone(ctx, deps.Redis, pixel.AccountID, pixel.Name, in.EventID, newlyDone)
 	}
 
 	hasErr := false
@@ -130,7 +132,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 			hasSuccess = true
 			slog.Info("send ok", "channel", r.Channel, "pixel_id", r.PixelID, "event", in.EventName, "event_id", in.EventID, "status", r.StatusCode)
 		}
-		if storeFullPayload || r.Err != nil || retryCount > 0 || in.IsReplay {
+		if storeFullPayload || in.IsReplay {
 			persistResult(ctx, deps.Pool, pixel.AccountID, in, r)
 		}
 	}

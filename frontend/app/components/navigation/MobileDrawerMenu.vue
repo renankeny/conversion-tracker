@@ -95,6 +95,9 @@
               <NuxtLink to="/settings" class="drawer-sublink" :class="{ active: route.path === '/settings' }" @click="close">
                 <span class="sublink-dot" /><span>Geral</span>
               </NuxtLink>
+              <NuxtLink to="/settings/webhooks" class="drawer-sublink" :class="{ active: isActive('/settings/webhooks') }" @click="close">
+                <span class="sublink-dot" /><span>Webhooks</span>
+              </NuxtLink>
               <NuxtLink to="/settings/api" class="drawer-sublink" :class="{ active: isActive('/settings/api') }" @click="close">
                 <span class="sublink-dot" /><span>API</span>
               </NuxtLink>
@@ -120,7 +123,7 @@
 
 <script setup lang="ts">
 import {
-  LayoutDashboard, Kanban, Zap, Users, Webhook,
+  LayoutDashboard, Kanban, Zap, Users,
   Plug, Settings, X, Sun, Moon, LogOut,
   Building2, ChevronDown,
 } from 'lucide-vue-next'
@@ -153,7 +156,6 @@ const primaryLinks = computed(() => {
     { to: '/crm', label: 'CRM', icon: Kanban },
     { to: '/events', label: 'Eventos', icon: Zap },
     { to: '/users', label: 'Usuários', icon: Users },
-    { to: '/webhooks', label: 'Webhooks', icon: Webhook },
   ]
   if (canManageAccounts.value) {
     links.push({ to: '/empresas', label: 'Empresas', icon: Building2 })

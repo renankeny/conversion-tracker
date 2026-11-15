@@ -142,7 +142,7 @@ func scanPixel(row rowScanner) (*domain.Pixel, error) {
 		&p.ID, &p.Name, &p.Label, &p.PublicToken, &p.PixelIDs, &p.AccessTokens, &p.TestCodes,
 		&p.Domains, &cfgJSON, &p.Enabled, &p.TrackingHost, &p.AccountID,
 		&p.TikTokPixelIDs, &p.TikTokAccessTokens, &p.TikTokTestCodes,
-		&p.GoogleAdsCustomerID, &p.GoogleAdsLoginCustomerID,
+		&p.GoogleAdsCustomerID, &p.GoogleAdsCustomerName, &p.GoogleAdsLoginCustomerID,
 		&p.GoogleAdsConversionActionID, &p.GoogleAdsRefreshToken,
 		&p.GoogleAdsOAuthEmail, &p.GoogleAdsAccountID,
 		&p.GA4MeasurementID, &p.GA4APISecret, &p.MetaPermanentToken, &p.MetaAdAccountID, &p.MetaAccountID,

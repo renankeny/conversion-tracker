@@ -41,8 +41,7 @@ func (r *WebhookLogRepo) CreateWithRawPayload(
 		}
 	}
 	if rawPayload != nil {
-		s := string(rawPayload)
-		rawPayloadStr = &s
+		rawPayloadStr = normalizeRawPayloadJSON(rawPayload)
 	}
 	if customWebhookID != "" {
 		cwID = &customWebhookID
@@ -174,7 +173,7 @@ func (r *WebhookLogRepo) List(ctx context.Context, f WebhookLogFilter) ([]domain
 
 	args = append(args, f.Limit, f.Offset)
 	q := "SELECT id, account_id, source, pixel_name, external_id, event_name, " +
-		"event_id, status, error, received_at FROM webhook_logs " + where +
+		"event_id, status, error, (input_json IS NOT NULL) AS can_replay, received_at FROM webhook_logs " + where +
 		" ORDER BY received_at DESC LIMIT $" + itoa(len(args)-1) + " OFFSET $" + itoa(len(args))
 
 	rows, err := r.pool.Query(ctx, q, args...)
@@ -188,7 +187,7 @@ func (r *WebhookLogRepo) List(ctx context.Context, f WebhookLogFilter) ([]domain
 		var l domain.WebhookLog
 		if err := rows.Scan(&l.ID, &l.AccountID, &l.Source, &l.PixelName,
 			&l.ExternalID, &l.EventName, &l.EventID,
-			&l.Status, &l.Error, &l.ReceivedAt); err != nil {
+			&l.Status, &l.Error, &l.CanReplay, &l.ReceivedAt); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, l)

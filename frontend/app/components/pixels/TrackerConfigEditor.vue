@@ -97,7 +97,7 @@ const config = computed({
 }
 
 .section-hint code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   background: var(--surface-soft);
   padding: 0.0625rem 0.375rem;
   border-radius: 4px;

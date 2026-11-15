@@ -1,224 +1,169 @@
 <template>
-  <section class="form-section">
-    <header class="section-header">
-      <h4>1. Conexão com o Google Ads (OAuth)</h4>
-      <p class="section-hint">
-        Autorize uma conta Google ou reutilize um login já conectado neste painel para carregar Contas de Anúncios (inclusive MCC) e Ações de Conversão.
-      </p>
-    </header>
-
-    <div v-if="oauthConnected" class="oauth-box">
-      <div class="oauth-info">
-        <div class="oauth-avatar">
-          <img
-            v-if="connectedAvatar && !brokenAvatar"
-            :src="connectedAvatar"
-            alt=""
-            referrerpolicy="no-referrer"
-            class="oauth-avatar-img"
-            @error="brokenAvatar = true"
-          />
-          <span v-else class="oauth-initials">{{ initials(connectedLabel) }}</span>
-        </div>
-        <span class="oauth-pill">Google Conectado</span>
-        <span class="oauth-email">{{ connectedLabel }}</span>
-      </div>
-      <div class="oauth-actions">
-        <BaseButton type="button" variant="ghost" size="sm" :loading="oauthLoading" @click="onConnect">
-          Entrar em outra conta
-        </BaseButton>
-        <BaseButton type="button" variant="ghost" size="sm" :loading="oauthLoading" @click="showDisconnectConfirm = true">
-          Desconectar
-        </BaseButton>
-      </div>
-    </div>
-
-    <div v-else-if="reusableProfiles.length" class="reuse-container">
-      <BaseAdAccountSelect
-        v-if="reusableProfiles.length > 1"
-        v-model="selectedSourceId"
-        label="Conta Google já conectada neste painel"
-        :options="reuseOptions"
-      />
-      <div v-else class="oauth-box">
-        <div class="oauth-info">
-          <div class="oauth-avatar">
-            <img
-              v-if="singleProfileAvatar && !brokenReuseAvatar"
-              :src="singleProfileAvatar"
-              alt=""
-              referrerpolicy="no-referrer"
-              class="oauth-avatar-img"
-              @error="brokenReuseAvatar = true"
-            />
-            <span v-else class="oauth-initials">{{ initials(singleProfileLabel) }}</span>
-          </div>
-          <div class="oauth-stack">
-            <span class="oauth-email">{{ singleProfileLabel }}</span>
-            <span class="oauth-sub">Conta Google já autorizada neste painel</span>
-          </div>
-        </div>
-        <div class="oauth-actions">
-          <BaseButton type="button" variant="primary" size="sm" :loading="oauthLoading" @click="onUseExisting">
-            Usar mesma conta
-          </BaseButton>
-          <BaseButton type="button" variant="ghost" size="sm" :loading="oauthLoading" @click="onConnect">
-            Entrar em outra conta
-          </BaseButton>
-        </div>
-      </div>
-
-      <div v-if="reusableProfiles.length > 1" class="oauth-actions-bar">
-        <BaseButton type="button" variant="primary" size="sm" :loading="oauthLoading" @click="onUseExisting">
-          Usar conta selecionada
-        </BaseButton>
-        <BaseButton type="button" variant="ghost" size="sm" :loading="oauthLoading" @click="onConnect">
-          Entrar em outra conta
-        </BaseButton>
-      </div>
-    </div>
-
-    <div v-else class="oauth-box">
-      <p class="oauth-text">
-        Conecte sua conta Google em 1 clique para importar suas contas e conversões.
-      </p>
-      <BaseButton type="button" variant="primary" size="sm" :loading="oauthLoading" @click="onConnect">
-        Conectar com Google
-      </BaseButton>
-    </div>
-
-    <ConfirmModal
-      v-model="showDisconnectConfirm"
-      title="Desconectar Google Ads"
-      message="Desconectar essa conta Google Ads? As conversões pararão de ser enviadas."
-      confirm-label="Desconectar"
-      variant="danger"
+  <div class="oauth-card-wrap">
+    <OAuthConnectionBox
+      ref="boxRef"
+      title="1. Conexão com o Google Ads (OAuth)"
+      description="Autorize em uma janela rápida ou conecte com um login Google já autorizado neste painel para carregar Contas de Anúncios e Ações de Conversão."
+      channel="google_ads"
+      :connected="oauthConnected"
+      :identity-label="connectedLabel"
+      :avatar-url="connectedAvatar"
+      disconnect-title="Desconectar Google Ads"
+      disconnect-message="Revogar a conexão OAuth desta conta Google Ads? O Customer ID e as Ações de Conversão vinculadas serão limpos e os envios offline pararão."
+      :reuse-options="reuseOptions"
       :loading="oauthLoading"
-      @confirm="executeDisconnect"
+      @connect="onConnect"
+      @reuse="onReuse"
+      @disconnect="onDisconnect"
     />
-  </section>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
+import OAuthConnectionBox from '~/components/integrations/OAuthConnectionBox.vue'
 import type { AdAccountSelectOption } from '~/components/BaseAdAccountSelect.vue'
 import type { GoogleAdsAccount } from '#shared/types'
 import { useGoogleAdsStore } from '~/stores/useGoogleAdsStore'
+import { useTenantStore } from '~/stores/useTenantStore'
 import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
   account?: GoogleAdsAccount | null
+  defaultName?: string
 }>()
 
 const emit = defineEmits<{
+  connected: [account: GoogleAdsAccount]
   disconnected: []
-  reused: []
-  'connect-new': []
-  'reuse-new': [sourceAccountId: number]
 }>()
 
 const googleAdsApi = useGoogleAdsAccounts()
 const googleAdsStore = useGoogleAdsStore()
+const tenantStore = useTenantStore()
 const { accounts: allAccounts } = storeToRefs(googleAdsStore)
+const { runOAuthPopup } = useOAuthPopup()
 const toast = useToast()
 
 const oauthLoading = ref(false)
-const showDisconnectConfirm = ref(false)
-const brokenAvatar = ref(false)
-const brokenReuseAvatar = ref(false)
-const selectedSourceId = ref<number>(0)
+const boxRef = ref<{ triggerDefaultAction: () => void } | null>(null)
 
 const oauthConnected = computed(
-  () => !!(props.account?.oauth_connected || props.account?.connected || props.account?.oauth_email),
+  () => Boolean(props.account?.oauth_connected || props.account?.connected || props.account?.oauth_email),
 )
 const connectedLabel = computed(() => props.account?.oauth_email || 'Conta Google autorizada')
-const connectedAvatar = computed(() => props.account?.picture_url || props.account?.oauth_picture_url || '')
+const connectedAvatar = computed(
+  () => props.account?.picture_url || props.account?.oauth_picture_url || '',
+)
 
-const reusableProfiles = computed<GoogleAdsAccount[]>(() => {
+const reuseOptions = computed<AdAccountSelectOption[]>(() => {
+  const activeTenant = Number(tenantStore.activeAccountId || 0)
+  const candidates = [...allAccounts.value]
+    .filter((a) => (a.connected || a.oauth_connected) && a.id !== props.account?.id)
+    .sort((a, b) => {
+      const aSame = activeTenant > 0 && a.account_id === activeTenant ? 1 : 0
+      const bSame = activeTenant > 0 && b.account_id === activeTenant ? 1 : 0
+      if (aSame !== bSame) return bSame - aSame
+      return Number(Boolean(b.connected)) - Number(Boolean(a.connected))
+    })
+
   const seen = new Set<string>()
-  const out: GoogleAdsAccount[] = []
-  for (const a of allAccounts.value) {
-    if ((!a.connected && !a.oauth_connected) || a.id === props.account?.id) continue
+  const opts: AdAccountSelectOption[] = []
+  for (const a of candidates) {
     const key = (a.oauth_email || String(a.id)).toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    out.push(a)
+    opts.push({
+      value: a.id,
+      label: a.oauth_email || a.name,
+      sublabel: a.customer_name || a.name,
+      avatarUrl: a.picture_url || a.oauth_picture_url || '',
+      channel: 'google_ads',
+      badge: 'Já autorizada',
+    })
   }
-  return out
+  return opts
 })
 
-watch(reusableProfiles, (list) => {
-  if (list.length && !list.some((a) => a.id === selectedSourceId.value)) {
-    selectedSourceId.value = list[0]!.id
-  }
-}, { immediate: true })
-
-const singleProfileLabel = computed(() => {
-  const p = reusableProfiles.value[0]
-  return p?.oauth_email || p?.name || 'Conta Google'
-})
-
-const singleProfileAvatar = computed(() => {
-  const p = reusableProfiles.value[0]
-  return p?.picture_url || p?.oauth_picture_url || ''
-})
-
-const reuseOptions = computed<AdAccountSelectOption[]>(() =>
-  reusableProfiles.value.map((a) => ({
-    value: a.id,
-    label: a.oauth_email || a.name,
-    sublabel: a.name,
-    avatarUrl: a.picture_url || a.oauth_picture_url || '',
-    channel: 'google_ads',
-    badge: 'Já autorizada',
-  })),
-)
-
-const initials = (name: string) => {
-  const clean = (name || '').split('@')[0] || 'GA'
-  return clean.slice(0, 2).toUpperCase()
-}
-
-const onUseExisting = async () => {
-  const srcId = selectedSourceId.value || reusableProfiles.value[0]?.id || 0
-  if (!srcId) return
-  if (!props.account) {
-    emit('reuse-new', srcId)
-    return
-  }
+const onConnect = async (switchAccount: boolean) => {
+  const hadConnection = oauthConnected.value
   oauthLoading.value = true
   try {
-    await googleAdsApi.reuseOAuth(props.account.id, srcId)
-    toast.success('Conta vinculada', 'Conexão Google reutilizada com sucesso.')
-    emit('reused')
+    await runOAuthPopup({
+      channel: 'google_ads',
+      providerLabel: 'Google Ads',
+      prepare: async (popupMode) => {
+        if (props.account?.id) {
+          const url = await googleAdsApi.getOAuthStartUrl(props.account.id, { switchAccount, popup: popupMode })
+          return { url, accountId: props.account.id, createdTemp: false }
+        }
+        const created = await googleAdsApi.create({ name: props.defaultName?.trim() || 'Google Ads', enabled: true })
+        const url = await googleAdsApi.getOAuthStartUrl(created.id, { switchAccount, popup: popupMode })
+        return { url, accountId: created.id, createdTemp: true }
+      },
+      onSuccess: async (payload) => {
+        await googleAdsApi.list(true)
+        const fresh = await googleAdsApi.get(payload.accountId)
+        toast.success('Google Ads conectado', payload.message ? `Conta autorizada: ${payload.message}` : 'Conexão concluída.')
+        emit('connected', fresh)
+      },
+      onError: async (msg, accountId, createdTemp) => {
+        if (createdTemp && accountId > 0) {
+          try {
+            const check = await googleAdsApi.get(accountId)
+            if (!check.oauth_connected && !check.connected) await googleAdsApi.remove(accountId)
+          } catch {}
+        }
+        toast.error('Falha ao conectar Google Ads', msg)
+      },
+      onManualClose: async (accountId, createdTemp) => {
+        if (accountId <= 0) return
+        try {
+          const check = await googleAdsApi.get(accountId)
+          const nowConnected = Boolean(check.oauth_connected || check.connected)
+          if (nowConnected && (!hadConnection || createdTemp)) {
+            await googleAdsApi.list(true)
+            toast.success('Google Ads conectado', 'Autenticação concluída com sucesso.')
+            emit('connected', check)
+          } else if (createdTemp && !nowConnected) {
+            await googleAdsApi.remove(accountId)
+          }
+        } catch {}
+      },
+    })
   } catch (error: unknown) {
-    toast.error('Erro', errorMessage(error, 'Falha ao reutilizar conta Google'))
+    toast.error('Erro ao iniciar login', errorMessage(error, 'Falha ao abrir OAuth do Google Ads'))
   } finally {
     oauthLoading.value = false
   }
 }
 
-const onConnect = async () => {
-  if (!props.account) {
-    emit('connect-new')
-    return
-  }
+const onReuse = async (sourceAccountId: number) => {
   oauthLoading.value = true
   try {
-    await googleAdsApi.startOAuth(props.account.id)
+    const updated = props.account?.id
+      ? await googleAdsApi.reuseOAuth(props.account.id, sourceAccountId)
+      : await googleAdsApi.create({
+          name: props.defaultName?.trim() || 'Google Ads',
+          reuse_oauth_from_id: sourceAccountId,
+          enabled: true,
+        })
+    toast.success('Conta conectada', 'Agora escolha a Conta Google Ads e as Ações de Conversão.')
+    emit('connected', updated)
   } catch (error: unknown) {
-    toast.error('Erro', errorMessage(error, 'Falha ao iniciar OAuth'))
+    await googleAdsApi.list(true).catch(() => [])
+    toast.error('Erro ao usar conta existente', errorMessage(error, 'Falha ao vincular conta Google'))
+  } finally {
     oauthLoading.value = false
   }
 }
 
-const executeDisconnect = async () => {
-  if (!props.account) return
+const onDisconnect = async () => {
+  if (!props.account?.id) return
   oauthLoading.value = true
   try {
     await googleAdsApi.disconnect(props.account.id)
-    showDisconnectConfirm.value = false
-    toast.success('Desconectado', 'Conta Google revogada.')
+    toast.success('Desconectado', 'Conexão com o Google Ads revogada.')
     emit('disconnected')
   } catch (error: unknown) {
     toast.error('Erro', errorMessage(error, 'Falha ao desconectar'))
@@ -227,22 +172,10 @@ const executeDisconnect = async () => {
   }
 }
 
+defineExpose({ triggerDefaultAction: () => boxRef.value?.triggerDefaultAction() })
 onMounted(() => { googleAdsApi.list() })
 </script>
 
 <style scoped>
-.form-section { display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border-faint); }
-.section-header h4 { font-family: var(--font-heading); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0; }
-.section-hint { font-size: var(--fs-base); color: var(--text-2); margin: 0.25rem 0 0; line-height: 1.5; }
-.reuse-container { display: flex; flex-direction: column; gap: 0.65rem; }
-.oauth-box { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.875rem; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap; }
-.oauth-info, .oauth-actions, .oauth-actions-bar { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
-.oauth-avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--brand-soft); border: 1px solid var(--brand-border); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
-.oauth-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.oauth-initials { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--brand); }
-.oauth-stack { display: flex; flex-direction: column; line-height: 1.25; }
-.oauth-sub { font-size: var(--fs-xs); color: var(--text-3); }
-.oauth-pill { font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 0.2rem 0.55rem; border-radius: 999px; background: var(--success-soft); color: var(--success); }
-.oauth-email { font-size: var(--fs-md); color: var(--text-1); font-weight: var(--fw-medium); }
-.oauth-text { font-size: var(--fs-md); color: var(--text-2); margin: 0; }
+.oauth-card-wrap { display: contents; }
 </style>

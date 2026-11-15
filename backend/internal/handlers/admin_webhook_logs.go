@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
@@ -79,6 +80,10 @@ func (h *AdminWebhookLogs) List(w http.ResponseWriter, r *http.Request) {
 // Reprocessa um webhook_log pelo ID, executando novamente o lookup de
 // usuário e o enfileiramento do evento.
 func (h *AdminWebhookLogs) Replay(w http.ResponseWriter, r *http.Request) {
+	if !auth.CanEditPixels(r.Context()) {
+		writeError(w, http.StatusForbidden, "sem permissão para reprocessar webhooks")
+		return
+	}
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {

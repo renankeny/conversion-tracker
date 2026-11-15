@@ -23,7 +23,7 @@ func (r *SentEventRepo) FindByEventID(ctx context.Context, eventID, pixelName st
 	}
 	if accountID != 0 {
 		args = append(args, accountID)
-		where += fmt.Sprintf(" AND (account_id = $%d OR account_id = 0 OR account_id IS NULL)", len(args))
+		where += fmt.Sprintf(" AND account_id = $%d", len(args))
 	}
 	q := "SELECT DISTINCT ON (channel) id, event_id, event_name, pixel_name, external_id, channel, status, " +
 		"response_code, response_body, error, COALESCE(payload::text, '') AS payload, " +

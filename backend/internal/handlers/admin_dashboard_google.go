@@ -34,25 +34,43 @@ func NewAdminDashboardGoogle(pr *repo.PixelRepo, ga *repo.GoogleAdsAccountRepo, 
 func (h *AdminDashboardGoogle) SetStatsRepo(sr *repo.StatsRepo)     { h.statsRepo = sr }
 func (h *AdminDashboardGoogle) SetQueryCache(qc *cache.QueryCache) { h.qcache = qc }
 
+func stripGoogleDigits(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] >= '0' && s[i] <= '9' {
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
 func (h *AdminDashboardGoogle) resolveGoogleSourceForPixel(ctx context.Context, p *domain.Pixel) (*domain.GoogleAdsAccount, error) {
 	if h.gadsAccs == nil || h.gadsCli == nil {
 		return nil, errors.New("google ads service not configured")
 	}
-	if p.GoogleAdsAccountID != nil && *p.GoogleAdsAccountID > 0 {
-		if acc, ferr := h.gadsAccs.FindByID(ctx, *p.GoogleAdsAccountID); ferr == nil && acc != nil && acc.Enabled && acc.IsConnected() && acc.CustomerID != "" {
-			return acc, nil
-		}
+	if p == nil || p.GoogleAdsAccountID == nil || *p.GoogleAdsAccountID <= 0 {
+		return nil, errors.New("pixel sem Conta Google Ads vinculada")
 	}
-
-	list, err := h.gadsAccs.ListByAccount(ctx, p.AccountID)
-	if err == nil {
-		for i := range list {
-			if list[i].Enabled && list[i].IsConnected() && list[i].CustomerID != "" {
-				return &list[i], nil
+	acc, err := h.gadsAccs.FindByID(ctx, *p.GoogleAdsAccountID)
+	if err != nil || acc == nil || acc.AccountID != p.AccountID || !acc.Enabled || strings.TrimSpace(acc.RefreshToken) == "" {
+		return nil, errors.New("pixel sem Conta Google Ads ativa")
+	}
+	eff := *acc
+	if pxCid := strings.TrimSpace(p.GoogleAdsCustomerID); pxCid != "" {
+		if stripGoogleDigits(pxCid) != stripGoogleDigits(acc.CustomerID) {
+			eff.CustomerID = pxCid
+			eff.LoginCustomerID = strings.TrimSpace(p.GoogleAdsLoginCustomerID)
+		} else {
+			eff.CustomerID = pxCid
+			if lcid := strings.TrimSpace(p.GoogleAdsLoginCustomerID); lcid != "" {
+				eff.LoginCustomerID = lcid
 			}
 		}
 	}
-	return nil, errors.New("pixel sem Conta Google Ads ativa")
+	if strings.TrimSpace(eff.CustomerID) == "" {
+		return nil, errors.New("pixel sem Customer ID do Google Ads configurado")
+	}
+	return &eff, nil
 }
 
 func (h *AdminDashboardGoogle) resolveGoogleSource(r *http.Request) (*domain.GoogleAdsAccount, *domain.Pixel, error) {
@@ -77,7 +95,8 @@ func (h *AdminDashboardGoogle) resolveGoogleSource(r *http.Request) (*domain.Goo
 
 func (h *AdminDashboardGoogle) loadCachedSummary(ctx context.Context, acc *domain.GoogleAdsAccount, since, until string) ([]byte, error) {
 	prevSince, prevUntil := previousYMDWindow(since, until)
-	key := cache.HashQueryKey("gads:insights:v3", strconv.FormatInt(acc.AccountID, 10), strconv.FormatInt(acc.ID, 10), acc.CustomerID, since, until)
+	ver := h.qcache.DashboardVersion(ctx, acc.AccountID)
+	key := cache.HashQueryKey("gads:insights:v5", strconv.FormatInt(acc.AccountID, 10), ver, strconv.FormatInt(acc.ID, 10), acc.CustomerID, acc.LoginCustomerID, since, until)
 	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte(`{"connected":false}`), func(lctx context.Context) ([]byte, error) {
 		summary, ferr := h.gadsCli.FetchLiveInsights(lctx, acc, since, until)
 		if ferr != nil {
@@ -135,7 +154,7 @@ func (h *AdminDashboardGoogle) LiveInsights(w http.ResponseWriter, r *http.Reque
 
 func (h *AdminDashboardGoogle) loadCachedKeywords(ctx context.Context, acc *domain.GoogleAdsAccount, px *domain.Pixel, since, until string, fromTime, toTime time.Time) ([]byte, error) {
 	ver := h.qcache.DashboardVersion(ctx, px.AccountID)
-	key := cache.HashQueryKey("gads:keywords:v3", strconv.FormatInt(px.AccountID, 10), ver, strconv.FormatInt(acc.ID, 10), px.Name, acc.CustomerID, since, until)
+	key := cache.HashQueryKey("gads:keywords:v4", strconv.FormatInt(px.AccountID, 10), ver, strconv.FormatInt(acc.ID, 10), px.Name, acc.CustomerID, acc.LoginCustomerID, since, until)
 	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte("[]"), func(lctx context.Context) ([]byte, error) {
 		kw, ferr := h.gadsCli.FetchKeywordRanking(lctx, acc, since, until)
 		if ferr != nil {

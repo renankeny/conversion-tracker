@@ -6,7 +6,7 @@
 
 /* TEMA PRINCIPAL (Dark Customizado) */
 :root {
-  /* Tipografia Centralizada — Instrument Sans (Pesos Finos & Tamanhos -1 step) */
+  /* Tipografia Centralizada: Instrument Sans (Pesos Finos & Tamanhos -1 step) */
   --font-sans: 'Instrument Sans', system-ui, -apple-system, sans-serif;
   --font-heading: 'Instrument Sans', system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -167,8 +167,16 @@
   --info: var(--brand);
   --info-soft: var(--brand-soft);
   --accent-sky: #0284C7;
+  --accent-sky-soft: rgba(2, 132, 199, 0.12);
+  --accent-sky-border: rgba(2, 132, 199, 0.28);
   --accent-purple: #7C3AED;
+  --accent-purple-strong: #6D28D9;
+  --accent-purple-soft: rgba(124, 58, 237, 0.12);
+  --accent-purple-border: rgba(124, 58, 237, 0.28);
   --accent-pink: #DB2777;
+  --accent-pink-strong: #BE185D;
+  --accent-pink-soft: rgba(219, 39, 119, 0.12);
+  --accent-pink-border: rgba(219, 39, 119, 0.28);
 
   /* Sombras */
   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
@@ -191,7 +199,7 @@
   color-scheme: light;
 }
 
-/* Estilos Base — Tipografia Instrument Sans Fina, Elegante e Centralizada */
+/* Estilos Base: Tipografia Instrument Sans Fina, Elegante e Centralizada */
 html {
   font-family: var(--font-sans);
   font-size: 16px;

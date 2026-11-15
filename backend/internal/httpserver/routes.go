@@ -160,6 +160,7 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 				r.Delete("/admin/custom-webhooks/{id}", h.adminCustomWebhooks.Delete)
 				r.Get("/admin/custom-webhooks/{id}/logs", h.adminCustomWebhooks.Logs)
 
+				r.Get("/admin/integrations/platforms/summary", h.adminPlatformTokens.Summary)
 				r.Get("/admin/integrations/platforms/tokens/{platform}", h.adminPlatformTokens.GetToken)
 				r.Put("/admin/integrations/platforms/tokens/{platform}", h.adminPlatformTokens.SetToken)
 
@@ -178,7 +179,7 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 				r.Put("/admin/accounts/{id}/event-labels", h.adminAccounts.UpdateEventLabels)
 				r.Delete("/admin/accounts/{id}", h.adminAccounts.Delete)
 				r.Get("/admin/events-filter", h.adminAccounts.GetEventsFilter)
-				r.Put("/admin/events-filter", h.adminAccounts.UpdateEventsFilter)
+				r.With(RequireManager).Put("/admin/events-filter", h.adminAccounts.UpdateEventsFilter)
 
 				r.Post("/admin/crm/stages", h.adminCRM.CreateStage)
 				r.Put("/admin/crm/stages/reorder", h.adminCRM.ReorderStages)
@@ -194,10 +195,11 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 				r.Put("/admin/url-mappings/{id}", h.adminURL.Update)
 				r.Delete("/admin/url-mappings/{id}", h.adminURL.Delete)
 
-				r.Delete("/admin/sent-events", h.adminSent.BulkDelete)
-				r.Post("/admin/sent-events/retry", h.adminSent.Retry)
+				r.With(RequireManager).Delete("/admin/sent-events", h.adminSent.BulkDelete)
+				r.With(RequireManager).Post("/admin/sent-events/retry", h.adminSent.Retry)
 				r.Post("/admin/webhook-logs/{id}/replay", h.adminWebhookLogs.Replay)
-				r.Put("/admin/tracked-users/{id}", h.adminTrackedUsers.Update)
+				r.With(RequireManager).Put("/admin/tracked-users/{id}", h.adminTrackedUsers.Update)
+				r.With(RequireManager).Delete("/admin/tracked-users/{id}", h.adminTrackedUsers.Delete)
 
 				r.Get("/admin/api-keys", h.adminAPIKeys.List)
 				r.Post("/admin/api-keys", h.adminAPIKeys.Create)
@@ -217,7 +219,7 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 			r.With(RequireManager).Post("/admin/maintenance/prune", h.adminMaintenance.PruneNow)
 			r.With(RequireManager).Post("/admin/maintenance/reset", h.adminMaintenance.Reset)
 			r.Post("/admin/pixels/{id}/test-event", h.adminPixelTest.SendTestEvent)
-			r.Post("/admin/google-ads-accounts/{id}/test-event", h.adminGoogleAds.SendTestEvent)
+			registerOAuthLongAdminRoutes(r, h)
 			r.Get("/admin/dashboard/meta/live-insights", h.adminDashboardMeta.LiveInsights)
 			r.Get("/admin/dashboard/meta/creative-ranking", h.adminDashboardMeta.CreativeRanking)
 			r.Get("/admin/dashboard/google/live-insights", h.adminDashboardGoogle.LiveInsights)

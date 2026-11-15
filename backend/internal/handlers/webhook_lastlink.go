@@ -99,7 +99,7 @@ func (h *Webhooks) Lastlink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := util.FirstNonEmpty(p.Data.Buyer.Name, p.Buyer.Name, p.Data.Customer.Name, p.Customer.Name)
-	first, last := util.SplitFullName(strings.ToLower(name))
+	first, last := util.SplitFullName(name)
 	email := util.FirstNonEmpty(p.Data.Buyer.Email, p.Buyer.Email, p.Data.Customer.Email, p.Customer.Email)
 	phone := util.FirstNonEmpty(
 		p.Data.Buyer.PhoneNumber, p.Data.Buyer.Phone,
@@ -151,6 +151,7 @@ func (h *Webhooks) Lastlink(w http.ResponseWriter, r *http.Request) {
 		ProductName: prodName,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

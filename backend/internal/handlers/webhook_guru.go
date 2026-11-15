@@ -75,7 +75,7 @@ func (h *Webhooks) Guru(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Contact.Name))
+	first, last := util.SplitFullName(p.Contact.Name)
 	phone := util.FirstNonEmpty(
 		joinPhoneDDD("", p.Contact.PhoneLocalCode, p.Contact.PhoneNumber),
 		p.Contact.Phone,
@@ -116,6 +116,7 @@ func (h *Webhooks) Guru(w http.ResponseWriter, r *http.Request) {
 		ProductName: prodName,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

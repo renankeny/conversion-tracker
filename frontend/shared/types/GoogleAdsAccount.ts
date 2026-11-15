@@ -1,5 +1,5 @@
 /**
- * Tipos do dominio Google Ads no painel.
+ * Tipos do domínio Google Ads no painel.
  */
 
 export type GoogleAdsEventType =
@@ -23,12 +23,14 @@ export interface GoogleAdsAccount {
   account_id: number
   name: string
   customer_id: string
+  customer_name?: string
   login_customer_id: string
   conversion_actions: GoogleAdsConversionAction[]
   oauth_email: string
   oauth_picture_url?: string
   picture_url?: string
   oauth_connected?: boolean
+  ready?: boolean
   enabled: boolean
   connected: boolean
   created_at: string
@@ -38,6 +40,7 @@ export interface GoogleAdsAccount {
 export interface GoogleAdsAccountInput {
   name: string
   customer_id?: string
+  customer_name?: string
   login_customer_id?: string
   conversion_actions?: GoogleAdsConversionAction[]
   reuse_oauth_from_id?: number

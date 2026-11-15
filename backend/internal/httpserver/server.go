@@ -150,8 +150,11 @@ func New(deps Deps) (*Server, error) {
 	adminAuthH.SetSessionDeps(sessions, wsTickets)
 	adminGadsH := handlers.NewAdminGoogleAdsAccounts(googleAdsAccountRepo, googleAdsClient, googleOAuth, deps.Cfg.AppURL)
 	adminGadsH.SetRedis(rdb)
+	adminGadsH.SetPixels(pixels)
 	adminMetaH := handlers.NewAdminMetaAccounts(metaAccountRepo, metaOAuthClient, metaOAuthCfg, deps.Cfg.AppURL)
 	adminMetaH.SetRedis(rdb)
+	adminMetaH.SetPixels(pixels)
+	adminMetaH.SetPartnerAgent(deps.Cfg.MetaPartnerAgent)
 	adminUsersH := handlers.NewAdminUsers(deps.Pool)
 	adminUsersH.SetSessions(sessions)
 	adminDashMetaH := handlers.NewAdminDashboardMeta(pixels)
@@ -193,13 +196,13 @@ func New(deps Deps) (*Server, error) {
 		adminGeoIP:          adminGeoIPH,
 		adminMaintenance:    handlers.NewAdminMaintenance(deps.Pool, accountRepo, deps.Cfg.SentEventsRetentionDays, deps.Cfg.EventCountersRetentionDays),
 		adminCustomWebhooks: handlers.NewAdminCustomWebhooks(customWebhooksRepo, webhookLogRepo),
-		adminPlatformTokens: handlers.NewPlatformTokens(platformTokenRepo),
+		adminPlatformTokens: handlers.NewPlatformTokens(platformTokenRepo).WithWebhookLogs(webhookLogRepo),
 		adminSalesConfirm:   adminSalesConfirmH,
 		adminUsers:          adminUsersH,
 		adminAccounts:       handlers.NewAdminAccounts(accountRepo),
 		adminCRM:            adminCRM,
 		adminURL:            adminURL,
-		adminSent:           handlers.NewAdminSentEvents(sentEvents, deps.Enqueuer),
+		adminSent:            handlers.NewAdminSentEvents(sentEvents, deps.Enqueuer).WithRedis(rdb),
 		adminWebhookLogs:    handlers.NewAdminWebhookLogs(webhookLogRepo, webhookH),
 		adminTrackedUsers:   adminTrackedUsers,
 		adminStats:          adminStatsH,

@@ -1,164 +1,157 @@
 package handlers
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
-	"net/http"
-	"strconv"
+	"regexp"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-
-	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
-// UpdateDashboardConfig PUT /admin/pixels/{id}/dashboard-config
-func (h *AdminPixels) UpdateDashboardConfig(w http.ResponseWriter, r *http.Request) {
-	if !auth.CanEditPixels(r.Context()) {
-		writeError(w, http.StatusForbidden, "você não tem permissão para editar pixels")
-		return
-	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-	existing, err := h.repo.FindByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "load error")
-		return
-	}
-	scope := TenantFromContext(r.Context())
-	if !scope.IsOwner && existing.AccountID != scope.AccountID {
-		writeError(w, http.StatusForbidden, "sem acesso")
-		return
-	}
+const clearTokenSentinel = "__CLEAR__"
 
-	var cfg domain.DashboardConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
-		return
-	}
-	if err := h.repo.UpdateDashboardConfig(r.Context(), id, cfg); err != nil {
-		writeError(w, http.StatusInternalServerError, "update error: "+err.Error())
-		return
-	}
-	h.repo.InvalidateCache(r.Context(), existing.Name, existing.PublicToken, existing.DashboardShareToken)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dashboard_config": cfg})
-}
-
-// GenerateDashboardShareLink POST /admin/pixels/{id}/dashboard-share-link
-func (h *AdminPixels) GenerateDashboardShareLink(w http.ResponseWriter, r *http.Request) {
-	if !auth.CanEditPixels(r.Context()) {
-		writeError(w, http.StatusForbidden, "você não tem permissão para editar pixels")
-		return
-	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-	existing, err := h.repo.FindByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "load error")
-		return
-	}
-	scope := TenantFromContext(r.Context())
-	if !scope.IsOwner && existing.AccountID != scope.AccountID {
-		writeError(w, http.StatusForbidden, "sem acesso")
-		return
-	}
-	token, err := h.repo.GenerateDashboardShareToken(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "generate error: "+err.Error())
-		return
-	}
-	h.repo.InvalidateCache(r.Context(), existing.Name, existing.PublicToken, existing.DashboardShareToken, token)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"id":                    id,
-		"dashboard_share_token": token,
-	})
-}
-
-// RevokeDashboardShareLink DELETE /admin/pixels/{id}/dashboard-share-link
-func (h *AdminPixels) RevokeDashboardShareLink(w http.ResponseWriter, r *http.Request) {
-	if !auth.CanEditPixels(r.Context()) {
-		writeError(w, http.StatusForbidden, "você não tem permissão para editar pixels")
-		return
-	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-	existing, err := h.repo.FindByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "load error")
-		return
-	}
-	scope := TenantFromContext(r.Context())
-	if !scope.IsOwner && existing.AccountID != scope.AccountID {
-		writeError(w, http.StatusForbidden, "sem acesso")
-		return
-	}
-	if err := h.repo.RevokeDashboardShareToken(r.Context(), id); err != nil {
-		writeError(w, http.StatusInternalServerError, "revoke error: "+err.Error())
-		return
-	}
-	h.repo.InvalidateCache(r.Context(), existing.Name, existing.PublicToken, existing.DashboardShareToken)
-	w.WriteHeader(http.StatusNoContent)
-}
+var pixelSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 func validatePixelInput(in pixelInput, requireAll bool) error {
+	trimmedName := strings.TrimSpace(in.Name)
+	if requireAll && trimmedName == "" {
+		return errors.New("nome do pixel é obrigatório")
+	}
+	if trimmedName != "" && !pixelSlugPattern.MatchString(trimmedName) {
+		return errors.New("nome do pixel deve usar apenas letras, números, hífen ou underline (máx. 64 caracteres)")
+	}
 	if requireAll {
-		if strings.TrimSpace(in.Name) == "" {
-			return errors.New("nome do pixel é obrigatório")
-		}
-		hasMeta := len(in.PixelIDs) > 0
+		metaIDs := cleanStringSlice(in.PixelIDs)
+		ttIDs := cleanStringSlice(in.TikTokPixelIDs)
+		hasMeta := len(metaIDs) > 0
 		hasMetaOAuth := in.MetaAccountID != nil && *in.MetaAccountID > 0
-		hasTikTok := len(in.TikTokPixelIDs) > 0
+		hasTikTok := len(ttIDs) > 0
 		hasGoogleAds := in.GoogleAdsAccountID != nil && *in.GoogleAdsAccountID > 0
 		hasGA4 := in.GA4MeasurementID != nil && strings.TrimSpace(*in.GA4MeasurementID) != ""
+		if hasMetaOAuth && !hasMeta && !hasTikTok && !hasGoogleAds && !hasGA4 {
+			return errors.New("selecione pelo menos um Pixel ID da Meta para disparar eventos via OAuth")
+		}
 		if !hasMeta && !hasMetaOAuth && !hasTikTok && !hasGoogleAds && !hasGA4 {
 			return errors.New("configure pelo menos um canal (Meta, TikTok, Google Ads ou GA4)")
 		}
-		if hasMeta && !hasMetaOAuth && len(in.AccessTokens) != len(in.PixelIDs) {
-			return errors.New("access_tokens length must match pixel_ids")
+		if hasMeta && !hasMetaOAuth && len(in.AccessTokens) != len(metaIDs) {
+			return errors.New("informe o Access Token para cada Pixel ID da Meta")
 		}
-		if hasTikTok && len(in.TikTokAccessTokens) != len(in.TikTokPixelIDs) {
-			return errors.New("tiktok_access_tokens length must match tiktok_pixel_ids")
+		if hasTikTok && len(in.TikTokAccessTokens) != len(ttIDs) {
+			return errors.New("informe o Access Token para cada Pixel ID do TikTok")
 		}
-	}
-	if in.PixelIDs != nil && in.AccessTokens != nil &&
-		len(in.AccessTokens) != len(in.PixelIDs) {
-		return errors.New("access_tokens length must match pixel_ids")
-	}
-	// TikTok: se algum dos dois for informado, ambos devem ter o mesmo tamanho.
-	if in.TikTokPixelIDs != nil && in.TikTokAccessTokens != nil &&
-		len(in.TikTokAccessTokens) != len(in.TikTokPixelIDs) {
-		return errors.New("tiktok_access_tokens length must match tiktok_pixel_ids")
 	}
 	return nil
+}
+
+func applyOptionalPixelFields(p *domain.Pixel, in pixelInput) {
+	if in.Enabled != nil {
+		p.Enabled = *in.Enabled
+	}
+	if in.TrackingHost != nil {
+		p.TrackingHost = normalizeHost(*in.TrackingHost)
+	}
+	if in.GA4MeasurementID != nil {
+		p.GA4MeasurementID = strings.TrimSpace(*in.GA4MeasurementID)
+	}
+	if in.GA4APISecret != nil {
+		val := strings.TrimSpace(*in.GA4APISecret)
+		if val == clearTokenSentinel || (val == "" && p.GA4MeasurementID == "") {
+			p.GA4APISecret = ""
+		} else if !isMaskedOrEmpty(val) {
+			p.GA4APISecret = val
+		}
+	}
+	if in.MetaPermanentToken != nil {
+		val := strings.TrimSpace(*in.MetaPermanentToken)
+		if val == clearTokenSentinel {
+			p.MetaPermanentToken = ""
+		} else if !isMaskedOrEmpty(val) {
+			p.MetaPermanentToken = val
+		}
+	}
+	if in.MetaAdAccountID != nil {
+		p.MetaAdAccountID = strings.TrimSpace(*in.MetaAdAccountID)
+	}
+	if in.GoogleAdsCustomerID != nil {
+		p.GoogleAdsCustomerID = strings.TrimSpace(*in.GoogleAdsCustomerID)
+		if p.GoogleAdsCustomerID == "" {
+			p.GoogleAdsCustomerName = ""
+			p.GoogleAdsLoginCustomerID = ""
+		}
+	}
+	if in.GoogleAdsCustomerName != nil {
+		p.GoogleAdsCustomerName = strings.TrimSpace(*in.GoogleAdsCustomerName)
+	}
+	if in.GoogleAdsLoginCustomerID != nil {
+		p.GoogleAdsLoginCustomerID = strings.TrimSpace(*in.GoogleAdsLoginCustomerID)
+	}
+	if p.GoogleAdsAccountID == nil {
+		p.GoogleAdsCustomerID = ""
+		p.GoogleAdsCustomerName = ""
+		p.GoogleAdsLoginCustomerID = ""
+	}
+	if in.AggregationEnabled != nil {
+		p.AggregationEnabled = *in.AggregationEnabled
+	}
+	if in.AggregationWindowMinutes != nil {
+		p.AggregationWindowMinutes = *in.AggregationWindowMinutes
+	}
+}
+
+func syncPixelGoogleAdsDefaults(ctx context.Context, gads *repo.GoogleAdsAccountRepo, p *domain.Pixel) {
+	if gads == nil || p == nil || p.GoogleAdsAccountID == nil || *p.GoogleAdsAccountID <= 0 {
+		return
+	}
+	if strings.TrimSpace(p.GoogleAdsCustomerID) != "" {
+		return
+	}
+	acc, err := gads.FindByID(ctx, *p.GoogleAdsAccountID)
+	if err != nil || acc == nil || strings.TrimSpace(acc.CustomerID) == "" {
+		return
+	}
+	p.GoogleAdsCustomerID = strings.TrimSpace(acc.CustomerID)
+	if name := strings.TrimSpace(acc.CustomerName); name != "" {
+		p.GoogleAdsCustomerName = name
+	} else {
+		p.GoogleAdsCustomerName = strings.TrimSpace(acc.Name)
+	}
+	p.GoogleAdsLoginCustomerID = strings.TrimSpace(acc.LoginCustomerID)
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func cleanStringSlice(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if v := strings.TrimSpace(s); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func indexTokensByPixelID(pixelIDs, tokens []string) map[string]string {
+	out := make(map[string]string, len(pixelIDs))
+	for i, pid := range pixelIDs {
+		if i < len(tokens) {
+			out[strings.TrimSpace(pid)] = tokens[i]
+		}
+	}
+	return out
 }
 
 func padOrTrim(s []string, n int) []string {
 	out := make([]string, n)
 	for i := 0; i < n && i < len(s); i++ {
-		out[i] = s[i]
+		out[i] = strings.TrimSpace(s[i])
 	}
 	return out
 }
@@ -168,12 +161,17 @@ func isMaskedOrEmpty(s string) bool {
 	return s == "" || s == "****" || strings.Contains(s, "...")
 }
 
-func mergeTokens(pixelIDs, incomingTokens []string, oldByPixelID map[string]string, oldSlice []string) []string {
+func mergeTokens(pixelIDs, incomingTokens []string, oldByPixelID map[string]string) []string {
 	out := make([]string, len(pixelIDs))
 	for i, pid := range pixelIDs {
+		pid = strings.TrimSpace(pid)
 		tok := ""
 		if i < len(incomingTokens) {
 			tok = strings.TrimSpace(incomingTokens[i])
+		}
+		if tok == clearTokenSentinel {
+			out[i] = ""
+			continue
 		}
 		if !isMaskedOrEmpty(tok) {
 			out[i] = tok
@@ -181,14 +179,11 @@ func mergeTokens(pixelIDs, incomingTokens []string, oldByPixelID map[string]stri
 		}
 		if prev, ok := oldByPixelID[pid]; ok && prev != "" {
 			out[i] = prev
-		} else if i < len(oldSlice) {
-			out[i] = oldSlice[i]
 		}
 	}
 	return out
 }
 
-// nilIfZeroInt64 retorna nil se v == 0, senao um *int64 apontando pra v.
 func nilIfZeroInt64(v int64) *int64 {
 	if v == 0 {
 		return nil
@@ -196,7 +191,6 @@ func nilIfZeroInt64(v int64) *int64 {
 	return &v
 }
 
-// cleanDomains normaliza domínios (lowercase, trim, sem duplicatas e sem strings vazias).
 func cleanDomains(in []string) []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(in))
@@ -214,7 +208,6 @@ func cleanDomains(in []string) []string {
 	return out
 }
 
-// normalizeHost limpa um host: remove scheme, path, espaço e força lowercase.
 func normalizeHost(in string) string {
 	h := strings.TrimSpace(in)
 	if h == "" {

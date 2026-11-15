@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/googleads"
@@ -19,9 +20,11 @@ import (
 
 type AdminGoogleAdsAccounts struct {
 	accounts  *repo.GoogleAdsAccountRepo
+	pixels    *repo.PixelRepo
 	client    *googleads.Client
 	oauth     googleads.OAuthConfig
 	state     *cache.OAuthStateStore
+	rdb       *redis.Client
 	frontHost string
 }
 
@@ -36,12 +39,25 @@ func NewAdminGoogleAdsAccounts(accounts *repo.GoogleAdsAccountRepo, client *goog
 }
 
 func (h *AdminGoogleAdsAccounts) SetRedis(rdb *redis.Client) {
+	h.rdb = rdb
 	h.state = cache.NewOAuthStateStore(rdb)
+}
+
+func (h *AdminGoogleAdsAccounts) SetPixels(pixels *repo.PixelRepo) {
+	h.pixels = pixels
+}
+
+func (h *AdminGoogleAdsAccounts) invalidateAccountCaches(ctx context.Context, accountID, gadsAccountID int64) {
+	if h.pixels != nil && gadsAccountID > 0 {
+		h.pixels.InvalidateByGoogleAdsAccount(ctx, gadsAccountID)
+	}
+	cache.BumpDashboardVersion(ctx, h.rdb, accountID)
 }
 
 type googleAdsAccountInput struct {
 	Name              string                             `json:"name"`
 	CustomerID        string                             `json:"customer_id"`
+	CustomerName      string                             `json:"customer_name"`
 	LoginCustomerID   string                             `json:"login_customer_id"`
 	ConversionActions []domain.GoogleAdsConversionAction `json:"conversion_actions"`
 	ReuseOAuthFromID  int64                              `json:"reuse_oauth_from_id"`
@@ -60,7 +76,7 @@ func (h *AdminGoogleAdsAccounts) List(w http.ResponseWriter, r *http.Request) {
 		list, err = h.accounts.ListByAccount(r.Context(), scope.AccountID)
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "load error")
+		writeError(w, http.StatusInternalServerError, "erro ao listar contas Google Ads")
 		return
 	}
 	out := make([]map[string]any, 0, len(list))
@@ -71,45 +87,50 @@ func (h *AdminGoogleAdsAccounts) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminGoogleAdsAccounts) Get(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-	a, err := h.accounts.FindByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "conta nao encontrada")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "load error")
-		return
-	}
-	scope := TenantFromContext(r.Context())
-	if !scope.IsOwner && a.AccountID != scope.AccountID {
-		writeError(w, http.StatusForbidden, "sem acesso")
+	a, ok := h.loadAuthorizedAccount(w, r)
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, a.PublicView())
 }
 
 func (h *AdminGoogleAdsAccounts) Create(w http.ResponseWriter, r *http.Request) {
+	if !auth.CanEditPixels(r.Context()) {
+		writeError(w, http.StatusForbidden, "você não tem permissão para gerenciar contas de anúncios")
+		return
+	}
 	var in googleAdsAccountInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+		writeError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
-		writeError(w, http.StatusBadRequest, "nome e obrigatorio")
+		writeError(w, http.StatusBadRequest, "o nome da conexão é obrigatório")
 		return
 	}
-
 	scope := TenantFromContext(r.Context())
+	accID := scope.AccountID
+	var oauthSrc *domain.GoogleAdsAccount
+	if in.ReuseOAuthFromID > 0 {
+		src, err := h.loadValidOAuthSource(r.Context(), scope, accID, in.ReuseOAuthFromID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		oauthSrc = src
+		if scope.IsOwner && accID == 0 {
+			accID = src.AccountID
+		}
+	}
+	if scope.IsOwner && accID == 0 {
+		accID = 1
+	}
 	a := &domain.GoogleAdsAccount{
-		AccountID:         scope.AccountID,
+		AccountID:         accID,
 		Name:              in.Name,
 		CustomerID:        strings.TrimSpace(in.CustomerID),
+		CustomerName:      strings.TrimSpace(in.CustomerName),
 		LoginCustomerID:   strings.TrimSpace(in.LoginCustomerID),
 		ConversionActions: sanitizeConversionActions(in.ConversionActions),
 		Enabled:           true,
@@ -117,120 +138,92 @@ func (h *AdminGoogleAdsAccounts) Create(w http.ResponseWriter, r *http.Request) 
 	if in.Enabled != nil {
 		a.Enabled = *in.Enabled
 	}
-	if scope.IsOwner && a.AccountID == 0 {
-		a.AccountID = 1
-	}
 	if err := h.accounts.Create(r.Context(), a); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao criar conta")
+		writeError(w, http.StatusInternalServerError, "erro ao criar conta Google Ads")
 		return
 	}
-	if in.ReuseOAuthFromID > 0 {
-		if err := h.copyOAuthFromSource(r.Context(), a, in.ReuseOAuthFromID); err != nil {
+	if oauthSrc != nil {
+		if err := h.applyOAuthSource(r.Context(), a, oauthSrc); err != nil {
+			_ = h.accounts.Delete(r.Context(), a.ID)
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
+	h.invalidateAccountCaches(r.Context(), a.AccountID, a.ID)
 	writeJSON(w, http.StatusCreated, a.PublicView())
 }
 
 func (h *AdminGoogleAdsAccounts) Update(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	if !auth.CanEditPixels(r.Context()) {
+		writeError(w, http.StatusForbidden, "você não tem permissão para gerenciar contas de anúncios")
 		return
 	}
-	a, err := h.accounts.FindByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "conta nao encontrada")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "load error")
+	a, ok := h.loadAuthorizedAccount(w, r)
+	if !ok {
 		return
 	}
-	scope := TenantFromContext(r.Context())
-	if !scope.IsOwner && a.AccountID != scope.AccountID {
-		writeError(w, http.StatusForbidden, "sem acesso")
-		return
-	}
-
 	var in googleAdsAccountInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+		writeError(w, http.StatusBadRequest, "JSON inválido")
 		return
 	}
 	if name := strings.TrimSpace(in.Name); name != "" {
 		a.Name = name
 	}
 	a.CustomerID = strings.TrimSpace(in.CustomerID)
+	a.CustomerName = strings.TrimSpace(in.CustomerName)
+	if a.CustomerID == "" {
+		a.CustomerName = ""
+	}
 	a.LoginCustomerID = strings.TrimSpace(in.LoginCustomerID)
 	a.ConversionActions = sanitizeConversionActions(in.ConversionActions)
 	if in.Enabled != nil {
 		a.Enabled = *in.Enabled
 	}
 	if err := h.accounts.Update(r.Context(), a); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao atualizar conta")
+		writeError(w, http.StatusInternalServerError, "erro ao atualizar conta Google Ads")
 		return
 	}
+	h.invalidateAccountCaches(r.Context(), a.AccountID, a.ID)
 	writeJSON(w, http.StatusOK, a.PublicView())
 }
 
 func (h *AdminGoogleAdsAccounts) Delete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+	if !auth.CanEditPixels(r.Context()) {
+		writeError(w, http.StatusForbidden, "você não tem permissão para gerenciar contas de anúncios")
 		return
 	}
-	a, err := h.accounts.FindByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "conta nao encontrada")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "load error")
+	a, ok := h.loadAuthorizedAccount(w, r)
+	if !ok {
 		return
 	}
-	scope := TenantFromContext(r.Context())
-	if !scope.IsOwner && a.AccountID != scope.AccountID {
-		writeError(w, http.StatusForbidden, "sem acesso")
-		return
-	}
-	if err := h.accounts.Delete(r.Context(), id); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao excluir conta")
+	h.invalidateAccountCaches(r.Context(), a.AccountID, a.ID)
+	if err := h.accounts.Delete(r.Context(), a.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "erro ao excluir conta Google Ads")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 
-func (h *AdminGoogleAdsAccounts) copyOAuthFromSource(ctx context.Context, dst *domain.GoogleAdsAccount, sourceID int64) error {
-	src, err := h.accounts.FindByID(ctx, sourceID)
-	if err != nil || src == nil || src.AccountID != dst.AccountID || !src.IsConnected() {
-		return errors.New("conta Google de origem invalida ou desconectada")
+func (h *AdminGoogleAdsAccounts) loadAuthorizedAccount(w http.ResponseWriter, r *http.Request) (*domain.GoogleAdsAccount, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "ID inválido")
+		return nil, false
 	}
-	if err := h.accounts.SetTokens(ctx, dst.ID, src.RefreshToken, src.OAuthEmail, src.OAuthPictureURL); err != nil {
-		return errors.New("erro ao reutilizar conexao OAuth do Google Ads")
+	a, err := h.accounts.FindByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "conta Google Ads não encontrada")
+			return nil, false
+		}
+		writeError(w, http.StatusInternalServerError, "erro ao carregar conta Google Ads")
+		return nil, false
 	}
-	dst.RefreshToken = src.RefreshToken
-	dst.OAuthEmail = src.OAuthEmail
-	dst.OAuthPictureURL = src.OAuthPictureURL
-	return nil
-}
-
-func (h *AdminGoogleAdsAccounts) ReuseOAuth(w http.ResponseWriter, r *http.Request) {
-	a, ok := h.loadAuthorizedAccount(w, r)
-	if !ok {
-		return
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner && a.AccountID != scope.AccountID {
+		writeError(w, http.StatusForbidden, "sem acesso a esta conta")
+		return nil, false
 	}
-	var body struct {
-		SourceAccountID int64 `json:"source_account_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SourceAccountID <= 0 {
-		writeError(w, http.StatusBadRequest, "source_account_id obrigatorio")
-		return
-	}
-	if err := h.copyOAuthFromSource(r.Context(), a, body.SourceAccountID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, a.PublicView())
+	return a, true
 }

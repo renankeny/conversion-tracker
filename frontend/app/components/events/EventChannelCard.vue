@@ -28,6 +28,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import BrandIcon from '~/components/events/BrandIcon.vue'
 import EventPayloadViewer from '~/components/events/EventPayloadViewer.vue'
 import type { Channel, SentEvent } from '#shared/types'
@@ -55,9 +56,9 @@ const state = computed<State>(() => {
 })
 
 const statusCode = computed(() => {
-  if (!props.data) return '—'
+  if (!props.data) return '-'
   if (props.data.status === 'queued' && !props.data.response_code) return 'FILA'
-  return props.data.response_code || '—'
+  return props.data.response_code || '-'
 })
 
 const statusText = computed(() => {
@@ -109,11 +110,9 @@ const statusText = computed(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-qr);
+  background: var(--surface-deep);
   border: 1px solid var(--border-soft);
 }
-
-[data-theme="light"] .card-icon { background: var(--surface-1); }
 
 .card-title-block {
   display: flex;
@@ -135,7 +134,7 @@ const statusText = computed(() => {
 .card-status { font-size: var(--fs-sm); color: var(--text-3); }
 
 .card-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-base);
   font-weight: var(--fw-bold);
   padding: 0.1875rem 0.5rem;

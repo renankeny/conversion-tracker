@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,8 +14,8 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
-// AdminTrackedUsers expõe o GET /admin/tracked-users pra listagem no painel
-// e PUT /admin/tracked-users/{id} pra edição manual de qualquer campo.
+// AdminTrackedUsers expõe rotas administrativas de listagem, busca, jornada,
+// edição e exclusão de visitantes/leads rastreados.
 type AdminTrackedUsers struct {
 	repo       *repo.UserRepo
 	sentEvents *repo.SentEventRepo
@@ -29,22 +30,20 @@ func (h *AdminTrackedUsers) SetPixels(p *repo.PixelRepo) {
 	h.pixels = p
 }
 
-// List GET /admin/tracked-users?pixel=&search=&limit=&offset=
-//
-// `search` casa parcialmente (ILIKE) em external_id, id_wpp, email e phone.
-// Aplica filtro multi-tenant: members só veem tracked users da própria conta.
+// List GET /admin/tracked-users?pixel=&segment=&search=&limit=&offset=
 func (h *AdminTrackedUsers) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := repo.TrackedUserFilter{
-		PixelName: q.Get("pixel"),
-		Search:    q.Get("search"),
+		PixelName: strings.TrimSpace(q.Get("pixel")),
+		Segment:   strings.TrimSpace(q.Get("segment")),
+		Search:    strings.TrimSpace(q.Get("search")),
 	}
 	scope := TenantFromContext(r.Context())
 	f.AccountID = scope.AccountID
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'limit'")
+			writeError(w, http.StatusBadRequest, "parâmetro 'limit' inválido")
 			return
 		}
 		f.Limit = n
@@ -52,7 +51,7 @@ func (h *AdminTrackedUsers) List(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("offset"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid 'offset'")
+			writeError(w, http.StatusBadRequest, "parâmetro 'offset' inválido")
 			return
 		}
 		f.Offset = n
@@ -60,7 +59,8 @@ func (h *AdminTrackedUsers) List(w http.ResponseWriter, r *http.Request) {
 
 	list, total, err := h.repo.List(r.Context(), f)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list error: "+err.Error())
+		slog.Error("admin tracked_users list failed", "account_id", f.AccountID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao listar usuários rastreados")
 		return
 	}
 
@@ -76,10 +76,7 @@ func (h *AdminTrackedUsers) List(w http.ResponseWriter, r *http.Request) {
 func (h *AdminTrackedUsers) Lookup(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	scope := TenantFromContext(r.Context())
-	lookupAccID := int64(0)
-	if !scope.IsOwner {
-		lookupAccID = scope.AccountID
-	}
+	lookupAccID := scope.AccountID
 
 	var (
 		user *domain.TrackedUser
@@ -93,7 +90,7 @@ func (h *AdminTrackedUsers) Lookup(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "parâmetro 'id' inválido: deve ser inteiro")
 			return
 		}
-		user, err = h.repo.FindByID(r.Context(), id)
+		user, err = h.repo.FindRawByID(r.Context(), id)
 
 	case q.Get("external_id") != "":
 		user, err = h.repo.FindByExternalIDByAccount(r.Context(), strings.TrimSpace(q.Get("external_id")), lookupAccID)
@@ -124,12 +121,13 @@ func (h *AdminTrackedUsers) Lookup(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "usuário não encontrado")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "erro na busca: "+err.Error())
+		slog.Error("admin tracked_users lookup failed", "account_id", lookupAccID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao buscar usuário")
 		return
 	}
 
 	if !canEdit(r, user) {
-		writeError(w, http.StatusForbidden, "sem acesso")
+		writeError(w, http.StatusForbidden, "sem acesso a este usuário")
 		return
 	}
 
@@ -137,25 +135,27 @@ func (h *AdminTrackedUsers) Lookup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, user)
 }
 
-// Get GET /admin/tracked-users/{id} — carrega 1 tracked_user.
+// Get GET /admin/tracked-users/{id} carrega 1 tracked_user.
 func (h *AdminTrackedUsers) Get(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+		writeError(w, http.StatusBadRequest, "id inválido")
 		return
 	}
-	user, err := h.repo.FindByID(r.Context(), id)
+	user, err := h.repo.FindRawByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "not found")
+			writeError(w, http.StatusNotFound, "usuário não encontrado")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "load error: "+err.Error())
+		slog.Error("admin tracked_users get failed", "id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar usuário")
 		return
 	}
 	if !canEdit(r, user) {
-		writeError(w, http.StatusForbidden, "sem acesso")
+		writeError(w, http.StatusForbidden, "sem acesso a este usuário")
 		return
 	}
+	_ = h.repo.EnrichLTV(r.Context(), user)
 	writeJSON(w, http.StatusOK, user)
 }

@@ -2,7 +2,7 @@
   <section class="assets-section">
     <header class="section-header">
       <div>
-        <h4>2. Conta de Anúncios & Página Padrão</h4>
+        <h4>2. Conta de Anúncios e Página Padrão</h4>
         <p class="section-hint">
           Selecione a Conta de Anúncios (`act_...`) para Spend/Criativos e a Página do Facebook vinculada aos anúncios Click-to-WhatsApp.
         </p>
@@ -13,7 +13,7 @@
         variant="ghost"
         size="sm"
         :loading="loadingAssets"
-        @click="$emit('refresh-assets')"
+        @click="$emit('refresh-assets', true)"
       >
         Atualizar lista
       </BaseButton>
@@ -22,7 +22,7 @@
     <BaseInput
       v-model="form.name"
       label="Nome interno da conexão"
-      placeholder="Ex: BM Principal — Meta Ads"
+      placeholder="Ex: BM Principal (Meta Ads)"
       :error="nameError"
       required
     />
@@ -63,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import type { AdAccountSelectOption } from '~/components/BaseAdAccountSelect.vue'
+import type { AdAccountSelectOption, AdAccountValue } from '~/components/BaseAdAccountSelect.vue'
 import type { MetaRemoteAdAccount, MetaRemotePage, MetaRemotePixel } from '#shared/types'
 
 interface FormState {
@@ -88,31 +88,36 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'refresh-assets': []
+  'refresh-assets': [forceRefresh: boolean]
   'ad-account-selected': [adAccountId: string]
 }>()
 
 const toast = useToast()
 
-const normalizeAct = (a: MetaRemoteAdAccount) => (a.id.startsWith('act_') ? a.id : `act_${a.account_id || a.id}`)
+const normalizeAct = (a: MetaRemoteAdAccount) => (
+  a.id.startsWith('act_') ? a.id : `act_${a.account_id || a.id}`
+)
 
 const adAccountOptions = computed<AdAccountSelectOption[]>(() => {
   const opts: AdAccountSelectOption[] = [
     {
       value: '',
-      label: props.oauthConnected ? 'Selecione uma conta...' : 'Conecte o OAuth primeiro',
+      label: props.oauthConnected ? 'Selecione uma conta...' : 'Conecte o OAuth no passo 1 primeiro',
       channel: 'none',
     },
   ]
   for (const a of props.remoteAdAccounts) {
     const id = normalizeAct(a)
-    const sub = a.business_name ? `${id} · ${a.business_name}` : id
+    const parts = [id]
+    if (a.currency) parts.push(a.currency)
+    if (a.business_name) parts.push(a.business_name)
     opts.push({
       value: id,
       label: a.name || id,
-      sublabel: sub,
+      sublabel: parts.join(' · '),
       avatarUrl: a.picture_url || props.oauthPictureUrl || '',
       channel: 'meta',
+      badge: a.account_status && a.account_status !== 1 ? 'Restrita' : undefined,
     })
   }
   if (props.form.ad_account_id && !opts.some((o) => o.value === props.form.ad_account_id)) {
@@ -152,7 +157,7 @@ const pageOptions = computed<AdAccountSelectOption[]>(() => {
   return opts
 })
 
-const onSelectAdAccount = (val: string) => {
+const onSelectAdAccount = (val: AdAccountValue) => {
   props.form.ad_account_id = String(val || '')
   const found = props.remoteAdAccounts.find((a) => normalizeAct(a) === props.form.ad_account_id)
   props.form.ad_account_name = found?.name || ''
@@ -163,7 +168,7 @@ const onSelectAdAccount = (val: string) => {
   emit('ad-account-selected', props.form.ad_account_id)
 }
 
-const onSelectPage = (val: string) => {
+const onSelectPage = (val: AdAccountValue) => {
   props.form.default_page_id = String(val || '')
   const found = props.remotePages.find((p) => p.id === props.form.default_page_id)
   props.form.default_page_name = found?.name || ''
@@ -174,9 +179,7 @@ const copyId = async (id: string) => {
   try {
     await navigator.clipboard.writeText(id)
     toast.success('Copiado', `Pixel ID ${id} copiado.`)
-  } catch {
-    // fallback silencioso
-  }
+  } catch {}
 }
 </script>
 

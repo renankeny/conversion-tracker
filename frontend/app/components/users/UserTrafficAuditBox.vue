@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ShieldCheck, Bot, ChevronDown } from 'lucide-vue-next'
 import type { TrackedUser, TrafficRule } from '#shared/types'
 
@@ -67,6 +67,13 @@ interface Props {
 
 const props = defineProps<Props>()
 const showRules = ref(false)
+
+watch(
+  () => props.user?.id,
+  () => {
+    showRules.value = false
+  }
+)
 
 const parsedRules = computed<TrafficRule[]>(() => {
   const rules = props.user?.traffic_rules

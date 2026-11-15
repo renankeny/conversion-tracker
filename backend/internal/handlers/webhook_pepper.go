@@ -70,7 +70,7 @@ func (h *Webhooks) Pepper(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Customer.Name))
+	first, last := util.SplitFullName(p.Customer.Name)
 	phone := util.FirstNonEmpty(p.Customer.PhoneNumber, p.Customer.Phone)
 
 	value := util.ParseMoneyCents(p.Amount)
@@ -97,6 +97,7 @@ func (h *Webhooks) Pepper(w http.ResponseWriter, r *http.Request) {
 		ProductName: util.FirstNonEmpty(p.Product.Title, p.Product.Name, p.Offer.Title),
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

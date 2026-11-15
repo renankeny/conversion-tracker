@@ -17,6 +17,9 @@ type WSTicket struct {
 	UserID    int64     `json:"user_id"`
 	AccountID int64     `json:"account_id"`
 	Role      string    `json:"role"`
+	IsOwner   bool      `json:"is_owner"`
+	TokenID   string    `json:"token_id"`
+	IssuedAt  int64     `json:"issued_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
@@ -39,12 +42,22 @@ func wsTicketKey(id string) string {
 	return "ws:ticket:" + strings.TrimSpace(id)
 }
 
-func (s *WSTicketStore) Issue(ctx context.Context, userID, accountID int64, role string) (string, error) {
+func (s *WSTicketStore) Issue(
+	ctx context.Context,
+	userID, accountID int64,
+	role string,
+	isOwner bool,
+	tokenID string,
+	issuedAt int64,
+) (string, error) {
 	id := uuid.NewString()
 	t := WSTicket{
 		UserID:    userID,
 		AccountID: accountID,
 		Role:      role,
+		IsOwner:   isOwner,
+		TokenID:   tokenID,
+		IssuedAt:  issuedAt,
 		ExpiresAt: time.Now().Add(wsTicketTTL),
 	}
 	if s.rdb != nil {
@@ -93,4 +106,3 @@ func (s *WSTicketStore) Consume(ctx context.Context, id string) (WSTicket, bool)
 	}
 	return t, true
 }
-

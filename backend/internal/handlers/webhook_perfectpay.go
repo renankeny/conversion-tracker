@@ -60,7 +60,7 @@ func (h *Webhooks) PerfectPay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Customer.FullName))
+	first, last := util.SplitFullName(p.Customer.FullName)
 	phone := util.FirstNonEmpty(
 		joinPhoneDDD("", p.Customer.PhoneAreaCode, p.Customer.PhoneNumber),
 		p.Customer.PhoneFormated,
@@ -85,6 +85,7 @@ func (h *Webhooks) PerfectPay(w http.ResponseWriter, r *http.Request) {
 		ProductName: util.FirstNonEmpty(p.Product.Name, p.Plan.Name),
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

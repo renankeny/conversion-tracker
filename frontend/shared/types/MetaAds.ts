@@ -4,6 +4,8 @@ export interface MetaAccount {
   name: string
   connected: boolean
   oauth_connected: boolean
+  token_expired?: boolean
+  ready?: boolean
   oauth_user_id: string
   oauth_name: string
   oauth_email: string
@@ -58,4 +60,25 @@ export interface MetaRemotePage {
 export interface MetaRemotePixel {
   id: string
   name: string
+}
+
+export interface MetaAccountTestInput {
+  ad_account_id?: string
+  pixel_id?: string
+  event_name?: string
+  test_event_code?: string
+  value?: number
+  currency?: string
+  email?: string
+  phone?: string
+}
+
+export interface MetaAccountTestResponse {
+  mode: 'capi_event' | 'connection_check'
+  event_name?: string
+  pixel_id?: string
+  status_code: number
+  response?: string
+  request_body?: string
+  error?: string
 }

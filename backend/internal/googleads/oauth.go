@@ -90,7 +90,7 @@ func openGatewayJSON(b64 string, out any) error {
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil || len(raw) < gcm.NonceSize() {
-		return errors.New("pacote criptografado invalido")
+		return errors.New("pacote criptografado inválido")
 	}
 	plain, err := gcm.Open(nil, raw[:gcm.NonceSize()], raw[gcm.NonceSize():], nil)
 	if err != nil {
@@ -119,7 +119,7 @@ func (c OAuthConfig) cleanDomain() string {
 	return ""
 }
 
-func (c OAuthConfig) StartCentralOAuth(ctx context.Context, accountID int64, stateNonce string) (string, error) {
+func (c OAuthConfig) StartCentralOAuth(ctx context.Context, accountID int64, stateNonce string, switchAccount ...bool) (string, error) {
 	hostname, _ := os.Hostname()
 	cbURL := strings.TrimRight(c.PublicAPIURL, "/") + "/admin/google-ads/oauth/callback"
 	reqPayload := map[string]any{
@@ -130,6 +130,7 @@ func (c OAuthConfig) StartCentralOAuth(ctx context.Context, accountID int64, sta
 		"nce":    stateNonce,
 		"cb_url": cbURL,
 		"fe_url": strings.TrimRight(c.AppURL, "/"),
+		"sw":     len(switchAccount) > 0 && switchAccount[0],
 		"ts":     time.Now().Unix(),
 	}
 	sealed, err := sealGatewayJSON(reqPayload)
@@ -142,7 +143,7 @@ func (c OAuthConfig) StartCentralOAuth(ctx context.Context, accountID int64, sta
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 12 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("falha ao contatar gateway Google Ads: %w", err)
@@ -163,7 +164,7 @@ func (c OAuthConfig) StartCentralOAuth(ctx context.Context, accountID int64, sta
 		Vector string `json:"v"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil || env.Vector == "" {
-		return "", errors.New("resposta invalida do gateway OAuth")
+		return "", errors.New("resposta inválida do gateway OAuth")
 	}
 	var out struct {
 		URL string `json:"url"`
@@ -183,60 +184,4 @@ func (c OAuthConfig) OpenCallbackTicket(ticketB64 string) (*CallbackTicket, erro
 		return nil, errors.New("credencial vazia no ticket")
 	}
 	return &t, nil
-}
-
-func (c OAuthConfig) CallCentralProxy(ctx context.Context, action, vaultToken, customerID, loginCustomerID string, payload any, out any) error {
-	hostname, _ := os.Hostname()
-	var rawPld json.RawMessage
-	if payload != nil {
-		if b, ok := payload.([]byte); ok {
-			rawPld = b
-		} else {
-			rawPld, _ = json.Marshal(payload)
-		}
-	}
-	reqMap := map[string]any{
-		"idn":  c.primaryIdentity(ctx),
-		"dom":  c.cleanDomain(),
-		"hst":  hostname,
-		"act":  action,
-		"vtk":  vaultToken,
-		"cid":  customerID,
-		"lcid": loginCustomerID,
-		"pld":  rawPld,
-	}
-	sealed, err := sealGatewayJSON(reqMap)
-	if err != nil {
-		return err
-	}
-	bodyBytes, _ := json.Marshal(map[string]string{"v": sealed})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gatewayBaseURL()+"/api/v1/google-ads/proxy", bytes.NewReader(bodyBytes))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		var errEnv struct {
-			Error string `json:"error"`
-		}
-		_ = json.Unmarshal(raw, &errEnv)
-		if errEnv.Error != "" {
-			return errors.New(errEnv.Error)
-		}
-		return fmt.Errorf("gateway google ads status %d", resp.StatusCode)
-	}
-	var env struct {
-		Vector string `json:"v"`
-	}
-	if err := json.Unmarshal(raw, &env); err != nil || env.Vector == "" {
-		return errors.New("pacote de resposta invalido")
-	}
-	return openGatewayJSON(env.Vector, out)
 }

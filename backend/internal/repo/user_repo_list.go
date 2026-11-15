@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"time"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 )
@@ -66,13 +67,13 @@ func (r *UserRepo) GetGroupSessions(ctx context.Context, accountID int64, extern
 type TrackedUserFilter struct {
 	AccountID int64  // 0 = todos (owner); >0 = filtra por conta (member)
 	PixelName string // exato (vazio = todos)
-	Search    string // busca em external_id/id_wpp/email/phone (LIKE %s%)
+	Segment   string // identified | buyers | anonymous | bot (vazio = todos)
+	Search    string // busca em external_id, id_wpp, email, phone, fbp e nome
 	Limit     int    // default 50, max 500
 	Offset    int
 }
 
-// List devolve tracked users filtrados + total count (pra paginação).
-// Usado pelo painel admin.
+// List devolve tracked users filtrados + total count (para paginação no painel admin).
 func (r *UserRepo) List(ctx context.Context, f TrackedUserFilter) ([]domain.TrackedUser, int64, error) {
 	if f.Limit <= 0 {
 		f.Limit = 50
@@ -84,45 +85,22 @@ func (r *UserRepo) List(ctx context.Context, f TrackedUserFilter) ([]domain.Trac
 		f.Offset = 0
 	}
 
-	args := make([]any, 0, 4)
-	conds := make([]string, 0, 3)
-	idx := 0
-	addArg := func(value any) string {
-		args = append(args, value)
-		idx++
-		return "$" + itoa(idx)
-	}
-	if f.AccountID != 0 {
-		conds = append(conds, "account_id = "+addArg(f.AccountID))
-	}
-	if f.PixelName != "" {
-		conds = append(conds, "pixel_name = "+addArg(f.PixelName))
-	}
-	if f.Search != "" {
-		ph2 := addArg("%" + f.Search + "%")
-		conds = append(conds, "(external_id ILIKE "+ph2+" OR id_wpp ILIKE "+ph2+
-			" OR email ILIKE "+ph2+" OR phone ILIKE "+ph2+")")
-	}
-	where := ""
-	if len(conds) > 0 {
-		where = "WHERE " + joinAnd(conds)
-	}
+	where, args, idx := buildTrackedUserListWhere(f)
 
 	var total int64
-	if err := r.pool.QueryRow(ctx,
-		"SELECT COUNT(DISTINCT COALESCE(group_id, id)) FROM tracked_users "+where, args...,
-	).Scan(&total); err != nil {
+	countQ := "SELECT COUNT(*) FROM (SELECT DISTINCT account_id, COALESCE(group_id, -id) FROM tracked_users " + where + ") cnt"
+	if err := r.pool.QueryRow(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
 	args = append(args, f.Limit, f.Offset)
 	q := `SELECT ` + userColumns + `
 		FROM (
-			SELECT DISTINCT ON (COALESCE(group_id, id)) *
+			SELECT DISTINCT ON (account_id, COALESCE(group_id, -id)) *
 			FROM tracked_users ` + where + `
-			ORDER BY COALESCE(group_id, id), updated_at DESC
+			ORDER BY account_id, COALESCE(group_id, -id), updated_at DESC, id DESC
 		) grouped
-		ORDER BY id DESC LIMIT $` + itoa(idx+1) + ` OFFSET $` + itoa(idx+2)
+		ORDER BY updated_at DESC, id DESC LIMIT $` + itoa(idx+1) + ` OFFSET $` + itoa(idx+2)
 
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
@@ -138,37 +116,49 @@ func (r *UserRepo) List(ctx context.Context, f TrackedUserFilter) ([]domain.Trac
 		}
 		out = append(out, *u)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 	if len(out) == 0 {
 		return out, total, nil
 	}
 
+	enrichTrackedUsersSlice(ctx, r.pool, out)
+
+	type accGKey struct {
+		accountID int64
+		gkey      int64
+	}
 	extIDs := make([]string, len(out))
-	gkeyByExtID := make(map[string]int64, len(out))
+	keyByIdx := make([]accGKey, len(out))
 	for i := range out {
 		extIDs[i] = out[i].ExternalID
-		gkey := out[i].ID
+		out[i].TimeToPurchase = "Sem compra"
+		gkey := -out[i].ID
 		if out[i].GroupID != nil {
 			gkey = *out[i].GroupID
 		}
-		gkeyByExtID[out[i].ExternalID] = gkey
+		keyByIdx[i] = accGKey{accountID: out[i].AccountID, gkey: gkey}
 	}
 
 	ltvRows, err := r.pool.Query(ctx, `
 		WITH keys AS (
-			SELECT DISTINCT account_id, COALESCE(group_id, id) AS gkey
+			SELECT DISTINCT account_id, COALESCE(group_id, -id) AS gkey
 			FROM tracked_users
 			WHERE external_id = ANY($1::text[])
 			  AND ($2::bigint = 0 OR account_id = $2)
 		),
 		members AS (
-			SELECT t.account_id, t.external_id, COALESCE(t.group_id, t.id) AS gkey
+			SELECT t.account_id, t.external_id, t.created_at, COALESCE(t.group_id, -t.id) AS gkey
 			FROM tracked_users t
-			JOIN keys k ON k.gkey = COALESCE(t.group_id, t.id) AND k.account_id = t.account_id
+			JOIN keys k ON k.gkey = COALESCE(t.group_id, -t.id) AND k.account_id = t.account_id
 		)
-		SELECT m.gkey, COALESCE(SUM(s.max_value), 0.0)
+		SELECT m.account_id, m.gkey, COALESCE(SUM(s.max_value), 0.0), MIN(m.created_at), MIN(s.first_purchase_at)
 		FROM members m
 		LEFT JOIN (
-			SELECT se.account_id, se.external_id, se.event_id, MAX(se.purchase_value) AS max_value
+			SELECT se.account_id, se.external_id, se.event_id,
+			       MAX(se.purchase_value) AS max_value,
+			       MIN(se.created_at) AS first_purchase_at
 			FROM sent_events se
 			WHERE se.event_name = 'Purchase'
 			  AND se.status = 'sent'
@@ -176,33 +166,39 @@ func (r *UserRepo) List(ctx context.Context, f TrackedUserFilter) ([]domain.Trac
 			  AND se.external_id IN (SELECT external_id FROM members)
 			GROUP BY se.account_id, se.external_id, se.event_id
 		) s ON s.external_id = m.external_id AND s.account_id = m.account_id
-		GROUP BY m.gkey
+		GROUP BY m.account_id, m.gkey
 	`, extIDs, f.AccountID)
 	if err == nil {
 		defer ltvRows.Close()
-		ltvByGKey := make(map[int64]float64, len(out))
+		type ltvSummary struct {
+			ltv float64
+			ttp string
+		}
+		byKey := make(map[accGKey]ltvSummary, len(out))
 		for ltvRows.Next() {
-			var gkey int64
+			var accID, gkey int64
 			var ltvVal float64
-			if err := ltvRows.Scan(&gkey, &ltvVal); err == nil {
-				ltvByGKey[gkey] = ltvVal
+			var firstSeen time.Time
+			var firstPurchase *time.Time
+			if err := ltvRows.Scan(&accID, &gkey, &ltvVal, &firstSeen, &firstPurchase); err == nil {
+				ttp := "Sem compra"
+				if firstPurchase != nil && !firstPurchase.IsZero() {
+					diff := firstPurchase.Sub(firstSeen)
+					if diff < 0 {
+						diff = 0
+					}
+					ttp = formatDuration(diff)
+				}
+				byKey[accGKey{accountID: accID, gkey: gkey}] = ltvSummary{ltv: ltvVal, ttp: ttp}
 			}
 		}
 		for i := range out {
-			out[i].LTV = ltvByGKey[gkeyByExtID[out[i].ExternalID]]
+			if sum, ok := byKey[keyByIdx[i]]; ok {
+				out[i].LTV = sum.ltv
+				out[i].TimeToPurchase = sum.ttp
+			}
 		}
 	}
 
-	return out, total, rows.Err()
-}
-
-func joinAnd(parts []string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	out := parts[0]
-	for i := 1; i < len(parts); i++ {
-		out += " AND " + parts[i]
-	}
-	return out
+	return out, total, nil
 }

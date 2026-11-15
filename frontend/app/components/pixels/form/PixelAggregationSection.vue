@@ -31,7 +31,7 @@
         <span>10 min (recomendado)</span>
         <span>30 min</span>
       </div>
-      <p class="form-hint" style="margin-top: 0.5rem; font-size: var(--fs-sm);">
+      <p class="form-hint">
         O {{ brandName }} aguardará este tempo após a 1ª compra antes de disparar o evento consolidado. O painel exibirá a contagem de todos os produtos comprados.
       </p>
     </div>
@@ -65,6 +65,7 @@ const { brandName } = useBranding()
   color: var(--text-3);
 }
 .form-hint {
+  margin-top: 0.5rem;
   font-size: var(--fs-sm);
   color: var(--text-3);
 }

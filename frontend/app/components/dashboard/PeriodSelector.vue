@@ -28,7 +28,16 @@
 import { computed, ref, watch, onUnmounted } from 'vue'
 import BaseDropdown from '~/components/BaseDropdown.vue'
 
-export type PeriodValue = 'today' | 'yesterday' | '7d' | '30d' | '60d' | '90d' | 'custom'
+export type PeriodValue =
+  | 'today'
+  | 'yesterday'
+  | '7d'
+  | '30d'
+  | '60d'
+  | '90d'
+  | 'this_month'
+  | 'last_month'
+  | 'custom'
 
 const props = defineProps<{
   modelValue: string
@@ -102,6 +111,8 @@ const options: Array<{ value: PeriodValue; label: string }> = [
   { value: '30d', label: 'Últimos 30 dias' },
   { value: '60d', label: 'Últimos 60 dias' },
   { value: '90d', label: 'Últimos 90 dias' },
+  { value: 'this_month', label: 'Este mês' },
+  { value: 'last_month', label: 'Mês passado' },
   { value: 'custom', label: 'Personalizado' },
 ]
 </script>

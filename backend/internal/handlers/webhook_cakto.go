@@ -123,7 +123,7 @@ func (h *Webhooks) Cakto(w http.ResponseWriter, r *http.Request) {
 	pixelQuery := webhookPixelQuery(r)
 	for i := range p.Data {
 		item := &p.Data[i]
-		body, status := h.processCaktoItem(r.Context(), item, approvedEvent, pixelQuery, accID, deepUID)
+		body, status := h.processCaktoItem(r.Context(), item, approvedEvent, pixelQuery, accID, deepUID, raw)
 		body["index"] = i
 		results = append(results, body)
 		if status > highestStatus {
@@ -139,7 +139,7 @@ func (h *Webhooks) Cakto(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Webhooks) processCaktoItem(ctx context.Context, item *caktoItem, approvedEvent bool, pixelQuery string, accountID int64, deepUID string) (map[string]any, int) {
+func (h *Webhooks) processCaktoItem(ctx context.Context, item *caktoItem, approvedEvent bool, pixelQuery string, accountID int64, deepUID string, raw []byte) (map[string]any, int) {
 	st := strings.ToLower(item.Status)
 	approved := approvedEvent || st == "paid" || st == "approved"
 	if !approved {
@@ -150,7 +150,7 @@ func (h *Webhooks) processCaktoItem(ctx context.Context, item *caktoItem, approv
 		}, http.StatusOK
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(item.Customer.Name))
+	first, last := util.SplitFullName(item.Customer.Name)
 
 	value := item.BaseAmount
 	if value == 0 {
@@ -178,6 +178,8 @@ func (h *Webhooks) processCaktoItem(ctx context.Context, item *caktoItem, approv
 		LastName:    last,
 		Email:       item.Customer.Email,
 		Phone:       item.Customer.Phone,
+		FBC:         strings.TrimSpace(item.FBC),
+		FBP:         strings.TrimSpace(item.FBP),
 		ProductID:   util.FirstNonEmpty(anyString(item.Product.ID), item.Offer.ID),
 		ProductName: util.FirstNonEmpty(item.Product.Name, item.Offer.Name),
 		IsOrderBump: offerType == "order_bump" || offerType == "orderbump",
@@ -185,6 +187,7 @@ func (h *Webhooks) processCaktoItem(ctx context.Context, item *caktoItem, approv
 		OfferType:   offerType,
 		AccountID:   accountID,
 		PixelQuery:  pixelQuery,
+		RawPayload:  raw,
 	}
 	return h.enqueueGenericPurchase(ctx, in, fromPurchaseInput(in))
 }

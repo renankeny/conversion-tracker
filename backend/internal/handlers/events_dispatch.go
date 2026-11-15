@@ -130,7 +130,7 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 				writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true, "event_id": eventID})
 				return
 			}
-			if recent, err := h.sentEvents.ExistsRecentEvent(ctx, pixel.Name, req.UserID, req.EventType, 2*time.Second); err == nil && recent {
+			if recent, err := h.sentEvents.ExistsRecentEvent(ctx, pixel.AccountID, pixel.Name, req.UserID, req.EventType, 2*time.Second); err == nil && recent {
 				writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true, "event_id": eventID})
 				return
 			}

@@ -12,7 +12,7 @@ export interface TrackedUser {
   ttclid: string
   ttp: string
   ctwa_clid?: string
-  wa_chat_id?: number | null
+  wa_chat_id?: string | null
   wa_name?: string
   wa_ad_id?: string
   wa_source_app?: string
@@ -63,9 +63,12 @@ export interface TrafficRule {
   description: string
 }
 
+export type TrackedUserSegment = 'identified' | 'buyers' | 'anonymous' | 'bot'
+
 export interface TrackedUserFilters {
   pixel?: string
   search?: string
+  segment?: TrackedUserSegment
   limit?: number
   offset?: number
 }
@@ -78,11 +81,11 @@ export interface TrackedUsersResponse {
 }
 
 // TrackedUserUpdateInput é o payload de PUT /admin/tracked-users/{id}.
-// Todos os campos são opcionais — só atualiza o que vier preenchido.
-// Pra limpar um campo, envie string vazia explícita (não null).
+// Todos os campos são opcionais: só atualiza o que vier preenchido.
+// Para limpar um campo, envie string vazia explícita (não null).
 //
 // Campos protegidos não estão aqui: id, external_id, account_id,
-// created_at, updated_at — são apenas lidos.
+// created_at, updated_at (são apenas lidos).
 export interface TrackedUserUpdateInput {
   id_wpp?: string
   pixel_name?: string

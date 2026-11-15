@@ -42,6 +42,27 @@ func (h *Webhooks) resolveWebhookAccount(ctx context.Context, in *purchaseInput)
 	return resolved, 0, ""
 }
 
+// selectFallbackPixel retorna o pixel explícito da URL (?pixel=) ou, na ausência dele,
+// o pixel ativo primário (mais antigo) da conta quando não houve match prévio de lead.
+func (h *Webhooks) selectFallbackPixel(ctx context.Context, resolvedQueryPixel *domain.Pixel, accountID int64) *domain.Pixel {
+	if resolvedQueryPixel != nil {
+		return resolvedQueryPixel
+	}
+	if accountID <= 0 || h.pixels == nil {
+		return nil
+	}
+	list, err := h.pixels.ListByAccount(ctx, accountID)
+	if err != nil {
+		return nil
+	}
+	for i := len(list) - 1; i >= 0; i-- {
+		if list[i].Enabled {
+			return &list[i]
+		}
+	}
+	return nil
+}
+
 // webhookEventID gera um event_id único por item: order bump/upsell recebem sufixo
 // para não serem deduplicados contra o item principal (worker + Meta).
 func webhookEventID(orderID, itemType, productID string) string {

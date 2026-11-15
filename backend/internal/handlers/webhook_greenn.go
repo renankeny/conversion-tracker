@@ -65,7 +65,7 @@ func (h *Webhooks) Greenn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Client.Name))
+	first, last := util.SplitFullName(p.Client.Name)
 	phone := util.FirstNonEmpty(p.Client.Cellphone, p.Client.Phone, p.Client.Whatsapp)
 
 	value := util.ParseMoneyAny(p.Sale.Amount)
@@ -96,6 +96,7 @@ func (h *Webhooks) Greenn(w http.ResponseWriter, r *http.Request) {
 		IsUpsell:    strings.Contains(saleType, "upsell"),
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

@@ -90,7 +90,10 @@ func (r *MetaAccountRepo) FindFirstConnectedByAccount(ctx context.Context, accou
 	return scanMetaAccount(r.pool.QueryRow(ctx, `
 		SELECT `+metaAccountCols+`
 		FROM meta_accounts
-		WHERE account_id = $1 AND enabled = TRUE AND vault_token_encrypted <> ''
+		WHERE account_id = $1
+		  AND enabled = TRUE
+		  AND vault_token_encrypted <> ''
+		  AND (token_expires_at IS NULL OR token_expires_at > NOW())
 		ORDER BY updated_at DESC, id DESC LIMIT 1
 	`, accountID))
 }
@@ -162,8 +165,10 @@ func (r *MetaAccountRepo) ClearOAuthTokens(ctx context.Context, id int64) error 
 	_, err := r.pool.Exec(ctx, `
 		UPDATE meta_accounts
 		SET vault_token_encrypted = '', oauth_user_id = '', oauth_name = '',
-		    oauth_email = '', oauth_picture_url = '', ad_account_picture_url = '',
-		    default_page_picture_url = '', token_expires_at = NULL, updated_at = NOW()
+		    oauth_email = '', oauth_picture_url = '',
+		    ad_account_id = '', ad_account_name = '', ad_account_picture_url = '',
+		    default_page_id = '', default_page_name = '', default_page_picture_url = '',
+		    token_expires_at = NULL, updated_at = NOW()
 		WHERE id = $1
 	`, id)
 	return err

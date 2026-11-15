@@ -15,8 +15,20 @@ export const useGoogleAdsAccounts = () => {
     return googleAdsStore.fetch(force)
   }
 
-  const get = (id: number): Promise<GoogleAdsAccount> => {
-    return api.get<GoogleAdsAccount>(`/admin/google-ads-accounts/${id}`)
+  const listByAccount = async (accountId?: number | null, force = false): Promise<GoogleAdsAccount[]> => {
+    if (!accountId || accountId <= 0) {
+      return list(force)
+    }
+    const res = await api.get<{ data: GoogleAdsAccount[] }>('/admin/google-ads-accounts', {
+      headers: { 'X-Account-ID': String(accountId) },
+    })
+    return res.data || []
+  }
+
+  const get = async (id: number): Promise<GoogleAdsAccount> => {
+    const acc = await api.get<GoogleAdsAccount>(`/admin/google-ads-accounts/${id}`)
+    googleAdsStore.upsertAccount(acc)
+    return acc
   }
 
   const create = async (input: GoogleAdsAccountInput): Promise<GoogleAdsAccount> => {
@@ -37,12 +49,24 @@ export const useGoogleAdsAccounts = () => {
     return res
   }
 
-  const startOAuth = async (id: number): Promise<void> => {
+  const getOAuthStartUrl = async (
+    id: number,
+    opts?: { switchAccount?: boolean; popup?: boolean },
+  ): Promise<string> => {
+    const q = new URLSearchParams()
+    if (opts?.switchAccount) q.set('switch_account', '1')
+    if (opts?.popup) q.set('popup', '1')
+    const qs = q.toString() ? `?${q.toString()}` : ''
     const res = await api.get<GoogleAdsOAuthStartResponse>(
-      `/admin/google-ads-accounts/${id}/oauth/start`,
+      `/admin/google-ads-accounts/${id}/oauth/start${qs}`,
     )
-    if (res?.url && import.meta.client) {
-      window.location.href = res.url
+    return res?.url || ''
+  }
+
+  const startOAuth = async (id: number, switchAccount = false): Promise<void> => {
+    const url = await getOAuthStartUrl(id, { switchAccount, popup: false })
+    if (url && import.meta.client) {
+      window.location.href = url
     }
   }
 
@@ -56,9 +80,13 @@ export const useGoogleAdsAccounts = () => {
 
   const listCustomers = (
     id: number,
+    refresh = false,
+    accountId?: number | null,
   ): Promise<{ customers: GoogleAdsRemoteCustomer[]; oauth_picture_url?: string; warning?: string }> => {
+    const qs = refresh ? '?refresh=1' : ''
     return api.get<{ customers: GoogleAdsRemoteCustomer[]; oauth_picture_url?: string; warning?: string }>(
-      `/admin/google-ads-accounts/${id}/customers`,
+      `/admin/google-ads-accounts/${id}/customers${qs}`,
+      accountId && accountId > 0 ? { headers: { 'X-Account-ID': String(accountId) } } : undefined,
     )
   }
 
@@ -66,10 +94,12 @@ export const useGoogleAdsAccounts = () => {
     id: number,
     customerId?: string,
     loginCustomerId?: string,
+    refresh = false,
   ): Promise<{ conversion_actions: GoogleAdsRemoteConversionAction[]; warning?: string }> => {
     const q = new URLSearchParams()
     if (customerId) q.set('customer_id', customerId)
     if (loginCustomerId) q.set('login_customer_id', loginCustomerId)
+    if (refresh) q.set('refresh', '1')
     const qs = q.toString() ? `?${q.toString()}` : ''
     return api.get<{ conversion_actions: GoogleAdsRemoteConversionAction[]; warning?: string }>(
       `/admin/google-ads-accounts/${id}/conversion-actions${qs}`,
@@ -89,6 +119,9 @@ export const useGoogleAdsAccounts = () => {
     id: number,
     body: {
       event_type: string
+      conversion_action_id?: string
+      customer_id?: string
+      login_customer_id?: string
       gclid?: string
       wbraid?: string
       gbraid?: string
@@ -118,10 +151,12 @@ export const useGoogleAdsAccounts = () => {
 
   return {
     list,
+    listByAccount,
     get,
     create,
     update,
     remove,
+    getOAuthStartUrl,
     startOAuth,
     reuseOAuth,
     listCustomers,

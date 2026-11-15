@@ -17,15 +17,16 @@ type OAuthStateEntry struct {
 	MetaAccountID      int64     `json:"meta_account_id"`
 	AccountID          int64     `json:"account_id"`
 	UserID             int64     `json:"user_id"`
+	Popup              bool      `json:"popup,omitempty"`
 	ExpiresAt          time.Time `json:"expires_at"`
 }
 
-// OAuthStateStore persiste o nonce OAuth do Google Ads no Redis (GETDEL atômico),
+// OAuthStateStore persiste o nonce OAuth no Redis (GETDEL atômico),
 // mantendo fallback em memória caso o Redis esteja temporariamente indisponível.
 type OAuthStateStore struct {
-	rdb     *redis.Client
-	mu      sync.Mutex
-	local   map[string]OAuthStateEntry
+	rdb   *redis.Client
+	mu    sync.Mutex
+	local map[string]OAuthStateEntry
 }
 
 func NewOAuthStateStore(rdb *redis.Client) *OAuthStateStore {
@@ -36,7 +37,7 @@ func NewOAuthStateStore(rdb *redis.Client) *OAuthStateStore {
 }
 
 func oauthStateKey(nonce string) string {
-	return "gads:oauth:state:" + strings.TrimSpace(nonce)
+	return "oauth:state:" + strings.TrimSpace(nonce)
 }
 
 func (s *OAuthStateStore) Put(ctx context.Context, nonce string, entry OAuthStateEntry) {
@@ -67,6 +68,9 @@ func (s *OAuthStateStore) Take(ctx context.Context, nonce string) (OAuthStateEnt
 	}
 	if s.rdb != nil {
 		raw, err := s.rdb.GetDel(ctx, oauthStateKey(nonce)).Bytes()
+		if err != nil || len(raw) == 0 {
+			raw, err = s.rdb.GetDel(ctx, "gads:oauth:state:"+nonce).Bytes()
+		}
 		if err == nil && len(raw) > 0 {
 			var entry OAuthStateEntry
 			if json.Unmarshal(raw, &entry) == nil && time.Now().Before(entry.ExpiresAt) {
@@ -96,4 +100,3 @@ func (s *OAuthStateStore) pruneLocked() {
 		}
 	}
 }
-

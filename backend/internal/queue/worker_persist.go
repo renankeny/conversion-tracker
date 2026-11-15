@@ -89,18 +89,20 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 	if channel == "" {
 		channel = "meta"
 	}
-	inputJSON := "null"
-	if raw, err := json.Marshal(in); err == nil {
-		inputJSON = string(raw)
+	var inputJSON *string
+	if raw, err := json.Marshal(in); err == nil && len(raw) > 0 && string(raw) != "null" {
+		s := string(raw)
+		inputJSON = &s
 	}
 	aggCount := in.AggregatedCount
 	if aggCount <= 0 {
 		aggCount = 1
 	}
-	aggItemsJSON := "null"
+	var aggItemsJSON *string
 	if len(in.AggregatedItems) > 0 {
-		if raw, err := json.Marshal(in.AggregatedItems); err == nil {
-			aggItemsJSON = string(raw)
+		if raw, err := json.Marshal(in.AggregatedItems); err == nil && len(raw) > 0 && string(raw) != "null" {
+			s := string(raw)
+			aggItemsJSON = &s
 		}
 	}
 	_, err := pool.Exec(ctx, `

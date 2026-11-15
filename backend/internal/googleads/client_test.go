@@ -80,3 +80,61 @@ func TestBuildUserData_CompleteAddressIncludesAllFourFields(t *testing.T) {
 		t.Errorf("expected hashed givenName and familyName, got %v", foundAddr)
 	}
 }
+
+func TestDetectPartialFailure(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{
+			name:    "clean empty json",
+			body:    `{}`,
+			wantErr: "",
+		},
+		{
+			name:    "clean upload result",
+			body:    `{"results":[{"conversionAction":"customers/123/conversionActions/456"}]}`,
+			wantErr: "",
+		},
+		{
+			name:    "ok status code zero",
+			body:    `{"responses":[{"status":{"code":0}}]}`,
+			wantErr: "",
+		},
+		{
+			name:    "partialFailureError",
+			body:    `{"results":[{}],"partialFailureError":{"code":3,"message":"The click associated with the given GCLID is too old."}}`,
+			wantErr: "The click associated with the given GCLID is too old.",
+		},
+		{
+			name:    "partialFailureStatus",
+			body:    `{"partialFailureStatus":{"code":3,"message":"Invalid conversion action id"}}`,
+			wantErr: "Invalid conversion action id",
+		},
+		{
+			name:    "top-level error object",
+			body:    `{"error":{"code":400,"message":"Request contains an invalid argument."}}`,
+			wantErr: "Request contains an invalid argument.",
+		},
+		{
+			name:    "responses status message",
+			body:    `{"responses":[{"status":{"code":3,"message":"EXPIRED_GCLID"}}]}`,
+			wantErr: "EXPIRED_GCLID",
+		},
+		{
+			name:    "results nested error",
+			body:    `{"results":[{"error":{"message":"Conversion action disabled"}}]}`,
+			wantErr: "Conversion action disabled",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := detectPartialFailure(tc.body)
+			if got != tc.wantErr {
+				t.Fatalf("detectPartialFailure() = %q, want %q", got, tc.wantErr)
+			}
+		})
+	}
+}

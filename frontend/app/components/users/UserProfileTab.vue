@@ -3,18 +3,29 @@
     <section class="section">
       <h4 class="section-title">Identificação & Contato</h4>
       <div class="profile-grid">
-        <UserField label="Id do Usuário" :value="user.external_id" mono readonly />
+        <UserField
+          label="Id do Usuário"
+          :value="user.external_id"
+          mono
+          readonly
+          copyable
+        />
         <UserField
           label="ID WhatsApp"
           v-model="form.id_wpp"
           :editing="editing"
           :original="user.id_wpp"
           mono
+          copyable
+        />
+        <PixelDropdown
+          v-if="editing"
+          v-model="form.pixel_name"
+          label="Pixel de Origem"
         />
         <UserField
+          v-else
           label="Pixel de Origem"
-          v-model="form.pixel_name"
-          :editing="editing"
           :original="user.pixel_name"
         />
         <UserField
@@ -35,13 +46,16 @@
           :editing="editing"
           :original="user.email"
           mono
+          copyable
         />
         <UserField
           label="Telefone"
           v-model="form.phone"
           :editing="editing"
-          :original="user.phone"
+          :original="formatBrPhone(user.phone)"
+          :copy-value="user.phone"
           mono
+          copyable
         />
       </div>
     </section>
@@ -79,6 +93,7 @@
           :editing="editing"
           :original="user.client_ip"
           mono
+          copyable
         />
       </div>
     </section>
@@ -87,6 +102,7 @@
 
 <script setup lang="ts">
 import UserField from '~/components/users/UserField.vue'
+import { formatBrPhone } from '~/components/users/userFormatters'
 import type { TrackedUser, TrackedUserUpdateInput } from '#shared/types'
 
 interface Props {
@@ -123,10 +139,26 @@ defineProps<Props>()
 .profile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
   gap: 0.75rem 1rem;
   background: var(--surface-soft-2);
   border: 1px solid var(--border-soft);
   border-radius: 10px;
   padding: 1rem;
+}
+
+.profile-grid :deep(.base-dropdown) {
+  gap: 0.15rem;
+}
+
+.profile-grid :deep(.dropdown-label) {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  font-weight: var(--fw-medium);
+}
+
+.profile-grid :deep(.dropdown-trigger) {
+  height: 34px;
+  background: var(--surface-deep);
 }
 </style>

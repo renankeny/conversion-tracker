@@ -42,7 +42,11 @@ type wsEnvelope struct {
 }
 
 type Client struct {
+	UserID      int64
 	AccountID   int64
+	IsOwner     bool
+	TokenID     string
+	IssuedAt    int64
 	PixelFilter string
 	Send        chan []byte
 }
@@ -81,7 +85,7 @@ func (h *Hub) Unregister(c *Client) {
 }
 
 func Publish(ctx context.Context, rc *redis.Client, e LiveEvent) {
-	if rc == nil {
+	if rc == nil || e.AccountID <= 0 {
 		return
 	}
 	b, err := json.Marshal(e)
@@ -94,9 +98,9 @@ func Publish(ctx context.Context, rc *redis.Client, e LiveEvent) {
 }
 
 // PublishCustom publica notificações tipadas em tempo real por conta (ex: whatsapp_message,
-// whatsapp_media_ready, whatsapp_qr, whatsapp_status).
+// whatsapp_media_ready, whatsapp_qr, whatsapp_status, events_updated).
 func PublishCustom(ctx context.Context, rc *redis.Client, accountID int64, eventType string, data any) {
-	if rc == nil || eventType == "" {
+	if rc == nil || eventType == "" || accountID <= 0 {
 		return
 	}
 	raw, err := json.Marshal(data)
@@ -185,6 +189,9 @@ func (h *Hub) runSession(ctx context.Context) (reconnect bool) {
 }
 
 func (h *Hub) broadcast(e LiveEvent) {
+	if e.AccountID <= 0 {
+		return
+	}
 	out, err := json.Marshal(wsEnvelope{Type: "new_event", Data: e})
 	if err != nil {
 		return
@@ -193,7 +200,11 @@ func (h *Hub) broadcast(e LiveEvent) {
 	defer h.mu.RUnlock()
 
 	for c := range h.clients {
-		if c.AccountID != 0 && c.AccountID != e.AccountID {
+		if c.AccountID > 0 {
+			if c.AccountID != e.AccountID {
+				continue
+			}
+		} else if !c.IsOwner {
 			continue
 		}
 		if c.PixelFilter != "" && c.PixelFilter != e.PixelName {
@@ -208,6 +219,9 @@ func (h *Hub) broadcast(e LiveEvent) {
 }
 
 func (h *Hub) broadcastCustom(ce customRedisEvent) {
+	if ce.AccountID <= 0 {
+		return
+	}
 	out, err := json.Marshal(wsEnvelope{Type: ce.Type, Data: ce.Data})
 	if err != nil {
 		return
@@ -216,7 +230,11 @@ func (h *Hub) broadcastCustom(ce customRedisEvent) {
 	defer h.mu.RUnlock()
 
 	for c := range h.clients {
-		if c.AccountID != 0 && ce.AccountID != 0 && c.AccountID != ce.AccountID {
+		if c.AccountID > 0 {
+			if c.AccountID != ce.AccountID {
+				continue
+			}
+		} else if !c.IsOwner {
 			continue
 		}
 		select {

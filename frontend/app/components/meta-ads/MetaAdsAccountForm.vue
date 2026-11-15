@@ -1,11 +1,11 @@
 <template>
   <div class="meta-form">
     <MetaAdsOAuthCard
+      ref="oauthRef"
       :account="account"
-      @disconnected="onDisconnected"
-      @reused="$emit('refresh')"
-      @connect-new="onConnectNew"
-      @reuse-new="onReuseNew"
+      :default-name="form.name"
+      @connected="onOAuthConnected"
+      @disconnected="onOAuthDisconnected"
     />
 
     <MetaAdsAssetsSection
@@ -18,12 +18,19 @@
       :remote-pixels="remotePixels"
       :loading-assets="loadingAssets"
       @refresh-assets="loadRemoteAssets"
-      @ad-account-selected="loadRemotePixels"
+      @ad-account-selected="(id) => loadRemotePixels(id, false)"
+    />
+
+    <MetaAdsTestSection
+      :account="account"
+      :oauth-connected="oauthConnected"
+      :ad-account-id="form.ad_account_id"
+      :remote-pixels="remotePixels"
     />
 
     <section class="form-footer-check">
       <BaseCheckbox v-model="form.enabled">
-        <strong>Conta ativa</strong> — quando desmarcada, o enriquecimento de anúncios e envios via OAuth ficam pausados.
+        <strong>Conta ativa:</strong> quando desmarcada, o enriquecimento de anúncios e os envios via OAuth ficam pausados.
       </BaseCheckbox>
     </section>
   </div>
@@ -32,6 +39,7 @@
 <script setup lang="ts">
 import MetaAdsOAuthCard from '~/components/meta-ads/MetaAdsOAuthCard.vue'
 import MetaAdsAssetsSection from '~/components/meta-ads/MetaAdsAssetsSection.vue'
+import MetaAdsTestSection from '~/components/meta-ads/MetaAdsTestSection.vue'
 import { errorMessage } from '~/utils/errorMessage'
 import type {
   MetaAccount,
@@ -47,8 +55,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   submit: [input: MetaAccountInput]
-  'connect-new': [payload: { input: MetaAccountInput; switchAccount: boolean }]
-  'reuse-new': [input: MetaAccountInput]
+  connected: [account: MetaAccount]
   refresh: []
 }>()
 
@@ -67,6 +74,7 @@ const form = reactive({
 })
 
 const errors = reactive({ name: '' })
+const oauthRef = ref<{ triggerDefaultAction: () => void } | null>(null)
 const oauthPictureUrl = ref('')
 const remoteAdAccounts = ref<MetaRemoteAdAccount[]>([])
 const remotePages = ref<MetaRemotePage[]>([])
@@ -74,56 +82,62 @@ const remotePixels = ref<MetaRemotePixel[]>([])
 const loadingAssets = ref(false)
 
 const oauthConnected = computed(
-  () => !!(props.account?.oauth_connected || props.account?.connected),
+  () => Boolean(props.account?.connected && !props.account?.token_expired),
 )
 
-const loadRemotePixels = async (adAccountId?: string) => {
+const normalizeAct = (a: MetaRemoteAdAccount) => (
+  a.id.startsWith('act_') ? a.id : `act_${a.account_id || a.id}`
+)
+
+const loadRemotePixels = async (adAccountId?: string, forceRefresh = false) => {
   const target = adAccountId ?? form.ad_account_id
   if (!props.account || !oauthConnected.value || !target) {
     remotePixels.value = []
     return
   }
   try {
-    const res = await metaApi.listPixels(props.account.id, target)
+    const res = await metaApi.listPixels(props.account.id, target, forceRefresh)
     remotePixels.value = res.pixels || []
   } catch {
     remotePixels.value = []
   }
 }
 
-const loadRemoteAssets = async () => {
-  if (!props.account || !oauthConnected.value) return
+const loadRemoteAssets = async (forceRefresh = false, targetAccount?: MetaAccount) => {
+  const acc = targetAccount ?? props.account
+  if (!acc || !acc.connected || acc.token_expired) return
   loadingAssets.value = true
   try {
     const [accRes, pageRes] = await Promise.all([
-      metaApi.listAdAccounts(props.account.id),
-      metaApi.listPages(props.account.id).catch(() => ({ pages: [] })),
+      metaApi.listAdAccounts(acc.id, forceRefresh),
+      metaApi.listPages(acc.id, forceRefresh).catch(() => ({ pages: [] })),
     ])
     remoteAdAccounts.value = accRes.ad_accounts || []
     remotePages.value = pageRes.pages || []
-    if (accRes.oauth_picture_url) {
-      oauthPictureUrl.value = accRes.oauth_picture_url
-    }
+    if (accRes.oauth_picture_url) oauthPictureUrl.value = accRes.oauth_picture_url
 
     if (!form.ad_account_id && remoteAdAccounts.value.length === 1) {
       const only = remoteAdAccounts.value[0]!
-      form.ad_account_id = only.id.startsWith('act_') ? only.id : `act_${only.account_id || only.id}`
+      form.ad_account_id = normalizeAct(only)
       form.ad_account_name = only.name || ''
       form.ad_account_picture_url = only.picture_url || oauthPictureUrl.value || ''
       if (!form.name.trim() || form.name === 'Meta Ads') {
         form.name = only.name || 'Meta Ads'
       }
     } else if (form.ad_account_id && !form.ad_account_picture_url) {
-      const matched = remoteAdAccounts.value.find((a) => (a.id.startsWith('act_') ? a.id : `act_${a.account_id}`) === form.ad_account_id)
+      const matched = remoteAdAccounts.value.find((a) => normalizeAct(a) === form.ad_account_id)
       if (matched?.picture_url) form.ad_account_picture_url = matched.picture_url
     }
+
     if (!form.default_page_id && remotePages.value.length === 1) {
       form.default_page_id = remotePages.value[0]!.id
       form.default_page_name = remotePages.value[0]!.name
       form.default_page_picture_url = remotePages.value[0]!.picture_url || ''
     }
+
     if (form.ad_account_id) {
-      await loadRemotePixels(form.ad_account_id)
+      const pxRes = await metaApi.listPixels(acc.id, form.ad_account_id, forceRefresh).catch(() => ({ pixels: [] }))
+      remotePixels.value = pxRes.pixels || []
     }
   } catch (e: unknown) {
     toast.error('Erro ao consultar Meta Graph API', errorMessage(e, 'Tente novamente'))
@@ -152,8 +166,8 @@ watch(
     remotePixels.value = []
     if (acc) {
       fillFromAccount(acc)
-      if (acc.oauth_connected || acc.connected) {
-        await loadRemoteAssets()
+      if (acc.connected && !acc.token_expired) {
+        await loadRemoteAssets(false, acc)
       }
     } else {
       oauthPictureUrl.value = ''
@@ -166,41 +180,47 @@ watch(
   { immediate: true },
 )
 
-const buildPayload = (): MetaAccountInput => ({
-  name: form.name.trim() || 'Meta Ads',
-  ad_account_id: form.ad_account_id.trim(),
-  ad_account_name: form.ad_account_name.trim(),
-  ad_account_picture_url: form.ad_account_picture_url.trim(),
-  default_page_id: form.default_page_id.trim(),
-  default_page_name: form.default_page_name.trim(),
-  default_page_picture_url: form.default_page_picture_url.trim(),
-  enabled: form.enabled,
-})
+const onOAuthConnected = async (updated: MetaAccount) => {
+  if (form.name.trim() && form.name !== 'Meta Ads') {
+    updated = { ...updated, name: form.name.trim() }
+  }
+  emit('connected', updated)
+  await loadRemoteAssets(true, updated)
+}
 
-const onDisconnected = () => {
+const onOAuthDisconnected = () => {
   remoteAdAccounts.value = []
   remotePages.value = []
   remotePixels.value = []
+  form.ad_account_id = ''
+  form.ad_account_name = ''
+  form.ad_account_picture_url = ''
+  form.default_page_id = ''
+  form.default_page_name = ''
+  form.default_page_picture_url = ''
   emit('refresh')
 }
 
 const onSubmit = () => {
+  if (!props.account) {
+    oauthRef.value?.triggerDefaultAction()
+    return
+  }
   errors.name = ''
   if (!form.name.trim()) {
     errors.name = 'Nome é obrigatório'
     return
   }
-  emit('submit', buildPayload())
-}
-
-const onConnectNew = (switchAccount = false) => {
-  if (!form.name.trim()) form.name = 'Meta Ads'
-  emit('connect-new', { input: buildPayload(), switchAccount })
-}
-
-const onReuseNew = (sourceAccountId: number) => {
-  if (!form.name.trim()) form.name = 'Meta Ads'
-  emit('reuse-new', { ...buildPayload(), reuse_oauth_from_id: sourceAccountId })
+  emit('submit', {
+    name: form.name.trim(),
+    ad_account_id: form.ad_account_id.trim(),
+    ad_account_name: form.ad_account_name.trim(),
+    ad_account_picture_url: form.ad_account_picture_url.trim(),
+    default_page_id: form.default_page_id.trim(),
+    default_page_name: form.default_page_name.trim(),
+    default_page_picture_url: form.default_page_picture_url.trim(),
+    enabled: form.enabled,
+  })
 }
 
 defineExpose({ submit: onSubmit })

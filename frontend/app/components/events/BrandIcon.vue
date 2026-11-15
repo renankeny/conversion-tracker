@@ -12,6 +12,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { siMeta, siTiktok, siGoogleads, siGoogleanalytics } from 'simple-icons'
 import type { Channel } from '#shared/types'
 
@@ -24,20 +25,24 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   size: 'md',
-  colored: true,   // padrão: cor oficial da marca
+  colored: true,
 })
 
 const icons: Record<Channel, { path: string; hex: string; title: string }> = {
-  meta:       { path: siMeta.path,       hex: siMeta.hex,       title: 'Meta'       },
-  tiktok:     { path: siTiktok.path,     hex: siTiktok.hex,     title: 'TikTok'     },
-  google_ads: { path: siGoogleads.path,  hex: siGoogleads.hex,  title: 'Google Ads' },
-  ga4:        { path: siGoogleanalytics.path, hex: siGoogleanalytics.hex, title: 'GA4' },
+  meta: { path: siMeta.path, hex: siMeta.hex, title: 'Meta' },
+  tiktok: { path: siTiktok.path, hex: siTiktok.hex, title: 'TikTok' },
+  google_ads: { path: siGoogleads.path, hex: siGoogleads.hex, title: 'Google Ads' },
+  ga4: { path: siGoogleanalytics.path, hex: siGoogleanalytics.hex, title: 'GA4' },
 }
 
-const icon  = computed(() => icons[props.channel] ?? icons.meta)
-const path  = computed(() => icon.value.path)
+const icon = computed(() => icons[props.channel] ?? icons.meta)
+const path = computed(() => icon.value.path)
 const label = computed(() => icon.value.title)
-const fill  = computed(() => props.colored ? `#${icon.value.hex}` : 'currentColor')
+const fill = computed(() => {
+  if (!props.colored) return 'currentColor'
+  if (props.channel === 'tiktok') return 'var(--text-strong)'
+  return `#${icon.value.hex}`
+})
 </script>
 
 <style scoped>

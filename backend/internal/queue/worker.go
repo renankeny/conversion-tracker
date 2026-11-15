@@ -138,7 +138,7 @@ func fromGA4Result(r ga4.SendResult, measurementID string) []dispatchResult {
 		return nil
 	}
 	if r.Err != nil && r.StatusCode == 0 {
-		return []dispatchResult{{Channel: "ga4", PixelID: measurementID, Err: r.Err}}
+		return []dispatchResult{{Channel: "ga4", PixelID: measurementID, RequestBody: r.RequestBody, Err: r.Err}}
 	}
 	return []dispatchResult{{
 		Channel:     "ga4",

@@ -65,7 +65,7 @@ func (h *Webhooks) Kiwify(w http.ResponseWriter, r *http.Request) {
 
 	accID := ExtractAccountID(r)
 	sigSHA1 := util.FirstNonEmpty(r.URL.Query().Get("signature"), r.Header.Get("X-Kiwify-Signature"), p.Signature)
-	if !h.validateHMACOrToken(r.Context(), r, accID, "kiwify", raw, "", sigSHA1, p.Signature) {
+	if !h.validateHMACOrToken(r.Context(), r, accID, "kiwify", raw, "", sigSHA1) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"reason": "invalid platform token"})
 		return
 	}
@@ -100,6 +100,7 @@ func (h *Webhooks) Kiwify(w http.ResponseWriter, r *http.Request) {
 		IsOrderBump: strings.EqualFold(p.Type, "order_bump"),
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  raw,
 	}
 
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))

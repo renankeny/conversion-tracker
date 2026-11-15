@@ -4,9 +4,9 @@ import type { MetaAccount, MetaRemoteAdAccount, MetaRemotePixel, TrackerConfig }
 const MANUAL_OPTION = '__manual__'
 
 export interface MetaTabFormState {
+  account_id: number | null
   pixel_ids: string[]
   access_tokens: string[]
-  test_codes: string[]
   meta_account_id: number | null
   meta_ad_account_id: string
   tracker_config: TrackerConfig
@@ -14,8 +14,14 @@ export interface MetaTabFormState {
 
 const normalizeAct = (a: MetaRemoteAdAccount): string => {
   const raw = (a.id || a.account_id || '').trim()
-  if (!raw) return ''
-  return raw.startsWith('act_') ? raw : `act_${raw}`
+  return !raw ? '' : raw.startsWith('act_') ? raw : `act_${raw}`
+}
+
+const accountStatusBadge = (acc: MetaAccount, actId: string): string | undefined => {
+  if (!acc.enabled) return 'Pausada'
+  if (acc.token_expired) return 'Token expirado'
+  if (!acc.connected) return 'Pendente'
+  return !actId ? 'Incompleta' : undefined
 }
 
 export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: boolean }) => {
@@ -54,21 +60,17 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
           sublabel: actId || acc.oauth_name || acc.oauth_email || '',
           avatarUrl: acc.ad_account_picture_url || acc.picture_url || acc.oauth_picture_url || '',
           channel: 'meta',
-          badge: acc.connected ? undefined : 'Pendente',
+          badge: accountStatusBadge(acc, actId),
         })
       }
     }
     return opts
   })
 
-  const pixelDropdownOptions = computed(() => {
-    const opts = remotePixels.value.map((p) => ({
-      value: p.id,
-      label: `${p.name} (${p.id})`,
-    }))
-    opts.push({ value: MANUAL_OPTION, label: 'Digitar outro Pixel ID manualmente...' })
-    return opts
-  })
+  const pixelDropdownOptions = computed(() => [
+    ...remotePixels.value.map((p) => ({ value: p.id, label: `${p.name} (${p.id})` })),
+    { value: MANUAL_OPTION, label: 'Digitar outro Pixel ID manualmente...' },
+  ])
 
   const pixelDropdownValue = (idx: number): string => {
     const cur = (props.form.pixel_ids[idx] || '').trim()
@@ -105,7 +107,7 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
     loadingPixels.value = true
     try {
       const targetAct = adAccountId || acc.ad_account_id
-      const pxRes = await metaApi.listPixels(acc.id, targetAct)
+      const pxRes = await metaApi.listPixels(acc.id, targetAct, false, props.form.account_id)
       remotePixels.value = pxRes.pixels || []
 
       for (let i = 0; i < props.form.pixel_ids.length; i++) {
@@ -119,7 +121,6 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
         if (!props.form.pixel_ids.length) {
           props.form.pixel_ids.push(firstPx.id)
           props.form.access_tokens.push('')
-          props.form.test_codes.push('')
           manualRows[0] = false
         } else if (!curFirst || (replacePreviousAuto && prevPixelIds.has(curFirst))) {
           props.form.pixel_ids[0] = firstPx.id
@@ -132,7 +133,6 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
       } else if (!props.isEditing && !props.form.pixel_ids.length) {
         props.form.pixel_ids.push('')
         props.form.access_tokens.push('')
-        props.form.test_codes.push('')
       }
     } catch {
       remotePixels.value = []
@@ -146,9 +146,8 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
       const id = props.form.meta_account_id
       if (!id || id <= 0) return '0'
       const acc = metaAccounts.value.find((a) => a.id === id)
-      const remotes = remoteAccountsByMeta[id] || []
-      const firstRemAct = remotes[0] ? normalizeAct(remotes[0]) : ''
-      const act = props.form.meta_ad_account_id || acc?.ad_account_id || firstRemAct
+      const firstRem = remoteAccountsByMeta[id]?.[0]
+      const act = props.form.meta_ad_account_id || acc?.ad_account_id || (firstRem ? normalizeAct(firstRem) : '')
       return `${id}:${act}`
     },
     set: (val: string) => {
@@ -171,18 +170,25 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
   const hydrateAccounts = async () => {
     loadingAccounts.value = true
     try {
-      metaAccounts.value = await metaApi.list(true)
-      await Promise.all(
-        metaAccounts.value.filter((a) => a.connected).map(async (acc) => {
-          try {
-            const res = await metaApi.listAdAccounts(acc.id)
-            remoteAccountsByMeta[acc.id] = res.ad_accounts || []
-            if (res.oauth_picture_url) oauthPicByMeta[acc.id] = res.oauth_picture_url
-          } catch {
-            remoteAccountsByMeta[acc.id] = []
-          }
-        }),
-      )
+      const targetAccId = props.form.account_id
+      const all = await metaApi.listByAccount(targetAccId, true)
+      metaAccounts.value = targetAccId && targetAccId > 0 ? all.filter((a) => a.account_id === targetAccId) : all
+
+      if (props.form.meta_account_id && !metaAccounts.value.some((a) => a.id === props.form.meta_account_id)) {
+        props.form.meta_account_id = null
+        props.form.meta_ad_account_id = ''
+        remotePixels.value = []
+      }
+
+      await Promise.all(metaAccounts.value.filter((a) => a.connected).map(async (acc) => {
+        try {
+          const res = await metaApi.listAdAccounts(acc.id, false, targetAccId)
+          remoteAccountsByMeta[acc.id] = res.ad_accounts || []
+          if (res.oauth_picture_url) oauthPicByMeta[acc.id] = res.oauth_picture_url
+        } catch {
+          remoteAccountsByMeta[acc.id] = []
+        }
+      }))
 
       if (!props.isEditing && !props.form.meta_account_id && !userClearedAccount.value) {
         const firstAcc = metaAccounts.value.find((a) => a.connected && a.enabled)
@@ -210,16 +216,15 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
     const defaultId = !props.form.pixel_ids.length && remotePixels.value[0] ? remotePixels.value[0].id : ''
     props.form.pixel_ids.push(defaultId)
     props.form.access_tokens.push('')
-    props.form.test_codes.push('')
   }
 
   const removePixelRow = (idx: number) => {
     delete manualRows[idx]
     props.form.pixel_ids.splice(idx, 1)
     props.form.access_tokens.splice(idx, 1)
-    props.form.test_codes.splice(idx, 1)
   }
 
+  watch(() => props.form.account_id, () => { hydrateAccounts() })
   onMounted(hydrateAccounts)
 
   return {
@@ -229,4 +234,3 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
     onSelectPixel, switchToList, addPixelRow, removePixelRow,
   }
 }
-

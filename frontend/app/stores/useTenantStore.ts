@@ -6,6 +6,7 @@ import { useAuthStore } from '~/stores/useAuthStore'
 import { useDashboardStore } from '~/stores/useDashboardStore'
 import { useDashboardDataStore } from '~/stores/useDashboardDataStore'
 import { usePixelStore } from '~/stores/usePixelStore'
+import { useMetaAdsStore } from '~/stores/useMetaAdsStore'
 import { useGoogleAdsStore } from '~/stores/useGoogleAdsStore'
 import { useCustomWebhooksStore } from '~/stores/customWebhooks'
 import { useSystemAlertsStore } from '~/stores/useSystemAlertsStore'
@@ -53,14 +54,20 @@ export const useTenantStore = defineStore('tenant', () => {
     loaded.value = true
     if (!list.length) return
 
-    if (!activeAccountId.value && list[0]) {
+    const prevId = activeAccountId.value
+    if (!prevId && list[0]) {
       setActiveAccountId(list[0].id)
-      return
-    }
-    if (activeAccountId.value) {
-      const exists = list.some((a) => String(a.id) === String(activeAccountId.value))
+    } else if (prevId) {
+      const exists = list.some((a) => String(a.id) === String(prevId))
       if (!exists && list[0]) {
         setActiveAccountId(list[0].id)
+      }
+    }
+
+    if (String(activeAccountId.value) !== String(prevId || '')) {
+      switchVersion.value++
+      if (import.meta.client && useAuthStore().token) {
+        useLiveEventsStore().reconnectForAccount(Number(activeAccountId.value) || 0)
       }
     }
   }
@@ -126,6 +133,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
     const pixelStore = usePixelStore()
     pixelStore.invalidate()
+    useMetaAdsStore().invalidate()
     useGoogleAdsStore().invalidate()
     useCustomWebhooksStore().invalidate()
     useSystemAlertsStore().invalidate()
@@ -144,6 +152,8 @@ export const useTenantStore = defineStore('tenant', () => {
     activeAccountId.value = null
     inFlightPromise = null
     useDashboardDataStore().clearAll()
+    useMetaAdsStore().invalidate()
+    useGoogleAdsStore().invalidate()
   }
 
   return {

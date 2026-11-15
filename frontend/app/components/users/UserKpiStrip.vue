@@ -2,12 +2,12 @@
   <div class="kpi-grid">
     <div class="kpi-card">
       <span class="kpi-label">LTV do Cliente</span>
-      <span class="kpi-value kpi-value-success">{{ formatCurrency(ltv) }}</span>
+      <span class="kpi-value kpi-value-success">{{ formatCurrencyBRL(ltv) }}</span>
     </div>
     <div class="kpi-card">
       <span class="kpi-label">Tempo até Compra</span>
-      <span class="kpi-value kpi-value-time truncate" :title="timeToPurchase">
-        {{ timeToPurchase || 'Sem compra' }}
+      <span class="kpi-value kpi-value-time truncate" :title="normalizedTimeToPurchase">
+        {{ normalizedTimeToPurchase }}
       </span>
     </div>
     <div class="kpi-card">
@@ -27,6 +27,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { formatCurrencyBRL } from '~/components/users/userFormatters'
 
 interface Props {
   ltv?: number
@@ -40,23 +41,21 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   ltv: 0,
   timeToPurchase: '',
-  pageviewCount: 1,
-  checkoutCount: 0,
-  totalPageviews: 0,
-  totalCheckouts: 0,
 })
 
 const visitsCount = computed(() => {
-  return props.totalPageviews || props.pageviewCount || 1
+  return props.totalPageviews ?? props.pageviewCount ?? 0
 })
 
 const checkoutsCount = computed(() => {
-  return props.totalCheckouts || props.checkoutCount || 0
+  return props.totalCheckouts ?? props.checkoutCount ?? 0
 })
 
-const formatCurrency = (val: number | undefined): string => {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0)
-}
+const normalizedTimeToPurchase = computed(() => {
+  const raw = props.timeToPurchase?.trim()
+  if (!raw || raw === 'Nenhuma compra' || raw === '-') return 'Sem compra'
+  return raw
+})
 </script>
 
 <style scoped>

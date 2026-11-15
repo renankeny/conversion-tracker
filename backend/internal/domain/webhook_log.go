@@ -8,13 +8,14 @@ import "time"
 type WebhookLog struct {
 	ID         int64     `json:"id"`
 	AccountID  int64     `json:"account_id"`
-	Source     string    `json:"source"`      // 'hotmart' | 'cakto' | 'kirvano' | 'kiwify' | 'pagtrust' | 'yampi'
-	PixelName  string    `json:"pixel_name"`  // vazio se usuário não foi encontrado
-	ExternalID string    `json:"external_id"` // vazio se não extraído
+	Source     string    `json:"source"`
+	PixelName  string    `json:"pixel_name"`
+	ExternalID string    `json:"external_id"`
 	EventName  string    `json:"event_name"`
-	EventID    string    `json:"event_id"`    // vazio se falhou antes de enfileirar
-	Status     string    `json:"status"`      // 'queued' | 'failed' | 'replayed'
+	EventID    string    `json:"event_id"`
+	Status     string    `json:"status"` // 'queued' | 'buffered' | 'failed' | 'replayed'
 	Error      string    `json:"error,omitempty"`
+	CanReplay  bool      `json:"can_replay"`
 	ReceivedAt time.Time `json:"received_at"`
 }
 
@@ -32,6 +33,8 @@ type WebhookPurchaseInput struct {
 	LastName          string  `json:"last_name,omitempty"`
 	Email             string  `json:"email,omitempty"`
 	Phone             string  `json:"phone,omitempty"`
+	FBC               string  `json:"fbc,omitempty"`
+	FBP               string  `json:"fbp,omitempty"`
 	AccountID         int64   `json:"account_id,omitempty"`
 	PixelQuery        string  `json:"pixel_query,omitempty"`
 	AlsoSearchByEmail bool    `json:"also_search_by_email,omitempty"`

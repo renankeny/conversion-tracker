@@ -4,27 +4,27 @@
       <div>
         <h1 class="page-title">Google Ads</h1>
         <p class="page-subtitle">
-          Conecte contas Google Ads via OAuth e gerencie as Conversion Actions
-          que recebem conversões offline. Cada conta pode ter várias actions
-          (uma de Vendas para webhooks, outra de Lead, etc.) e pode ser
-          vinculada a um ou mais pixels.
+          Conecte contas Google Ads em uma janela rápida via OAuth seguro e gerencie as Ações de Conversão que recebem conversões offline (Purchase, Lead e eventos personalizados) vinculadas aos seus Pixels.
         </p>
       </div>
-      <BaseButton variant="primary" @click="openCreateModal">Nova conta Google Ads</BaseButton>
+      <BaseButton v-if="canEdit" variant="primary" @click="openCreateModal">
+        Nova conta Google Ads
+      </BaseButton>
     </div>
 
     <div v-if="loading && !accounts.length" class="loading-state">
       <div class="spinner" />
-      <p>Carregando contas...</p>
+      <p>Carregando contas Google Ads...</p>
     </div>
 
     <div v-else-if="!accounts.length" class="empty-state">
       <h2 class="empty-title">Nenhuma conta Google Ads conectada</h2>
       <p class="empty-description">
-        Cadastre uma conta para enviar conversões offline (Purchase, Lead, etc.)
-        usando os click identifiers (gclid/wbraid/gbraid) capturados pelo tracker.
+        Conecte sua conta Google em 1 clique para despachar conversões offline usando os identificadores de clique (GCLID, WBRAID e GBRAID) capturados pelo tracker.
       </p>
-      <BaseButton variant="primary" @click="openCreateModal">Conectar conta Google Ads</BaseButton>
+      <BaseButton v-if="canEdit" variant="primary" @click="openCreateModal">
+        Conectar conta Google Ads
+      </BaseButton>
     </div>
 
     <div v-else class="ga-grid">
@@ -32,6 +32,8 @@
         v-for="account in accounts"
         :key="account.id"
         :account="account"
+        :linked-pixels="linkedPixelsFor(account.id)"
+        :can-edit="canEdit"
         @edit="openEditModal"
         @delete="openDeleteModal"
       />
@@ -39,24 +41,23 @@
 
     <BaseModal
       v-model="formModalOpen"
-      :title="editing ? 'Editar conta Google Ads' : 'Nova conta Google Ads'"
+      :title="editing ? 'Configurar conta Google Ads' : 'Nova conta Google Ads'"
       :description="editing
-        ? 'Selecione sua conta Google Ads e vincule as Conversion Actions aos eventos.'
-        : 'Conecte sua conta Google em 1 clique para carregar suas contas e Conversion Actions automaticamente.'"
+        ? 'Selecione a conta Google Ads, mapeie as Ações de Conversão e valide o envio.'
+        : 'Autorize sua conta Google na janela segura para carregar suas contas e Ações de Conversão.'"
       size="lg"
     >
       <GoogleAdsAccountForm
         ref="formRef"
         :account="editing"
         @submit="onFormSubmit"
-        @connect-new="onConnectNew"
-        @reuse-new="onReuseNew"
+        @connected="onAccountConnected"
         @refresh="onAccountRefreshed"
       />
       <template #footer>
         <BaseButton variant="ghost" @click="formModalOpen = false">Cancelar</BaseButton>
         <BaseButton variant="primary" :loading="saving" @click="formRef?.submit()">
-          {{ editing ? 'Salvar alterações' : 'Criar conta' }}
+          {{ primaryModalLabel }}
         </BaseButton>
       </template>
     </BaseModal>
@@ -65,9 +66,7 @@
       v-model="deleteModalOpen"
       title="Excluir conta Google Ads?"
       description="Esta operação é irreversível"
-      :message="deleting?.name
-        ? `A conta &quot;${deleting.name}&quot; será removida. Pixels vinculados perdem o link automaticamente — eventos param de ir pro Google Ads dessa conta.`
-        : ''"
+      :message="deleteMessage"
       confirm-label="Excluir definitivamente"
       variant="danger"
       :loading="deletingLoading"
@@ -83,8 +82,10 @@
 import { storeToRefs } from 'pinia'
 import GoogleAdsAccountCard from '~/components/google-ads/GoogleAdsAccountCard.vue'
 import GoogleAdsAccountForm from '~/components/google-ads/GoogleAdsAccountForm.vue'
-import type { GoogleAdsAccount, GoogleAdsAccountInput } from '#shared/types'
+import type { GoogleAdsAccount, GoogleAdsAccountInput, Pixel } from '#shared/types'
+import { useAuthStore } from '~/stores/useAuthStore'
 import { useGoogleAdsStore } from '~/stores/useGoogleAdsStore'
+import { usePixelStore } from '~/stores/usePixelStore'
 import { useTenantStore } from '~/stores/useTenantStore'
 import { errorMessage } from '~/utils/errorMessage'
 
@@ -93,9 +94,13 @@ const { formatTitle } = useBranding()
 useHead({ title: computed(() => formatTitle('Google Ads')) })
 
 const api = useGoogleAdsAccounts()
+const authStore = useAuthStore()
 const googleAdsStore = useGoogleAdsStore()
+const pixelStore = usePixelStore()
 const tenantStore = useTenantStore()
 const { accounts, loading } = storeToRefs(googleAdsStore)
+const { pixels } = storeToRefs(pixelStore)
+const { canManagePixels: canEdit } = storeToRefs(authStore)
 const toast = useToast()
 
 const formModalOpen = ref(false)
@@ -106,11 +111,30 @@ const deleteModalOpen = ref(false)
 const deleting = ref<GoogleAdsAccount | null>(null)
 const deletingLoading = ref(false)
 
-const fetchAccounts = async (force = false) => {
+const linkedPixelsFor = (accountId: number): Pixel[] =>
+  pixels.value.filter((p) => p.google_ads_account_id === accountId)
+
+const primaryModalLabel = computed(() => {
+  if (editing.value) return 'Salvar alterações'
+  const hasExisting = accounts.value.some((a) => a.connected || a.oauth_connected)
+  return hasExisting ? 'Conectar com conta existente' : 'Conectar nova conta'
+})
+
+const deleteMessage = computed(() => {
+  if (!deleting.value?.name) return ''
+  const affected = linkedPixelsFor(deleting.value.id)
+  if (!affected.length) {
+    return `A conta "${deleting.value.name}" será removida definitivamente.`
+  }
+  const names = affected.map((p) => p.label || p.name).join(', ')
+  return `A conta "${deleting.value.name}" será removida e desvinculada de ${affected.length} ${affected.length === 1 ? 'pixel' : 'pixels'}: ${names}. Os envios offline dessa conta serão encerrados.`
+})
+
+const fetchPageData = async (force = false) => {
   try {
-    await api.list(force)
+    await Promise.all([api.list(force), pixelStore.fetch(force).catch(() => [])])
   } catch (error: unknown) {
-    toast.error('Erro ao carregar', errorMessage(error, 'Não foi possível listar contas'))
+    toast.error('Erro ao carregar', errorMessage(error, 'Não foi possível listar contas Google Ads'))
   }
 }
 
@@ -118,11 +142,14 @@ const openCreateModal = () => { editing.value = null; formModalOpen.value = true
 const openEditModal = (a: GoogleAdsAccount) => { editing.value = a; formModalOpen.value = true }
 const openDeleteModal = (a: GoogleAdsAccount) => { deleting.value = a; deleteModalOpen.value = true }
 
+const onAccountConnected = (acc: GoogleAdsAccount) => {
+  editing.value = acc
+}
+
 const onAccountRefreshed = async () => {
   if (!editing.value) return
   try {
     const fresh = await api.get(editing.value.id)
-    googleAdsStore.upsertAccount(fresh)
     editing.value = fresh
   } catch {
     const local = accounts.value.find((a) => a.id === editing.value?.id)
@@ -131,46 +158,15 @@ const onAccountRefreshed = async () => {
 }
 
 const onFormSubmit = async (input: GoogleAdsAccountInput) => {
+  if (!editing.value) return
   saving.value = true
   try {
-    if (editing.value) {
-      const updated = await api.update(editing.value.id, input)
-      toast.success('Conta atualizada', `"${updated.name}" salva.`)
-      editing.value = updated
-      formModalOpen.value = false
-    } else {
-      const created = await api.create(input)
-      toast.success('Conta criada', `"${created.name}" pronta para autorizar OAuth.`)
-      editing.value = created
-    }
+    const updated = await api.update(editing.value.id, input)
+    toast.success('Conta atualizada', `"${updated.name}" salva com sucesso.`)
+    editing.value = updated
+    formModalOpen.value = false
   } catch (error: unknown) {
-    toast.error('Erro ao salvar', errorMessage(error, 'Falha ao salvar conta'))
-  } finally {
-    saving.value = false
-  }
-}
-
-const onConnectNew = async (input: GoogleAdsAccountInput) => {
-  saving.value = true
-  try {
-    const created = await api.create(input)
-    editing.value = created
-    await api.startOAuth(created.id)
-  } catch (error: unknown) {
-    toast.error('Erro ao conectar OAuth', errorMessage(error, 'Falha ao iniciar OAuth do Google Ads'))
-  } finally {
-    saving.value = false
-  }
-}
-
-const onReuseNew = async (input: GoogleAdsAccountInput) => {
-  saving.value = true
-  try {
-    const created = await api.create(input)
-    editing.value = created
-    toast.success('Conta vinculada', 'Agora escolha a Conta Google Ads e as Conversion Actions.')
-  } catch (error: unknown) {
-    toast.error('Erro ao reutilizar conexão', errorMessage(error, 'Falha ao reutilizar login Google'))
+    toast.error('Erro ao salvar', errorMessage(error, 'Falha ao salvar conta Google Ads'))
   } finally {
     saving.value = false
   }
@@ -182,7 +178,8 @@ const onConfirmDelete = async () => {
   try {
     const removedName = deleting.value.name
     await api.remove(deleting.value.id)
-    toast.success('Conta excluída', `"${removedName}" foi removida`)
+    await pixelStore.fetch(true).catch(() => [])
+    toast.success('Conta excluída', `"${removedName}" foi removida.`)
     deleteModalOpen.value = false
     deleting.value = null
   } catch (error: unknown) {
@@ -196,30 +193,39 @@ const handleOAuthCallback = async () => {
   const route = useRoute()
   const router = useRouter()
   const status = route.query.google_ads_oauth as string | undefined
-  if (!status) return
-  const message = (route.query.message as string | undefined) || ''
   const accountId = Number(route.query.account_id || 0)
+  const message = String(route.query.message || '')
+
+  if (import.meta.client && status && window.name === 'trackfind_oauth_popup') {
+    const payload = { type: 'trackfind:oauth-complete', channel: 'google_ads', status, accountId, message, ts: Date.now() }
+    try { new BroadcastChannel('trackfind_oauth').postMessage(payload) } catch {}
+    try { localStorage.setItem('trackfind_oauth_event', JSON.stringify(payload)) } catch {}
+    window.close()
+    return
+  }
+
+  if (!status && !accountId) return
   router.replace({ query: {} })
   if (status === 'success') {
-    toast.success('Google Ads conectado', message ? `Conta autorizada: ${message}` : 'A conexão foi salva com sucesso.')
-    await fetchAccounts(true)
-    if (accountId > 0) {
-      const found = accounts.value.find((a) => a.id === accountId)
-      if (found) openEditModal(found)
-    }
+    toast.success('Google Ads conectado', message ? `Conta autorizada: ${message}` : 'Conexão salva com sucesso.')
+    await fetchPageData(true)
   } else if (status === 'error') {
     toast.error('Falha ao conectar Google Ads', message || 'Tente novamente.')
+  }
+  if (accountId > 0 && canEdit.value) {
+    const found = accounts.value.find((a) => a.id === accountId)
+    if (found) openEditModal(found)
   }
 }
 
 watch(() => tenantStore.switchVersion, () => {
   formModalOpen.value = false
   editing.value = null
-  fetchAccounts(true)
+  fetchPageData(true)
 })
 
 onMounted(async () => {
-  await fetchAccounts()
+  await fetchPageData()
   await handleOAuthCallback()
 })
 </script>

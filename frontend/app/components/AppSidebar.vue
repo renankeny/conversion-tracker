@@ -47,6 +47,9 @@
         <NuxtLink to="/settings" class="sidebar-link sidebar-sublink" :class="{ active: route.path === '/settings' }">
           <span class="link-label">Geral</span>
         </NuxtLink>
+        <NuxtLink to="/settings/webhooks" class="sidebar-link sidebar-sublink" :class="{ active: isActive('/settings/webhooks') }">
+          <span class="link-label">Webhooks</span>
+        </NuxtLink>
         <NuxtLink to="/settings/api" class="sidebar-link sidebar-sublink" :class="{ active: isActive('/settings/api') }">
           <span class="link-label">API</span>
         </NuxtLink>
@@ -79,7 +82,7 @@
 <script setup lang="ts">
 import {
   LayoutDashboard, Plug, Zap, Users, Settings,
-  Sun, Moon, LogOut, Webhook, Kanban, Building2,
+  Sun, Moon, LogOut, Kanban, Building2,
 } from 'lucide-vue-next'
 import { MetaAdsIcon, GoogleAdsIcon, WhatsAppIcon, PixelBrainIcon } from '~/utils/adIcons'
 
@@ -97,7 +100,6 @@ const primaryLinks = computed(() => {
     { to: '/crm', label: 'CRM', icon: Kanban },
     { to: '/events', label: 'Eventos', icon: Zap },
     { to: '/users', label: 'Usuários', icon: Users },
-    { to: '/webhooks', label: 'Webhooks', icon: Webhook },
   ]
   if (canManageAccounts.value) {
     links.push({ to: '/empresas', label: 'Empresas', icon: Building2 })

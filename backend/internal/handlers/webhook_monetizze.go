@@ -81,7 +81,7 @@ func (h *Webhooks) Monetizze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Comprador.Nome))
+	first, last := util.SplitFullName(p.Comprador.Nome)
 	phone := util.FirstNonEmpty(p.Comprador.Celular, p.Comprador.Telefone)
 
 	value := util.ParseMoneyAny(p.Venda.Valor)
@@ -113,6 +113,7 @@ func (h *Webhooks) Monetizze(w http.ResponseWriter, r *http.Request) {
 		ProductName: p.Produto.Nome,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

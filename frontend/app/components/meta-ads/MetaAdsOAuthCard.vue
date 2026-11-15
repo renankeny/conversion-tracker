@@ -1,222 +1,185 @@
 <template>
-  <section class="form-section">
-    <header class="section-header">
-      <h4>1. Conexão com Facebook / Meta Ads (OAuth)</h4>
-      <p class="section-hint">
-        Autorize sua conta Meta ou reutilize um login já conectado neste painel para listar suas Contas de Anúncios, Páginas e Pixels.
-      </p>
-    </header>
-
-    <div v-if="oauthConnected" class="oauth-box">
-      <div class="oauth-info">
-        <div class="oauth-avatar">
-          <img
-            v-if="connectedAvatar && !brokenAvatar"
-            :src="connectedAvatar"
-            alt=""
-            referrerpolicy="no-referrer"
-            class="oauth-avatar-img"
-            @error="brokenAvatar = true"
-          />
-          <span v-else class="oauth-initials">{{ initials(connectedLabel) }}</span>
-        </div>
-        <span class="oauth-pill">Meta Conectada</span>
-        <span class="oauth-identity">{{ connectedLabel }}</span>
-      </div>
-      <div class="oauth-actions">
-        <BaseButton type="button" variant="ghost" size="sm" :loading="oauthLoading" @click="onConnect(true)">
-          Entrar em outra conta
-        </BaseButton>
-        <BaseButton type="button" variant="ghost" size="sm" :loading="oauthLoading" @click="showDisconnectConfirm = true">
-          Desconectar
-        </BaseButton>
-      </div>
-    </div>
-
-    <div v-else-if="reusableProfiles.length" class="reuse-container">
-      <BaseAdAccountSelect
-        v-if="reusableProfiles.length > 1"
-        v-model="selectedSourceId"
-        label="Conta Facebook já conectada neste painel"
-        :options="reuseOptions"
-      />
-      <div v-else class="oauth-box">
-        <div class="oauth-info">
-          <div class="oauth-avatar">
-            <img
-              v-if="singleProfileAvatar && !brokenReuseAvatar"
-              :src="singleProfileAvatar"
-              alt=""
-              referrerpolicy="no-referrer"
-              class="oauth-avatar-img"
-              @error="brokenReuseAvatar = true"
-            />
-            <span v-else class="oauth-initials">{{ initials(singleProfileLabel) }}</span>
-          </div>
-          <div class="oauth-stack">
-            <span class="oauth-identity">{{ singleProfileLabel }}</span>
-            <span class="oauth-sub">Perfil Facebook já autorizado neste painel</span>
-          </div>
-        </div>
-        <div class="oauth-actions">
-          <BaseButton type="button" variant="primary" size="sm" :loading="oauthLoading" @click="onUseExisting">
-            Usar mesma conta
-          </BaseButton>
-          <BaseButton type="button" variant="ghost" size="sm" :loading="oauthLoading" @click="onConnect(true)">
-            Entrar em outra conta
-          </BaseButton>
-        </div>
-      </div>
-
-      <div v-if="reusableProfiles.length > 1" class="oauth-actions-bar">
-        <BaseButton type="button" variant="primary" size="sm" :loading="oauthLoading" @click="onUseExisting">
-          Usar conta selecionada
-        </BaseButton>
-        <BaseButton type="button" variant="ghost" size="sm" :loading="oauthLoading" @click="onConnect(true)">
-          Entrar em outra conta
-        </BaseButton>
-      </div>
-    </div>
-
-    <div v-else class="oauth-box">
-      <p class="oauth-text">
-        Conecte sua conta Meta para listar Contas de Anúncios, Páginas e Pixels automaticamente.
-      </p>
-      <BaseButton type="button" variant="primary" size="sm" :loading="oauthLoading" @click="onConnect(false)">
-        Conectar com Facebook
-      </BaseButton>
-    </div>
-
-    <ConfirmModal
-      v-model="showDisconnectConfirm"
-      title="Desconectar Meta Ads"
-      message="Revogar a conexão OAuth desta conta Meta Ads? O enriquecimento automático de anúncios e gastos será pausado."
-      confirm-label="Desconectar"
-      variant="danger"
+  <div class="oauth-card-wrap">
+    <OAuthConnectionBox
+      ref="boxRef"
+      title="1. Conexão com Facebook / Meta Ads (OAuth)"
+      description="Autorize em uma janela rápida ou conecte com um login Facebook já autorizado neste painel para listar Contas de Anúncios, Páginas e Pixels."
+      channel="meta"
+      :connected="isConnected"
+      :token-expired="isTokenExpired"
+      :expiry-warning="expiryWarning"
+      :identity-label="connectedLabel"
+      :identity-sub="connectedSub"
+      :avatar-url="connectedAvatar"
+      disconnect-title="Desconectar Meta Ads"
+      disconnect-message="Revogar a conexão OAuth desta conta Meta Ads? A Conta de Anúncios e a Página vinculadas serão limpas e os envios via OAuth ficarão pausados."
+      :reuse-options="reuseOptions"
       :loading="oauthLoading"
-      @confirm="executeDisconnect"
+      @connect="onConnect"
+      @reuse="onReuse"
+      @disconnect="onDisconnect"
     />
-  </section>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
+import OAuthConnectionBox from '~/components/integrations/OAuthConnectionBox.vue'
 import type { AdAccountSelectOption } from '~/components/BaseAdAccountSelect.vue'
 import type { MetaAccount } from '#shared/types'
 import { useMetaAdsStore } from '~/stores/useMetaAdsStore'
+import { useTenantStore } from '~/stores/useTenantStore'
 import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
   account?: MetaAccount | null
+  defaultName?: string
 }>()
 
 const emit = defineEmits<{
+  connected: [account: MetaAccount]
   disconnected: []
-  reused: []
-  'connect-new': [switchAccount: boolean]
-  'reuse-new': [sourceAccountId: number]
 }>()
 
 const metaApi = useMetaAccounts()
 const metaAdsStore = useMetaAdsStore()
+const tenantStore = useTenantStore()
 const { accounts: allAccounts } = storeToRefs(metaAdsStore)
+const { runOAuthPopup } = useOAuthPopup()
 const toast = useToast()
 
 const oauthLoading = ref(false)
-const showDisconnectConfirm = ref(false)
-const brokenAvatar = ref(false)
-const brokenReuseAvatar = ref(false)
-const selectedSourceId = ref<number>(0)
+const boxRef = ref<{ triggerDefaultAction: () => void } | null>(null)
 
-const oauthConnected = computed(() => !!(props.account?.oauth_connected || props.account?.connected))
-const connectedLabel = computed(() => props.account?.oauth_name || props.account?.oauth_email || 'Perfil Meta autorizado')
-const connectedAvatar = computed(() => props.account?.oauth_picture_url || props.account?.picture_url || '')
+const isTokenExpired = computed(() => {
+  if (props.account?.token_expired) return true
+  if (!props.account?.token_expires_at || !props.account?.oauth_connected) return false
+  return new Date(props.account.token_expires_at).getTime() <= Date.now()
+})
 
-const reusableProfiles = computed<MetaAccount[]>(() => {
+const isConnected = computed(() => Boolean(props.account?.connected && !isTokenExpired.value))
+
+const expiryWarning = computed(() => {
+  if (!props.account?.token_expires_at || isTokenExpired.value) return ''
+  const days = Math.ceil((new Date(props.account.token_expires_at).getTime() - Date.now()) / 86_400_000)
+  if (days > 0 && days <= 7) return days === 1 ? 'Expira em 1 dia' : `Expira em ${days} dias`
+  return ''
+})
+
+const connectedLabel = computed(
+  () => props.account?.oauth_name || props.account?.oauth_email || 'Perfil Meta autorizado',
+)
+const connectedSub = computed(() => props.account?.oauth_email || '')
+const connectedAvatar = computed(
+  () => props.account?.oauth_picture_url || props.account?.picture_url || '',
+)
+
+const reuseOptions = computed<AdAccountSelectOption[]>(() => {
+  const activeTenant = Number(tenantStore.activeAccountId || 0)
+  const candidates = [...allAccounts.value]
+    .filter((a) => a.connected && !a.token_expired && a.id !== props.account?.id)
+    .sort((a, b) => {
+      const aSame = activeTenant > 0 && a.account_id === activeTenant ? 1 : 0
+      const bSame = activeTenant > 0 && b.account_id === activeTenant ? 1 : 0
+      if (aSame !== bSame) return bSame - aSame
+      return Number(Boolean(b.ad_account_id)) - Number(Boolean(a.ad_account_id))
+    })
+
   const seen = new Set<string>()
-  const out: MetaAccount[] = []
-  for (const a of allAccounts.value) {
-    if (!a.connected || a.id === props.account?.id) continue
+  const opts: AdAccountSelectOption[] = []
+  for (const a of candidates) {
     const key = a.oauth_user_id || a.oauth_email || a.oauth_name || String(a.id)
     if (seen.has(key)) continue
     seen.add(key)
-    out.push(a)
+    opts.push({
+      value: a.id,
+      label: a.oauth_name || a.oauth_email || a.name,
+      sublabel: a.oauth_email || a.ad_account_name || '',
+      avatarUrl: a.oauth_picture_url || a.picture_url || a.ad_account_picture_url || '',
+      channel: 'meta',
+      badge: 'Já autorizada',
+    })
   }
-  return out
+  return opts
 })
 
-watch(reusableProfiles, (list) => {
-  if (list.length && !list.some((a) => a.id === selectedSourceId.value)) {
-    selectedSourceId.value = list[0]!.id
-  }
-}, { immediate: true })
-
-const singleProfileLabel = computed(() => {
-  const p = reusableProfiles.value[0]
-  return p?.oauth_name || p?.oauth_email || p?.name || 'Perfil Meta'
-})
-
-const singleProfileAvatar = computed(() => {
-  const p = reusableProfiles.value[0]
-  return p?.oauth_picture_url || p?.picture_url || p?.ad_account_picture_url || ''
-})
-
-const reuseOptions = computed<AdAccountSelectOption[]>(() =>
-  reusableProfiles.value.map((a) => ({
-    value: a.id,
-    label: a.oauth_name || a.oauth_email || a.name,
-    sublabel: a.oauth_email || a.ad_account_name || '',
-    avatarUrl: a.oauth_picture_url || a.picture_url || a.ad_account_picture_url || '',
-    channel: 'meta',
-    badge: 'Já autorizada',
-  })),
-)
-
-const initials = (name: string) => {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean)
-  if (!parts.length) return 'FB'
-  return parts.length === 1 ? parts[0]!.slice(0, 2).toUpperCase() : (parts[0]![0]! + parts[1]![0]!).toUpperCase()
-}
-
-const onUseExisting = async () => {
-  const srcId = selectedSourceId.value || reusableProfiles.value[0]?.id || 0
-  if (!srcId) return
-  if (!props.account) {
-    emit('reuse-new', srcId)
-    return
-  }
+const onConnect = async (switchAccount: boolean) => {
+  const hadConnection = Boolean(props.account?.connected)
   oauthLoading.value = true
   try {
-    await metaApi.reuseOAuth(props.account.id, srcId)
-    toast.success('Conta vinculada', 'Conexão Meta reutilizada com sucesso.')
-    emit('reused')
+    await runOAuthPopup({
+      channel: 'meta',
+      providerLabel: 'Facebook / Meta Ads',
+      prepare: async (popupMode) => {
+        if (props.account?.id) {
+          const url = await metaApi.getOAuthStartUrl(props.account.id, { switchAccount, popup: popupMode })
+          return { url, accountId: props.account.id, createdTemp: false }
+        }
+        const created = await metaApi.create({ name: props.defaultName?.trim() || 'Meta Ads', enabled: true })
+        const url = await metaApi.getOAuthStartUrl(created.id, { switchAccount, popup: popupMode })
+        return { url, accountId: created.id, createdTemp: true }
+      },
+      onSuccess: async (payload) => {
+        await metaApi.list(true)
+        const fresh = await metaApi.get(payload.accountId)
+        toast.success('Meta Ads conectada', payload.message ? `Perfil autorizado: ${payload.message}` : 'Conexão concluída.')
+        emit('connected', fresh)
+      },
+      onError: async (msg, accountId, createdTemp) => {
+        if (createdTemp && accountId > 0) {
+          try {
+            const check = await metaApi.get(accountId)
+            if (!check.oauth_connected) await metaApi.remove(accountId)
+          } catch {}
+        }
+        toast.error('Falha ao conectar Meta Ads', msg)
+      },
+      onManualClose: async (accountId, createdTemp) => {
+        if (accountId <= 0) return
+        try {
+          const check = await metaApi.get(accountId)
+          if (check.connected && (!hadConnection || createdTemp)) {
+            await metaApi.list(true)
+            toast.success('Meta Ads conectada', 'Autenticação concluída com sucesso.')
+            emit('connected', check)
+          } else if (createdTemp && !check.oauth_connected) {
+            await metaApi.remove(accountId)
+          }
+        } catch {}
+      },
+    })
   } catch (error: unknown) {
-    toast.error('Erro', errorMessage(error, 'Falha ao reutilizar conta Meta'))
+    toast.error('Erro ao iniciar login', errorMessage(error, 'Falha ao abrir OAuth da Meta'))
   } finally {
     oauthLoading.value = false
   }
 }
 
-const onConnect = async (switchAccount: boolean) => {
-  if (!props.account) {
-    emit('connect-new', switchAccount)
-    return
-  }
+const onReuse = async (sourceAccountId: number) => {
   oauthLoading.value = true
   try {
-    await metaApi.startOAuth(props.account.id, switchAccount)
+    const updated = props.account?.id
+      ? await metaApi.reuseOAuth(props.account.id, sourceAccountId)
+      : await metaApi.create({
+          name: props.defaultName?.trim() || 'Meta Ads',
+          reuse_oauth_from_id: sourceAccountId,
+          enabled: true,
+        })
+    toast.success('Conta conectada', 'Agora escolha a Conta de Anúncios e a Página padrão.')
+    emit('connected', updated)
   } catch (error: unknown) {
-    toast.error('Erro', errorMessage(error, 'Falha ao iniciar OAuth da Meta'))
+    await metaApi.list(true).catch(() => [])
+    toast.error('Erro ao usar conta existente', errorMessage(error, 'Falha ao vincular conta Meta'))
+  } finally {
     oauthLoading.value = false
   }
 }
 
-const executeDisconnect = async () => {
-  if (!props.account) return
+const onDisconnect = async () => {
+  if (!props.account?.id) return
   oauthLoading.value = true
   try {
     await metaApi.disconnect(props.account.id)
-    showDisconnectConfirm.value = false
     toast.success('Desconectado', 'Conexão com a Meta revogada.')
     emit('disconnected')
   } catch (error: unknown) {
@@ -226,22 +189,10 @@ const executeDisconnect = async () => {
   }
 }
 
+defineExpose({ triggerDefaultAction: () => boxRef.value?.triggerDefaultAction() })
 onMounted(() => { metaApi.list() })
 </script>
 
 <style scoped>
-.form-section { display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border-faint); }
-.section-header h4 { font-family: var(--font-heading); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0; }
-.section-hint { font-size: var(--fs-base); color: var(--text-2); margin: 0.25rem 0 0; line-height: 1.5; }
-.reuse-container { display: flex; flex-direction: column; gap: 0.65rem; }
-.oauth-box { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.875rem; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap; }
-.oauth-info, .oauth-actions, .oauth-actions-bar { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
-.oauth-avatar { width: 32px; height: 32px; border-radius: 8px; background: var(--brand-soft); border: 1px solid var(--brand-border); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
-.oauth-avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.oauth-initials { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--brand); }
-.oauth-stack { display: flex; flex-direction: column; line-height: 1.25; }
-.oauth-sub { font-size: var(--fs-xs); color: var(--text-3); }
-.oauth-pill { font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 0.2rem 0.55rem; border-radius: 999px; background: var(--success-soft); color: var(--success); }
-.oauth-identity { font-size: var(--fs-md); color: var(--text-1); font-weight: var(--fw-medium); }
-.oauth-text { font-size: var(--fs-md); color: var(--text-2); margin: 0; }
+.oauth-card-wrap { display: contents; }
 </style>

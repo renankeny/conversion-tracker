@@ -71,7 +71,7 @@ func (h *Webhooks) Kirvano(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Customer.Name))
+	first, last := util.SplitFullName(p.Customer.Name)
 
 	value := p.Fiscal.TotalValue
 	if value == 0 {
@@ -107,6 +107,7 @@ func (h *Webhooks) Kirvano(w http.ResponseWriter, r *http.Request) {
 		IsOrderBump: isOrderBump,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  raw,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

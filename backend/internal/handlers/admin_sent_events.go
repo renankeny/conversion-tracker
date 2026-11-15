@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
@@ -29,52 +31,67 @@ func splitCSV(s string) []string {
 }
 
 // AdminSentEvents expõe a auditoria de eventos enviados às plataformas
-// (Meta, TikTok, Google Ads).
+// (Meta, TikTok, Google Ads, GA4).
 type AdminSentEvents struct {
 	repo     *repo.SentEventRepo
 	enqueuer *queue.Enqueuer
+	rdb      *redis.Client
 }
 
 func NewAdminSentEvents(r *repo.SentEventRepo, enqueuer *queue.Enqueuer) *AdminSentEvents {
 	return &AdminSentEvents{repo: r, enqueuer: enqueuer}
 }
 
+func (h *AdminSentEvents) WithRedis(rdb *redis.Client) *AdminSentEvents {
+	h.rdb = rdb
+	return h
+}
+
+func (h *AdminSentEvents) SetRedis(rdb *redis.Client) {
+	h.rdb = rdb
+}
+
 func parseListFilter(r *http.Request) (repo.ListFilter, error) {
 	q := r.URL.Query()
 	f := repo.ListFilter{
-		PixelName:          q.Get("pixel"),
+		PixelName:          strings.TrimSpace(q.Get("pixel")),
+		Channel:            strings.TrimSpace(q.Get("channel")),
+		Search:             strings.TrimSpace(q.Get("search")),
 		EventNames:         splitCSV(q.Get("event")),
-		ExternalID:         q.Get("external_id"),
-		Status:             q.Get("status"),
+		ExternalID:         strings.TrimSpace(q.Get("external_id")),
+		Status:             strings.TrimSpace(q.Get("status")),
 		IncludeLTV:         q.Get("include_ltv") == "true",
 		IncludeBuyer:       q.Get("include_buyer") == "true" || q.Get("include_ltv") == "true",
 		IncludeUserContext: q.Get("include_user_context") == "true",
-		TrafficSource:      q.Get("traffic_source"),
+		TrafficSource:      strings.TrimSpace(q.Get("traffic_source")),
 	}
 	scope := TenantFromContext(r.Context())
 	f.AccountID = scope.AccountID
-	if v := q.Get("from"); v != "" {
+	if v := strings.TrimSpace(q.Get("from")); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
 			return f, err
 		}
 		f.From = t
 	}
-	if v := q.Get("to"); v != "" {
+	if v := strings.TrimSpace(q.Get("to")); v != "" {
 		t, err := time.Parse(time.RFC3339, v)
 		if err != nil {
 			return f, err
 		}
+		if t.Second() == 0 && t.Nanosecond() == 0 {
+			t = t.Add(time.Minute)
+		}
 		f.To = t
 	}
-	if v := q.Get("limit"); v != "" {
+	if v := strings.TrimSpace(q.Get("limit")); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
 			return f, err
 		}
 		f.Limit = n
 	}
-	if v := q.Get("offset"); v != "" {
+	if v := strings.TrimSpace(q.Get("offset")); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
 			return f, err
@@ -84,17 +101,18 @@ func parseListFilter(r *http.Request) (repo.ListFilter, error) {
 	return f, nil
 }
 
-// List GET /admin/sent-events (listagem flat — uma linha por canal).
+// List GET /admin/sent-events (listagem flat: uma linha por canal).
 func (h *AdminSentEvents) List(w http.ResponseWriter, r *http.Request) {
 	f, err := parseListFilter(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid filter: "+err.Error())
+		writeError(w, http.StatusBadRequest, "filtros inválidos")
 		return
 	}
 
 	list, total, err := h.repo.List(r.Context(), f)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list error: "+err.Error())
+		slog.Error("list sent events failed", "err", err, "account_id", f.AccountID)
+		writeError(w, http.StatusInternalServerError, "erro ao listar eventos")
 		return
 	}
 
@@ -110,13 +128,14 @@ func (h *AdminSentEvents) List(w http.ResponseWriter, r *http.Request) {
 func (h *AdminSentEvents) ListGrouped(w http.ResponseWriter, r *http.Request) {
 	f, err := parseListFilter(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid filter: "+err.Error())
+		writeError(w, http.StatusBadRequest, "filtros inválidos")
 		return
 	}
 
 	list, total, err := h.repo.ListGrouped(r.Context(), f)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list error: "+err.Error())
+		slog.Error("list grouped sent events failed", "err", err, "account_id", f.AccountID)
+		writeError(w, http.StatusInternalServerError, "erro ao listar eventos")
 		return
 	}
 
@@ -135,7 +154,7 @@ func (h *AdminSentEvents) GetByEventID(w http.ResponseWriter, r *http.Request) {
 		rawEventID = r.URL.Query().Get("event_id")
 	}
 	if rawEventID == "" {
-		writeError(w, http.StatusBadRequest, "event_id obrigatorio")
+		writeError(w, http.StatusBadRequest, "event_id obrigatório")
 		return
 	}
 
@@ -144,19 +163,18 @@ func (h *AdminSentEvents) GetByEventID(w http.ResponseWriter, r *http.Request) {
 		eventID = unescaped
 	}
 
-	pixelName := r.URL.Query().Get("pixel")
+	pixelName := strings.TrimSpace(r.URL.Query().Get("pixel"))
 	scope := TenantFromContext(r.Context())
 
 	rows, err := h.repo.FindByEventID(r.Context(), eventID, pixelName, scope.AccountID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "load error: "+err.Error())
+		slog.Error("find sent event by id failed", "err", err, "event_id", eventID, "account_id", scope.AccountID)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar detalhes do evento")
 		return
 	}
-	// Fallback 1: se não achou e eventID original difere, tenta com rawEventID
 	if len(rows) == 0 && eventID != rawEventID {
 		rows, _ = h.repo.FindByEventID(r.Context(), rawEventID, pixelName, scope.AccountID)
 	}
-	// Fallback 2: se passou pixelName e não achou, busca sem filtro de pixel (event_id é único)
 	if len(rows) == 0 && pixelName != "" {
 		rows, _ = h.repo.FindByEventID(r.Context(), eventID, "", scope.AccountID)
 		if len(rows) == 0 && eventID != rawEventID {
@@ -164,7 +182,7 @@ func (h *AdminSentEvents) GetByEventID(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(rows) == 0 {
-		writeError(w, http.StatusNotFound, "evento nao encontrado")
+		writeError(w, http.StatusNotFound, "evento não encontrado")
 		return
 	}
 

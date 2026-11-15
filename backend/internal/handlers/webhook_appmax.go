@@ -81,10 +81,10 @@ func (h *Webhooks) Appmax(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first := strings.ToLower(d.Customer.Firstname)
-	last := strings.ToLower(d.Customer.Lastname)
+	first := strings.TrimSpace(d.Customer.Firstname)
+	last := strings.TrimSpace(d.Customer.Lastname)
 	if first == "" && last == "" {
-		first, last = util.SplitFullName(strings.ToLower(d.Customer.Name))
+		first, last = util.SplitFullName(d.Customer.Name)
 	}
 
 	value := util.ParseMoneyAny(d.Total)
@@ -118,6 +118,7 @@ func (h *Webhooks) Appmax(w http.ResponseWriter, r *http.Request) {
 		ProductName: prodName,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

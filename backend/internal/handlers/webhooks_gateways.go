@@ -12,12 +12,11 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
-// enqueueGenericPurchase é o fluxo único compartilhado:
-//  1. Encontra o tracked user (external_id → phone (com variantes) → email opcional).
-//  2. Atualiza PII recebida do gateway no tracked_users.
-//  3. Aplica URL black→white na URL gravada do user.
-//  4. Resolve o pixel (`pixel_name` salvo no tracked user).
-//  5. Enfileira o evento (Purchase ou AddPaymentInfo) na fila Meta CAPI.
+// enqueueGenericPurchase é o fluxo único compartilhado pelos checkouts:
+//  1. Encontra o tracked user (telefone com variantes -> external_id -> email).
+//  2. Atualiza PII e cookies auxiliares recebidos do gateway em tracked_users.
+//  3. Resolve o pixel alvo (respeitando ?pixel= explícito da URL quando informado).
+//  4. Enfileira o evento (Purchase ou AddPaymentInfo) para CAPI/Google/TikTok/GA4.
 func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput, rawInput *domain.WebhookPurchaseInput) (map[string]any, int) {
 	in.EventName = orDefaultEvent(in.EventName)
 	in.Currency = orDefaultCurrency(in.Currency)
@@ -32,18 +31,7 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 
 	user, err := h.findUser(ctx, in)
 	if err != nil {
-		fallbackPixel := resolvedQueryPixel
-		if fallbackPixel == nil && in.AccountID > 0 {
-			if list, perr := h.pixels.ListByAccount(ctx, in.AccountID); perr == nil {
-				for i := range list {
-					if list[i].Enabled {
-						fallbackPixel = &list[i]
-						break
-					}
-				}
-			}
-		}
-
+		fallbackPixel := h.selectFallbackPixel(ctx, resolvedQueryPixel, in.AccountID)
 		if fallbackPixel == nil {
 			slog.Warn("webhook user not found",
 				"gateway", in.GatewayName,
@@ -78,6 +66,8 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 			LastName:   in.LastName,
 			Email:      in.Email,
 			Phone:      in.Phone,
+			FBC:        in.FBC,
+			FBP:        in.FBP,
 			URL:        "",
 		}
 		if cerr := h.users.Create(ctx, newUser); cerr != nil {
@@ -90,31 +80,34 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 		}
 	}
 
-	// Atualiza dados PII recebidos do gateway no usuário rastreado.
+	// Atualiza dados PII e cookies auxiliares recebidos do gateway no usuário rastreado.
 	user.FirstName = util.FirstNonEmpty(in.FirstName, user.FirstName)
 	user.LastName = util.FirstNonEmpty(in.LastName, user.LastName)
 	user.Email = util.FirstNonEmpty(in.Email, user.Email)
 	user.Phone = util.FirstNonEmpty(in.Phone, user.Phone)
+	user.FBC = util.FirstNonEmpty(user.FBC, in.FBC)
+	user.FBP = util.FirstNonEmpty(user.FBP, in.FBP)
+	if user.PixelName == "" && resolvedQueryPixel != nil {
+		user.PixelName = resolvedQueryPixel.Name
+	}
 	if err := h.users.Upsert(ctx, user); err != nil {
 		slog.Error("update user from webhook", "err", err, "gateway", in.GatewayName)
 	}
 
-	// Unifica identidade (stitch cross-device) ligando a sessão do checkout com sessões anteriores pelo fone/email
+	// Unifica identidade (stitch cross-device) ligando a sessão do checkout com sessões anteriores
 	if linked, lerr := h.users.ResolveAndLink(ctx, user.AccountID, user.ExternalID, user.Phone, user.Email); lerr == nil && linked != nil {
 		user = linked
 	}
 
-	pixel, err := h.pixels.FindByName(ctx, user.PixelName)
-	if err != nil {
-		slog.Error("webhook pixel not found",
-			"err", err,
-			"pixel_name", user.PixelName,
-			"gateway", in.GatewayName,
-		)
-		return map[string]any{
-			"received": true,
-			"error":    "pixel not found: " + user.PixelName,
-		}, http.StatusInternalServerError
+	var pixel *domain.Pixel
+	if resolvedQueryPixel != nil {
+		pixel = resolvedQueryPixel
+	} else {
+		pixel, err = h.pixels.FindByName(ctx, user.PixelName)
+		if err != nil {
+			slog.Error("webhook pixel not found", "err", err, "pixel_name", user.PixelName, "gateway", in.GatewayName)
+			return map[string]any{"received": true, "error": "pixel not found: " + user.PixelName}, http.StatusInternalServerError
+		}
 	}
 	if !pixel.Enabled || pixel.AccountID != user.AccountID {
 		return map[string]any{
@@ -125,7 +118,6 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 		}, http.StatusOK
 	}
 
-	// Cookies/click ids mais recentes entre TODOS os external_id ligados a essa pessoa dentro da conta
 	linked, err := h.users.LinkedFieldsByAccount(ctx, pixel.AccountID, user.ExternalID)
 	if err != nil {
 		slog.Warn("linked fields lookup failed", "err", err, "gateway", in.GatewayName, "external_id", user.ExternalID)
@@ -134,6 +126,8 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 			TTClid: user.TTClid, TTP: user.TTP, GA4ClientID: user.GA4ClientID, GA4SessionID: user.GA4SessionID,
 		}
 	}
+	linked.FBC = util.FirstNonEmpty(linked.FBC, in.FBC)
+	linked.FBP = util.FirstNonEmpty(linked.FBP, in.FBP)
 
 	val := in.Value
 	sourceURL := h.urlMapper.ApplyForAccount(pixel.AccountID, user.URL)
@@ -175,25 +169,25 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 		CtwaClid:         ctwaClid,
 		PageID:           pageID,
 		ExternalID:       user.ExternalID,
-		ClientIP:        user.ClientIP,
-		ClientUserAgent: user.ClientUserAgent,
-		FBP:             linked.FBP,
-		FBC:             linked.FBC,
-		Email:           user.Email,
-		Phone:           user.Phone,
-		FirstName:       user.FirstName,
-		LastName:        user.LastName,
-		Country:         user.Country,
-		State:           user.State,
-		City:            user.City,
-		PostalCode:      user.PostalCode,
-		TTClid:          linked.TTClid,
-		TTP:             linked.TTP,
-		GCLID:           linked.GCLID,
-		WBraid:          linked.WBraid,
-		GBraid:          linked.GBraid,
-		GA4ClientID:     linked.GA4ClientID,
-		GA4SessionID:    linked.GA4SessionID,
+		ClientIP:         user.ClientIP,
+		ClientUserAgent:  user.ClientUserAgent,
+		FBP:              linked.FBP,
+		FBC:              linked.FBC,
+		Email:            user.Email,
+		Phone:            user.Phone,
+		FirstName:        user.FirstName,
+		LastName:         user.LastName,
+		Country:          user.Country,
+		State:            user.State,
+		City:             user.City,
+		PostalCode:       user.PostalCode,
+		TTClid:           linked.TTClid,
+		TTP:              linked.TTP,
+		GCLID:            linked.GCLID,
+		WBraid:           linked.WBraid,
+		GBraid:           linked.GBraid,
+		GA4ClientID:      linked.GA4ClientID,
+		GA4SessionID:     linked.GA4SessionID,
 	}
 
 	aggregated := false

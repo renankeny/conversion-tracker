@@ -113,7 +113,8 @@ func (h *AdminDashboardMeta) loadCachedSummary(ctx context.Context, src *resolve
 	prevSince, prevUntil := previousYMDWindow(since, until)
 	prevRange := marshalMetaRange(prevSince, prevUntil)
 
-	key := cache.HashQueryKey("meta:insights:v4", strconv.FormatInt(src.accountID, 10), src.credKey(), src.adAccountID, timeRange)
+	ver := h.qcache.DashboardVersion(ctx, src.accountID)
+	key := cache.HashQueryKey("meta:insights:v5", strconv.FormatInt(src.accountID, 10), ver, src.credKey(), src.adAccountID, timeRange)
 	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte(`{"connected":false}`), func(lctx context.Context) ([]byte, error) {
 		summary, ferr := h.fetchMetaSummary(lctx, src, timeRange)
 		if ferr != nil {

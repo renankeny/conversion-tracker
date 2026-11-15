@@ -10,7 +10,7 @@
         </div>
         <div class="timeline-body">
           <div class="timeline-header">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 min-w-0">
               <span class="timeline-badge" :class="item.typeClass">{{ item.badge }}</span>
               <span class="timeline-title">{{ item.title }}</span>
             </div>
@@ -116,6 +116,7 @@ defineProps<Props>()
 .timeline-indicator.type-lead .timeline-dot { background: var(--accent-purple-strong); box-shadow: 0 0 8px var(--accent-purple-border); }
 .timeline-indicator.type-contact .timeline-dot { background: var(--brand); box-shadow: 0 0 8px var(--brand-border); }
 .timeline-indicator.type-device .timeline-dot { background: var(--accent-pink-strong); box-shadow: 0 0 8px var(--accent-pink-border); }
+.timeline-indicator.type-failed .timeline-dot { background: var(--danger); box-shadow: 0 0 8px var(--danger-border); }
 
 .timeline-line {
   position: absolute;
@@ -130,6 +131,7 @@ defineProps<Props>()
 
 .timeline-body {
   flex: 1;
+  min-width: 0;
   background: var(--surface-soft-2);
   border: 1px solid var(--border-soft);
   border-radius: 8px;
@@ -155,14 +157,17 @@ defineProps<Props>()
   border-radius: 4px;
   background: var(--surface-soft);
   color: var(--text-2);
+  border: 1px solid var(--border-soft);
+  white-space: nowrap;
 }
 
-.timeline-badge.type-discovery { background: var(--accent-sky-soft); color: var(--accent-sky); border: 1px solid var(--accent-sky-border); }
-.timeline-badge.type-checkout { background: var(--warning-soft); color: var(--warning-light); border: 1px solid var(--warning-border); }
-.timeline-badge.type-purchase { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
-.timeline-badge.type-lead { background: var(--accent-purple-soft); color: var(--accent-purple); border: 1px solid var(--accent-purple-border); }
-.timeline-badge.type-contact { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); }
-.timeline-badge.type-device { background: var(--accent-pink-soft); color: var(--accent-pink); border: 1px solid var(--accent-pink-border); }
+.timeline-badge.type-discovery { background: var(--accent-sky-soft); color: var(--accent-sky); border-color: var(--accent-sky-border); }
+.timeline-badge.type-checkout { background: var(--warning-soft); color: var(--warning-light); border-color: var(--warning-border); }
+.timeline-badge.type-purchase { background: var(--brand-soft); color: var(--brand); border-color: var(--brand-border); }
+.timeline-badge.type-lead { background: var(--accent-purple-soft); color: var(--accent-purple); border-color: var(--accent-purple-border); }
+.timeline-badge.type-contact { background: var(--brand-soft); color: var(--brand); border-color: var(--brand-border); }
+.timeline-badge.type-device { background: var(--accent-pink-soft); color: var(--accent-pink); border-color: var(--accent-pink-border); }
+.timeline-badge.type-failed { background: var(--danger-soft); color: var(--danger-light); border-color: var(--danger-border); }
 
 .timeline-title {
   font-size: var(--fs-base);
@@ -180,6 +185,7 @@ defineProps<Props>()
   font-size: var(--fs-sm);
   color: var(--text-2);
   margin: 0;
+  word-break: break-word;
 }
 
 .timeline-meta {

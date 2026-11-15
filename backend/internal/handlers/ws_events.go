@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -69,40 +70,62 @@ func (h *WSEvents) checkOrigin(r *http.Request) bool {
 	return false
 }
 
-// Handle faz upgrade HTTP → WebSocket, autentica e registra o cliente no hub.
+// Handle faz upgrade HTTP para WebSocket, autentica e registra o cliente no hub.
 func (h *WSEvents) Handle(w http.ResponseWriter, r *http.Request) {
-	var accountID int64
-	if ticketID := strings.TrimSpace(r.URL.Query().Get("ticket")); ticketID != "" {
-		if h.tickets == nil {
-			http.Error(w, "invalid ticket", http.StatusUnauthorized)
+	var (
+		userID    int64
+		accountID int64
+		isOwner   bool
+		tokenID   string
+		issuedAt  int64
+	)
+
+	if h.tickets != nil {
+		ticketID := strings.TrimSpace(r.URL.Query().Get("ticket"))
+		if ticketID == "" {
+			http.Error(w, "ticket obrigatório", http.StatusUnauthorized)
 			return
 		}
 		t, ok := h.tickets.Consume(r.Context(), ticketID)
 		if !ok {
-			http.Error(w, "invalid or expired ticket", http.StatusUnauthorized)
+			http.Error(w, "ticket inválido ou expirado", http.StatusUnauthorized)
 			return
 		}
+		if h.sessions != nil && h.sessions.IsRevoked(r.Context(), t.TokenID, t.UserID, t.IssuedAt) {
+			http.Error(w, "sessão revogada", http.StatusUnauthorized)
+			return
+		}
+		userID = t.UserID
 		accountID = t.AccountID
+		isOwner = t.IsOwner
+		tokenID = t.TokenID
+		issuedAt = t.IssuedAt
 	} else {
 		tok := strings.TrimSpace(r.URL.Query().Get("token"))
-		if tok == "" {
-			http.Error(w, "missing ticket", http.StatusUnauthorized)
+		if tok == "" || h.jwt == nil {
+			http.Error(w, "credencial obrigatória", http.StatusUnauthorized)
 			return
 		}
 		claims, err := h.jwt.Parse(tok)
 		if err != nil || claims.IsAPIKey() {
-			http.Error(w, "invalid token", http.StatusUnauthorized)
+			http.Error(w, "token inválido", http.StatusUnauthorized)
 			return
 		}
-		var iat int64
 		if claims.IssuedAt != nil {
-			iat = claims.IssuedAt.Unix()
+			issuedAt = claims.IssuedAt.Unix()
 		}
-		if h.sessions != nil && h.sessions.IsRevoked(r.Context(), claims.ID, claims.UserID, iat) {
-			http.Error(w, "revoked token", http.StatusUnauthorized)
+		if h.sessions != nil && h.sessions.IsRevoked(r.Context(), claims.ID, claims.UserID, issuedAt) {
+			http.Error(w, "sessão revogada", http.StatusUnauthorized)
 			return
 		}
+		userID = claims.UserID
 		accountID = claims.AccountID
+		isOwner = claims.IsOwner()
+		tokenID = claims.ID
+	}
+
+	if !isOwner && accountID <= 0 {
+		accountID = -1
 	}
 
 	upgrader := websocket.Upgrader{
@@ -117,13 +140,17 @@ func (h *WSEvents) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &wshub.Client{
+		UserID:      userID,
 		AccountID:   accountID,
-		PixelFilter: r.URL.Query().Get("pixel"),
+		IsOwner:     isOwner,
+		TokenID:     tokenID,
+		IssuedAt:    issuedAt,
+		PixelFilter: strings.TrimSpace(r.URL.Query().Get("pixel")),
 		Send:        make(chan []byte, 256),
 	}
 
 	h.hub.Register(client)
-	go wsWritePump(conn, client)
+	go wsWritePump(conn, client, h.sessions)
 	wsReadPump(conn, client, h.hub)
 }
 
@@ -146,7 +173,7 @@ func wsReadPump(conn *websocket.Conn, client *wshub.Client, hub *wshub.Hub) {
 	}
 }
 
-func wsWritePump(conn *websocket.Conn, client *wshub.Client) {
+func wsWritePump(conn *websocket.Conn, client *wshub.Client, sessions *cache.SessionStore) {
 	ticker := time.NewTicker(wsPingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -166,6 +193,19 @@ func wsWritePump(conn *websocket.Conn, client *wshub.Client) {
 			}
 
 		case <-ticker.C:
+			if sessions != nil {
+				checkCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				revoked := sessions.IsRevoked(checkCtx, client.TokenID, client.UserID, client.IssuedAt)
+				cancel()
+				if revoked {
+					_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+					_ = conn.WriteMessage(
+						websocket.CloseMessage,
+						websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "sessão encerrada"),
+					)
+					return
+				}
+			}
 			_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return

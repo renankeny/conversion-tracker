@@ -6,6 +6,7 @@ import { errorStatusCode } from '~/utils/errorMessage'
 import { useTenantStore } from '~/stores/useTenantStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
 import { usePixelStore } from '~/stores/usePixelStore'
+import { useMetaAdsStore } from '~/stores/useMetaAdsStore'
 import { useGoogleAdsStore } from '~/stores/useGoogleAdsStore'
 import { useCustomWebhooksStore } from '~/stores/customWebhooks'
 import { useSystemAlertsStore } from '~/stores/useSystemAlertsStore'
@@ -28,9 +29,10 @@ export const useAuthStore = defineStore('auth', () => {
     const role = user.value?.role
     return role === 'owner' || role === 'superadmin' || role === 'admin' || role === 'manager'
   })
+  const canManageUsers = computed(() => canManageAccounts.value)
   const canManagePixels = computed(() => {
     if (!user.value) return false
-    if (user.value.role === 'employee') return user.value.permissions?.edit_pixels !== false
+    if (user.value.role === 'employee') return Boolean(user.value.permissions?.edit_pixels)
     return true
   })
   const hasOpenAiKey = computed(() => {
@@ -92,6 +94,7 @@ export const useAuthStore = defineStore('auth', () => {
     useLiveEventsStore().disconnect()
     useTenantStore().reset()
     usePixelStore().invalidate()
+    useMetaAdsStore().invalidate()
     useGoogleAdsStore().invalidate()
     useCustomWebhooksStore().invalidate()
     useSystemAlertsStore().invalidate()
@@ -176,6 +179,7 @@ export const useAuthStore = defineStore('auth', () => {
     isOwner,
     isAdmin,
     canManageAccounts,
+    canManageUsers,
     canManagePixels,
     hasOpenAiKey,
     hydrate,

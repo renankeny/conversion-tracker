@@ -73,7 +73,7 @@ func (h *Webhooks) Braip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.ClientName))
+	first, last := util.SplitFullName(p.ClientName)
 	phone := util.FirstNonEmpty(p.ClientCel, p.ClientPhone)
 
 	value := util.ParseMoneyAny(p.TransValue)
@@ -102,6 +102,7 @@ func (h *Webhooks) Braip(w http.ResponseWriter, r *http.Request) {
 		IsOrderBump: p.ParentSale != "",
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

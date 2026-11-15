@@ -11,8 +11,6 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import BaseDropdown from './BaseDropdown.vue'
-// import usePixelStore assuming it's auto-imported or we can import it
-// But in Nuxt it's auto-imported if it's in stores/
 
 interface Props {
   modelValue?: string
@@ -37,7 +35,10 @@ onMounted(() => {
 })
 
 const pixelOptions = computed(() => {
-  const list = pixelStore.pixels?.map((p) => ({ label: p.name, value: p.name })) ?? []
+  const list = pixelStore.pixels?.map((p) => ({
+    label: p.label ? `${p.label} (${p.name})` : p.name,
+    value: p.name,
+  })) ?? []
   if (props.allowAll) {
     return [{ label: 'Todos os pixels', value: '' }, ...list]
   }
@@ -54,6 +55,6 @@ watch(
       emit('update:modelValue', allowAll ? '' : (pixels[0]?.name ?? ''))
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 </script>

@@ -30,7 +30,9 @@ export const usePublicDashboardFetch = (token: string) => {
 
   const dateRange = computed(() => computeSaoPauloRange(period.value, customFrom.value, customTo.value))
   const granularity = computed<'hour' | 'day'>(() => (period.value === 'today' || period.value === 'yesterday' ? 'hour' : 'day'))
-  const periodIncludesToday = computed(() => period.value !== 'yesterday' && period.value !== 'custom')
+  const periodIncludesToday = computed(
+    () => period.value !== 'yesterday' && period.value !== 'last_month' && period.value !== 'custom',
+  )
 
   const loading = ref(false)
   const isRefreshing = ref(false)

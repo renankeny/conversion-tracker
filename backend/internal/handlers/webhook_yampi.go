@@ -76,7 +76,7 @@ func (h *Webhooks) Yampi(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Resource.Customer.Name))
+	first, last := util.SplitFullName(p.Resource.Customer.Name)
 
 	value := p.Resource.ValueTotal
 	if value == 0 {
@@ -121,6 +121,7 @@ func (h *Webhooks) Yampi(w http.ResponseWriter, r *http.Request) {
 		ProductName: productName,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  raw,
 	}
 
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))

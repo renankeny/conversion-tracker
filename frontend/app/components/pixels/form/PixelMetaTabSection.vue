@@ -8,7 +8,7 @@
         :loading="loadingAccounts"
       />
       <p class="field-help">
-        Vincule uma conta em <NuxtLink to="/integracoes/meta-ads" class="link">Integrações &gt; Meta Ads</NuxtLink> para carregar os Pixels da conta automaticamente, enriquecer anúncios CTWA, exibir Spend ao vivo e disparar CAPI sem token manual.
+        Vincule uma conta em <NuxtLink to="/integracoes/meta-ads" class="link">Integrações &gt; Meta Ads</NuxtLink> para carregar os Pixels da conta automaticamente, enriquecer anúncios CTWA, exibir investimento ao vivo e disparar CAPI sem token manual.
       </p>
     </div>
 
@@ -32,6 +32,7 @@
     </div>
     <div v-else-if="!form.pixel_ids.length" class="empty-channel-box">
       Nenhum pixel da Meta configurado para este tracker.
+      <span v-if="pixelIdsError" class="inline-error block-err">{{ pixelIdsError }}</span>
     </div>
 
     <div v-for="(_, idx) in form.pixel_ids" :key="idx" class="pixel-row">
@@ -64,19 +65,24 @@
           </button>
         </div>
 
-        <BaseInput
-          v-model="form.access_tokens[idx]"
-          label="Access Token"
-          :type="showTokens ? 'text' : 'password'"
-          :placeholder="form.meta_account_id ? 'Automático via OAuth' : (isEditing ? 'Mantém o atual se vazio' : 'EAAxxxxxxxxxxxx...')"
-        />
-        <BaseInput
-          v-model="form.test_codes[idx]"
-          label="Test Code"
-          placeholder="TEST12345"
-        />
+        <div class="pixel-select-col">
+          <BaseInput
+            v-model="form.access_tokens[idx]"
+            label="Access Token"
+            :type="showTokens ? 'text' : 'password'"
+            :placeholder="tokenPlaceholder(idx)"
+          />
+          <button
+            v-if="form.meta_account_id && hasSavedManualMetaToken(form.pixel_ids[idx] || '')"
+            type="button"
+            class="switch-mode-btn"
+            @click="$emit('clearManualMetaToken', idx)"
+          >
+            Remover token manual e usar OAuth
+          </button>
+        </div>
       </div>
-      <button type="button" class="row-remove" @click="removePixelRow(idx)">×</button>
+      <button type="button" class="row-remove" aria-label="Remover pixel Meta" @click="removePixelRow(idx)">×</button>
     </div>
 
     <BaseCheckbox
@@ -98,26 +104,27 @@ const props = defineProps<{
   pixelIdsError: string
   isEditing: boolean
   showTokens: boolean
+  hasSavedManualMetaToken: (pixelId: string) => boolean
 }>()
 
 defineEmits<{
   'update:showTokens': [value: boolean]
+  clearManualMetaToken: [idx: number]
 }>()
 
 const {
-  remotePixels,
-  loadingAccounts,
-  loadingPixels,
-  manualRows,
-  metaAccountOptions,
-  metaAccountSelectValue,
-  pixelDropdownOptions,
-  pixelDropdownValue,
-  onSelectPixel,
-  switchToList,
-  addPixelRow,
-  removePixelRow,
+  remotePixels, loadingAccounts, loadingPixels, manualRows,
+  metaAccountOptions, metaAccountSelectValue,
+  pixelDropdownOptions, pixelDropdownValue,
+  onSelectPixel, switchToList, addPixelRow, removePixelRow,
 } = usePixelMetaTab(props)
+
+const tokenPlaceholder = (idx: number): string => {
+  const pid = props.form.pixel_ids[idx] || ''
+  if (props.hasSavedManualMetaToken(pid)) return 'Token manual salvo (vazio mantém)'
+  if (props.form.meta_account_id) return 'Automático via OAuth'
+  return props.isEditing ? 'Informe o Access Token' : 'EAAxxxxxxxxxxxx...'
+}
 </script>
 
 <style scoped>
@@ -129,8 +136,9 @@ const {
 .section-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--text-strong); display: inline-flex; align-items: center; gap: 0.5rem; }
 .section-hint { font-size: var(--fs-base); color: var(--text-3); margin: 0; }
 .empty-channel-box { padding: 1.25rem; text-align: center; border: 1px dashed var(--border-soft); border-radius: 8px; font-size: var(--fs-md); color: var(--text-3); }
-.pixel-row { position: relative; padding: 0.75rem; background: var(--surface-soft); border: 1px solid var(--border-soft); border-radius: 10px; }
-.pixel-row-grid { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr; gap: 0.75rem; align-items: start; }
+.block-err { display: block; margin-top: 0.375rem; }
+.pixel-row { position: relative; padding: 0.75rem 2.25rem 0.75rem 0.75rem; background: var(--surface-soft); border: 1px solid var(--border-soft); border-radius: 10px; }
+.pixel-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; align-items: start; }
 @media (max-width: 768px) { .pixel-row-grid { grid-template-columns: 1fr; } }
 .pixel-select-col { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
 .switch-mode-btn { align-self: flex-start; background: transparent; border: none; padding: 0; color: var(--brand); font-size: var(--fs-xs); font-weight: var(--fw-medium); cursor: pointer; }

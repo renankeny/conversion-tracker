@@ -1,5 +1,8 @@
-/** Canais pelos quais um evento pode ter sido enviado. */
+/** Canais externos pelos quais um evento pode ser espelhado. */
 export type Channel = 'meta' | 'tiktok' | 'google_ads' | 'ga4'
+
+/** Canal persistido em sent_events (inclui registro apenas interno sem canal externo). */
+export type EventChannel = Channel | 'internal'
 
 export interface SentEvent {
   id: number
@@ -7,23 +10,30 @@ export interface SentEvent {
   pixel_name: string
   event_name: string
   external_id: string
-  channel: Channel
+  channel: EventChannel
   status: EventStatus
   response_code: number
   error: string
   response_body: string
-  /** Payload JSON enviado para a plataforma (com PII hasheada, tokens redatados). */
+  /** Payload JSON enviado para a plataforma (com PII hasheada e segredos mascarados). */
   payload?: string
   purchase_value: number
   created_at: string
   updated_at: string
 }
 
-export type EventStatus = 'sent' | 'pending' | 'failed' | 'queued'
+export type EventStatus = 'sent' | 'partial' | 'pending' | 'failed' | 'queued' | 'contested'
+
+export interface EventKeyRef {
+  event_id: string
+  pixel_name?: string
+}
 
 export interface EventFilters {
   pixel?: string
   event?: string
+  channel?: string
+  search?: string
   external_id?: string
   status?: EventStatus
   traffic_source?: string
@@ -46,7 +56,7 @@ export interface EventsResponse {
 /** Resumo por canal mostrado na linha agrupada. */
 export interface ChannelBrief {
   id: number
-  channel: Channel
+  channel: EventChannel
   status: EventStatus
   response_code: number
   has_error: boolean
@@ -68,7 +78,7 @@ export interface GroupedEvent {
   event_name: string
   pixel_name: string
   external_id: string
-  purchase_value: number  // valor monetário (0 se não aplicável)
+  purchase_value: number
   created_at: string
   channels: ChannelBrief[]
   /** LTV do cliente (todas as compras, todo o histórico). Só vem preenchido quando a busca pede include_ltv. */
@@ -81,7 +91,7 @@ export interface GroupedEvent {
   first_utm_source?: string
   last_utm_source?: string
 
-  /** Agrupamento de Conversões (Order Bump & Upsell) */
+  /** Agrupamento de Conversões (Order Bump e Upsell) */
   aggregated_count?: number
   aggregated_items?: AggregatedItem[]
 }

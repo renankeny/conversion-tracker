@@ -45,10 +45,10 @@ const PLATFORMS_CORE: PlatformDef[] = [
     logoUrl: '/img/platforms/cakto.png?v=2',
     events: ['purchase_approved (status=paid)'],
     setupSteps: [
-      'No painel Cakto, acesse Integrações → Webhooks',
+      'No painel Cakto, acesse Integrações > Webhooks',
       'Clique em "Adicionar URL" e cole o endereço acima',
       'Selecione o evento "Pedido aprovado"',
-      'Salve a configuração',
+      'Opcional: copie o Secret do webhook na Cakto e salve no campo de segurança abaixo',
     ],
     notes: 'Suporta formato individual e batch, prioriza baseAmount e identifica order_bump/upsell.',
   },

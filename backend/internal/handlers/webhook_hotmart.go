@@ -150,15 +150,16 @@ func (h *Webhooks) Hotmart(w http.ResponseWriter, r *http.Request) {
 		IsOrderBump: p.Data.Purchase.OrderBump.IsOrderBump,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  raw,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }
 
 func hotmartName(p hotmartPayload) (string, string) {
-	first := strings.ToLower(p.Data.Buyer.FirstName)
-	last := strings.ToLower(p.Data.Buyer.LastName)
+	first := strings.TrimSpace(p.Data.Buyer.FirstName)
+	last := strings.TrimSpace(p.Data.Buyer.LastName)
 	if first != "" || last != "" {
 		return first, last
 	}
-	return util.SplitFullName(strings.ToLower(p.Data.Buyer.Name))
+	return util.SplitFullName(p.Data.Buyer.Name)
 }

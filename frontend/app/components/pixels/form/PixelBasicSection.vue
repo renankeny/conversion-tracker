@@ -1,32 +1,35 @@
 <template>
   <form class="tab-content" @submit.prevent="$emit('submit')">
     <BaseDropdown
-      v-if="accounts.length > 0"
+      v-if="!isEditing && accounts.length > 1"
       v-model="form.account_id"
       label="Empresa"
-      :options="accounts.map(a => ({ value: a.id, label: a.name }))"
-      hint="Empresa à qual este pixel pertence."
+      :options="accounts.map((a) => ({ value: a.id, label: a.name }))"
+      hint="Empresa que receberá este pixel e seus eventos."
     />
 
     <BaseInput
       v-model="form.name"
-      label="Nome"
+      label="Identificador (slug)"
       placeholder="Ex: principal"
-      hint="Identificador interno (slug). Usado em /tracker.js?pixel=<nome>"
+      :disabled="isEditing"
+      :hint="isEditing
+        ? 'Identificador fixo após a criação para preservar webhooks, instâncias e histórico. Altere o Rótulo abaixo para mudar o nome exibido.'
+        : 'Usado internamente em /tracker.js e integrações. Use letras, números, hífen (-) ou underline (_).'"
       :error="nameError"
       required
     />
 
     <BaseInput
       v-model="form.label"
-      label="Rótulo"
+      label="Rótulo de exibição"
       placeholder="Ex: Pixel principal de vendas"
-      hint="Nome amigável exibido no painel"
+      hint="Nome amigável exibido nos cards e seletores do painel. Pode ser alterado ou limpo a qualquer momento."
     />
 
     <div class="form-section">
       <h4 class="section-title">Domínios autorizados</h4>
-      <p class="section-hint">Sites onde o tracker roda. Separe por vírgula.</p>
+      <p class="section-hint">Sites onde o script de rastreamento pode rodar. Separe múltiplos domínios por vírgula.</p>
       <BaseInput
         :model-value="domainsInput"
         placeholder="exemplo.com.br, www.exemplo.com.br"
@@ -38,7 +41,7 @@
       <BaseCheckbox
         v-model="form.enabled"
         label="Pixel ativo"
-        hint="Quando desativado, o /tracker.js retorna `pixel disabled`."
+        hint="Quando desativado, o script pausa a coleta e o recebimento de novos eventos."
       />
     </div>
 
@@ -82,17 +85,17 @@ onMounted(async () => {
     const res = await accountsAPI.list()
     accounts.value = (res.data || []).map((a) => ({ id: a.id, name: a.name }))
     const activeAcc = tenantStore.activeAccountId
-    if (!props.form.account_id && activeAcc) {
+    if (!props.isEditing && !props.form.account_id && activeAcc) {
       const activeId = parseInt(activeAcc, 10)
       if (accounts.value.some((a) => a.id === activeId)) {
         props.form.account_id = activeId
       }
     }
-    if (!props.form.account_id && accounts.value.length > 0) {
+    if (!props.isEditing && !props.form.account_id && accounts.value.length > 0) {
       props.form.account_id = accounts.value[0]?.id ?? null
     }
   } catch {
-    // sem permissão ou indisponível — segue sem o seletor (backend usa default)
+    // sem permissão de listagem global: backend utiliza a conta do usuário autenticado
   }
 })
 </script>

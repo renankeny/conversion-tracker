@@ -40,6 +40,7 @@ func attachWhatsAppHandlers(
 
 	chatsH := handlers.NewAdminWhatsAppChats(waRepo, deps.Enqueuer, deps.Cfg.PublicAPIURL, deps.Cfg.JWTSecret)
 	chatsH.SetAIRepo(aiRepo)
+	chatsH.SetUsersRepo(users)
 
 	rh.webhookEvolution = handlers.NewWebhookEvolution(waRepo, deps.Enqueuer)
 	rh.whatsappMedia = handlers.NewWhatsAppMediaHandler(waRepo, deps.MediaStorage, deps.Cfg.JWTSecret)

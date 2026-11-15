@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -14,6 +16,7 @@ import (
 type AdminWhatsAppChats struct {
 	repo         *repo.WhatsAppRepo
 	aiRepo       *repo.WhatsAppAIRepo
+	usersRepo    *repo.UserRepo
 	enqueuer     *queue.Enqueuer
 	publicAPIURL string
 	jwtSecret    string
@@ -30,6 +33,10 @@ func NewAdminWhatsAppChats(repo *repo.WhatsAppRepo, enqueuer *queue.Enqueuer, pu
 
 func (h *AdminWhatsAppChats) SetAIRepo(ai *repo.WhatsAppAIRepo) {
 	h.aiRepo = ai
+}
+
+func (h *AdminWhatsAppChats) SetUsersRepo(u *repo.UserRepo) {
+	h.usersRepo = u
 }
 
 func (h *AdminWhatsAppChats) listAIEvents(r *http.Request, chatID int64) []*domain.WhatsAppAIEvent {
@@ -67,7 +74,8 @@ func (h *AdminWhatsAppChats) ListChats(w http.ResponseWriter, r *http.Request) {
 	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
 	chats, err := h.repo.ListChats(r.Context(), accID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("whatsapp list chats failed", "account_id", accID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao listar conversas do WhatsApp")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": chats})
@@ -76,25 +84,27 @@ func (h *AdminWhatsAppChats) ListChats(w http.ResponseWriter, r *http.Request) {
 func (h *AdminWhatsAppChats) GetMessages(w http.ResponseWriter, r *http.Request) {
 	chatID, err := strconv.ParseInt(chi.URLParam(r, "chatID"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid chatID")
+		writeError(w, http.StatusBadRequest, "identificador de conversa inválido")
 		return
 	}
 	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
 
 	chat, err := h.repo.GetChatByID(r.Context(), accID, chatID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("whatsapp get chat failed", "chat_id", chatID, "account_id", accID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar conversa")
 		return
 	}
 	if chat == nil {
-		writeError(w, http.StatusNotFound, "chat not found")
+		writeError(w, http.StatusNotFound, "conversa não encontrada")
 		return
 	}
 
 	beforeID, limit := parseChatPagination(r)
 	msgs, hasMore, nextBeforeID, err := h.repo.ListMessagesPaginated(r.Context(), chat.ID, beforeID, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("whatsapp list messages failed", "chat_id", chat.ID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar mensagens")
 		return
 	}
 	h.signMessages(accID, msgs)
@@ -109,15 +119,39 @@ func (h *AdminWhatsAppChats) GetMessages(w http.ResponseWriter, r *http.Request)
 
 func (h *AdminWhatsAppChats) GetByTrackedUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := strconv.ParseInt(chi.URLParam(r, "userID"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid userID")
+	if err != nil || userID <= 0 {
+		writeError(w, http.StatusBadRequest, "identificador de usuário inválido")
 		return
 	}
-	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
+
+	scope := TenantFromContext(r.Context())
+	accID := scope.AccountID
+	if h.usersRepo != nil {
+		u, err := h.usersRepo.FindRawByID(r.Context(), userID)
+		if err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "usuário não encontrado")
+				return
+			}
+			slog.Error("whatsapp chat by user lookup failed", "user_id", userID, "error", err)
+			writeError(w, http.StatusInternalServerError, "erro ao carregar usuário")
+			return
+		}
+		if (!scope.IsOwner && u.AccountID != scope.AccountID) || (scope.IsOwner && scope.AccountID > 0 && u.AccountID != scope.AccountID) {
+			writeError(w, http.StatusForbidden, "sem acesso a este usuário")
+			return
+		}
+		if accID == 0 {
+			accID = u.AccountID
+		}
+	} else {
+		accID = scope.EffectiveAccountID(0)
+	}
 
 	chat, err := h.repo.GetChatByTrackedUser(r.Context(), accID, userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("whatsapp get chat by tracked user failed", "user_id", userID, "account_id", accID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar conversa do usuário")
 		return
 	}
 	if chat == nil {
@@ -134,7 +168,8 @@ func (h *AdminWhatsAppChats) GetByTrackedUser(w http.ResponseWriter, r *http.Req
 	beforeID, limit := parseChatPagination(r)
 	msgs, hasMore, nextBeforeID, err := h.repo.ListMessagesPaginated(r.Context(), chat.ID, beforeID, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("whatsapp list messages by tracked user failed", "chat_id", chat.ID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar mensagens")
 		return
 	}
 	h.signMessages(accID, msgs)
@@ -150,14 +185,15 @@ func (h *AdminWhatsAppChats) GetByTrackedUser(w http.ResponseWriter, r *http.Req
 func (h *AdminWhatsAppChats) GetByCRMLead(w http.ResponseWriter, r *http.Request) {
 	leadID, err := strconv.ParseInt(chi.URLParam(r, "leadID"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid leadID")
+		writeError(w, http.StatusBadRequest, "identificador de lead inválido")
 		return
 	}
 	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
 
 	chat, err := h.repo.GetChatByCRMLead(r.Context(), accID, leadID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("whatsapp get chat by lead failed", "lead_id", leadID, "account_id", accID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar conversa do lead")
 		return
 	}
 	if chat == nil {
@@ -174,7 +210,8 @@ func (h *AdminWhatsAppChats) GetByCRMLead(w http.ResponseWriter, r *http.Request
 	beforeID, limit := parseChatPagination(r)
 	msgs, hasMore, nextBeforeID, err := h.repo.ListMessagesPaginated(r.Context(), chat.ID, beforeID, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("whatsapp list messages by lead failed", "chat_id", chat.ID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar mensagens")
 		return
 	}
 	h.signMessages(accID, msgs)

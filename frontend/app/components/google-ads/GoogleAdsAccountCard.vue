@@ -37,9 +37,9 @@
         </div>
 
         <div class="meta-row">
-          <span class="meta-label">Customer ID</span>
-          <span class="meta-val meta-mono" :class="{ muted: !account.customer_id }">
-            {{ account.customer_id ? formatCustomerID(account.customer_id) : 'Não selecionado' }}
+          <span class="meta-label">Conta Google Ads</span>
+          <span class="meta-val" :class="{ muted: !account.customer_id, 'meta-mono': !account.customer_name }">
+            {{ customerDisplay || 'Não selecionada' }}
           </span>
         </div>
 
@@ -51,20 +51,23 @@
         </div>
 
         <div class="meta-row">
-          <span class="meta-label">Conversion Actions</span>
+          <span class="meta-label">Ações de Conversão</span>
           <span class="meta-val" :class="activeActionsCount > 0 ? 'val-ok' : 'muted'">
             {{ activeActionsCount }} {{ activeActionsCount === 1 ? 'ativa' : 'ativas' }}
+          </span>
+        </div>
+
+        <div class="meta-row">
+          <span class="meta-label">Pixels vinculados</span>
+          <span class="meta-val" :class="{ muted: !linkedPixels.length }">
+            {{ linkedPixelsLabel }}
           </span>
         </div>
       </div>
     </div>
 
-    <footer class="ga-actions">
-      <button
-        type="button"
-        class="action-main"
-        @click="$emit('edit', account)"
-      >
+    <footer v-if="canEdit" class="ga-actions">
+      <button type="button" class="action-main" @click="$emit('edit', account)">
         <Settings :size="16" />
         <span>Configurar conta</span>
       </button>
@@ -86,11 +89,16 @@
 <script setup lang="ts">
 import { Settings, Trash2 } from 'lucide-vue-next'
 import BrandIcon from '~/components/events/BrandIcon.vue'
-import type { GoogleAdsAccount } from '#shared/types'
+import type { GoogleAdsAccount, Pixel } from '#shared/types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   account: GoogleAdsAccount
-}>()
+  linkedPixels?: Pixel[]
+  canEdit?: boolean
+}>(), {
+  linkedPixels: () => [],
+  canEdit: true,
+})
 
 defineEmits<{
   edit: [account: GoogleAdsAccount]
@@ -99,40 +107,60 @@ defineEmits<{
 
 const imgBroken = ref(false)
 const avatarSrc = computed(() => props.account.picture_url || props.account.oauth_picture_url || '')
-watch(avatarSrc, () => {
-  imgBroken.value = false
-})
+watch(avatarSrc, () => { imgBroken.value = false })
 
-const statusState = computed<'connected' | 'pending' | 'disabled'>(() => {
+const isOAuthOk = computed(
+  () => Boolean(props.account.oauth_connected || props.account.connected || props.account.oauth_email),
+)
+
+const activeActionsCount = computed(() =>
+  (props.account.conversion_actions || []).filter((ca) => ca.enabled && ca.conversion_action_id).length,
+)
+
+const isReady = computed(
+  () => Boolean(isOAuthOk.value && props.account.customer_id && activeActionsCount.value > 0),
+)
+
+const statusState = computed<'ready' | 'warning' | 'disabled'>(() => {
   if (!props.account.enabled) return 'disabled'
-  return props.account.connected ? 'connected' : 'pending'
+  return isReady.value ? 'ready' : 'warning'
 })
 
 const statusLabel = computed(() => {
-  if (!props.account.enabled) return 'Desativada'
-  if (!props.account.connected) return 'Aguardando OAuth'
-  return 'Conectada'
+  if (!props.account.enabled) return 'Pausada'
+  if (!isOAuthOk.value) return 'Aguardando OAuth'
+  if (!props.account.customer_id || activeActionsCount.value === 0) return 'Incompleta'
+  return 'Pronta'
 })
 
 const pillClass = computed(() => `pill-${statusState.value}`)
 const dotClass = computed(() => `dot-${statusState.value}`)
 
-const activeActionsCount = computed(() => {
-  return (props.account.conversion_actions || []).filter(
-    (ca) => ca.enabled && ca.conversion_action_id,
-  ).length
-})
-
 const formatCustomerID = (id: string) => {
-  const digits = id.replace(/\D/g, '')
-  if (digits.length !== 10) return id
-  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+  const digits = (id || '').replace(/\D/g, '')
+  return digits.length === 10 ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}` : id
 }
 
+const customerDisplay = computed(() => {
+  if (!props.account.customer_id) return ''
+  const fmt = formatCustomerID(props.account.customer_id)
+  if (props.account.customer_name && props.account.customer_name !== props.account.name) {
+    return `${props.account.customer_name} (${fmt})`
+  }
+  return fmt
+})
+
 const headerSubtitle = computed(() => {
-  if (props.account.customer_id) return `ID: ${formatCustomerID(props.account.customer_id)}`
+  if (props.account.customer_id) return `ID ${formatCustomerID(props.account.customer_id)}`
   if (props.account.oauth_email) return props.account.oauth_email
-  return 'Conta Google Ads'
+  return 'Conexão Google Ads'
+})
+
+const linkedPixelsLabel = computed(() => {
+  const list = props.linkedPixels
+  if (!list.length) return 'Nenhum pixel vinculado'
+  if (list.length === 1) return list[0]!.label || list[0]!.name
+  return `${list[0]!.label || list[0]!.name} +${list.length - 1}`
 })
 </script>
 
@@ -147,16 +175,16 @@ const headerSubtitle = computed(() => {
 .avatar-dot { position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--surface-2); }
 .ga-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
 .ga-name { font-family: var(--font-heading); font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ga-sub { font-size: var(--fs-xs); color: var(--text-3); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ga-sub { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status-pill { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.7rem; border-radius: 999px; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; flex-shrink: 0; }
-.pill-connected { background: var(--surface-soft); color: var(--success); border: 1px solid var(--border-soft); }
-.pill-pending { background: var(--surface-soft); color: var(--warning); border: 1px solid var(--border-soft); }
+.pill-ready { background: var(--surface-soft); color: var(--success); border: 1px solid var(--border-soft); }
+.pill-warning { background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border); }
 .pill-disabled { background: var(--surface-deep); color: var(--text-3); border: 1px solid var(--border-soft); }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.dot-connected { background: var(--success); }
-.dot-pending { background: var(--warning); }
+.dot-ready { background: var(--success); }
+.dot-warning { background: var(--warning); }
 .dot-disabled { background: var(--text-3); }
-.ga-body { padding: 0.95rem 1.25rem; display: flex; flex-direction: column; gap: 0.65rem; background: var(--surface-deep); border-bottom: 1px solid var(--border-soft); }
+.ga-body { padding: 0.95rem 1.25rem; display: flex; flex-direction: column; gap: 0.625rem; background: var(--surface-deep); border-bottom: 1px solid var(--border-soft); }
 .meta-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; font-size: var(--fs-xs); }
 .meta-label { color: var(--text-3); font-weight: var(--fw-medium); white-space: nowrap; }
 .meta-val { color: var(--text-1); font-weight: var(--fw-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
@@ -167,7 +195,6 @@ const headerSubtitle = computed(() => {
 .action-main { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0 1rem; border: none; background: transparent; color: var(--text-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); cursor: pointer; white-space: nowrap; transition: background 0.15s ease, color 0.15s ease; }
 .action-main:hover { background: var(--surface-soft); color: var(--brand); }
 .action-divider { width: 1px; background: var(--border-soft); flex-shrink: 0; }
-.action-icon { width: 46px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--text-2); cursor: pointer; flex-shrink: 0; transition: background 0.15s ease, color 0.15s ease; }
-.action-delete { color: var(--danger); }
-.action-delete:hover { background: var(--surface-soft); color: var(--danger); }
+.action-icon { width: 46px; display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--danger); cursor: pointer; flex-shrink: 0; transition: background 0.15s ease; }
+.action-icon:hover { background: var(--surface-soft); }
 </style>

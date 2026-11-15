@@ -11,11 +11,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/metaoauth"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
-	"github.com/renankeny/conversion-tracker/backend/internal/tiktok"
-	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 type AdminPixelTestEvent struct {
@@ -42,41 +41,52 @@ func (h *AdminPixelTestEvent) SetMetaOAuth(metaAccs *repo.MetaAccountRepo, metaO
 }
 
 type testEventInput struct {
-	EventName string  `json:"event_name"`
-	Email     string  `json:"email"`
-	Phone     string  `json:"phone"`
-	FirstName string  `json:"first_name"`
-	LastName  string  `json:"last_name"`
-	Value     float64 `json:"value"`
-	Currency  string  `json:"currency"`
-	Channel   string  `json:"channel"`
+	EventName     string  `json:"event_name"`
+	Email         string  `json:"email"`
+	Phone         string  `json:"phone"`
+	FirstName     string  `json:"first_name"`
+	LastName      string  `json:"last_name"`
+	Value         float64 `json:"value"`
+	Currency      string  `json:"currency"`
+	Channel       string  `json:"channel"`
+	TestEventCode string  `json:"test_event_code"`
 }
 
 type testEventResult struct {
-	Channel    string `json:"channel"`
-	PixelID    string `json:"pixel_id"`
-	StatusCode int    `json:"status_code"`
-	Response   string `json:"response,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Channel      string `json:"channel"`
+	PixelID      string `json:"pixel_id"`
+	StatusCode   int    `json:"status_code"`
+	UsedTestCode bool   `json:"used_test_code"`
+	Response     string `json:"response,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 func (h *AdminPixelTestEvent) SendTestEvent(w http.ResponseWriter, r *http.Request) {
+	if !auth.CanEditPixels(r.Context()) {
+		writeError(w, http.StatusForbidden, "você não tem permissão para disparar eventos de teste")
+		return
+	}
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid id")
+		writeError(w, http.StatusBadRequest, "ID inválido")
 		return
 	}
 	p, err := h.pixels.FindByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "not found")
+			writeError(w, http.StatusNotFound, "pixel não encontrado")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "load error")
+		writeError(w, http.StatusInternalServerError, "erro ao carregar pixel")
+		return
+	}
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner && p.AccountID != scope.AccountID {
+		writeError(w, http.StatusForbidden, "sem acesso a este pixel")
 		return
 	}
 	if !p.Enabled {
-		writeError(w, http.StatusBadRequest, "pixel disabled")
+		writeError(w, http.StatusBadRequest, "este pixel está desativado; ative-o antes de testar")
 		return
 	}
 
@@ -86,7 +96,7 @@ func (h *AdminPixelTestEvent) SendTestEvent(w http.ResponseWriter, r *http.Reque
 		in.EventName = domain.EventLead
 	}
 	if !domain.IsValidEventType(in.EventName) || domain.IsInternalEvent(in.EventName) {
-		writeError(w, http.StatusBadRequest, "evento invalido para teste")
+		writeError(w, http.StatusBadRequest, "evento inválido para teste")
 		return
 	}
 	if in.Currency == "" {
@@ -117,58 +127,25 @@ func (h *AdminPixelTestEvent) SendTestEvent(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if wantMeta && !hasMeta {
-		writeError(w, http.StatusBadRequest, "pixel sem pixel_ids ou credenciais Meta configuradas")
+		writeError(w, http.StatusBadRequest, "pixel sem Pixel ID ou credenciais da Meta configuradas")
 		return
 	}
 	if wantTikTok && !hasTikTok {
-		writeError(w, http.StatusBadRequest, "pixel sem tiktok_pixel_ids ou tiktok_access_tokens configurados")
+		writeError(w, http.StatusBadRequest, "pixel sem Pixel ID ou Access Token do TikTok configurados")
 		return
 	}
 
-	eventID := "TEST_" + util.GenerateID10()
-	clientUA := r.UserAgent()
-	if clientUA == "" {
-		clientUA = "TrackFind-TestEvent/1.0"
-	}
-	var valuePtr *float64
-	if in.Value > 0 {
-		v := in.Value
-		valuePtr = &v
-	}
-	sourceURL := "https://" + r.Host + "/admin/test-event"
-	if p.TrackingHost != "" {
-		sourceURL = "https://" + p.TrackingHost + "/admin/test-event"
-	}
-
-	input := domain.SendEventInput{
-		PixelName: p.Name, EventName: in.EventName, EventID: eventID,
-		EventTime: time.Now().Unix(), SourceURL: sourceURL,
-		ContentID: p.Name, ContentName: p.Name, ContentType: "product",
-		Value: valuePtr, Currency: in.Currency,
-		ExternalID: "test-" + util.GenerateID10(), ClientIP: extractTestClientIP(r),
-		ClientUserAgent: clientUA, Email: in.Email, Phone: in.Phone,
-		FirstName: in.FirstName, LastName: in.LastName,
-	}
-
+	input, eventID := buildTestSendInput(r, p, in)
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
+	overrideCode := strings.TrimSpace(in.TestEventCode)
 	results := make([]testEventResult, 0, len(p.PixelIDs)+len(p.TikTokPixelIDs))
 	if wantMeta {
-		results = append(results, h.sendTestMeta(ctx, p, oauthAcc, input)...)
+		results = append(results, h.sendTestMeta(ctx, p, oauthAcc, input, overrideCode)...)
 	}
 	if wantTikTok {
-		client := tiktok.New(h.tiktokPartner)
-		for _, r := range client.Send(ctx, p, input) {
-			errStr := ""
-			if r.Err != nil {
-				errStr = r.Err.Error()
-			}
-			results = append(results, testEventResult{
-				Channel: "tiktok", PixelID: r.PixelID, StatusCode: r.StatusCode,
-				Response: util.RedactSecrets(r.Body), Error: errStr,
-			})
-		}
+		results = append(results, h.sendTestTikTok(ctx, p, input, overrideCode)...)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{

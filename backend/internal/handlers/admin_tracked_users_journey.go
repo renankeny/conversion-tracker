@@ -14,8 +14,8 @@ import (
 type SessionSummary struct {
 	ExternalID       string    `json:"external_id"`
 	CreatedAt        time.Time `json:"created_at"`
-	DeviceType       string    `json:"device_type"` // "Celular", "Computador", "Tablet"
-	Browser          string    `json:"browser"`     // "Google Chrome", "Apple Safari", etc.
+	DeviceType       string    `json:"device_type"`
+	Browser          string    `json:"browser"`
 	URL              string    `json:"url,omitempty"`
 	FirstUTMSource   string    `json:"first_utm_source,omitempty"`
 	FirstUTMCampaign string    `json:"first_utm_campaign,omitempty"`
@@ -30,7 +30,6 @@ func inferDeviceInfo(ua string) (deviceType string, browserName string) {
 	}
 	uaLower := strings.ToLower(ua)
 
-	// Verificação de robôs/crawlers
 	if strings.Contains(uaLower, "meta-external") ||
 		strings.Contains(uaLower, "facebookexternalhit") ||
 		strings.Contains(uaLower, "facebot") ||
@@ -84,37 +83,42 @@ func inferDeviceInfo(ua string) (deviceType string, browserName string) {
 }
 
 // Journey GET /admin/tracked-users/journey?external_id=...
-// Devolve a jornada unificada (cross-device/cross-browser) com histórico de todas as sessões e eventos vinculados.
+// Devolve a jornada unificada com histórico de todas as sessões e eventos vinculados.
 func (h *AdminTrackedUsers) Journey(w http.ResponseWriter, r *http.Request) {
 	externalID := strings.TrimSpace(r.URL.Query().Get("external_id"))
 	if externalID == "" {
-		writeError(w, http.StatusBadRequest, "external_id required")
+		writeError(w, http.StatusBadRequest, "parâmetro 'external_id' é obrigatório")
 		return
 	}
 
 	ctx := r.Context()
 	scope := TenantFromContext(ctx)
-	lookupAccID := int64(0)
-	if !scope.IsOwner {
-		lookupAccID = scope.AccountID
-	}
+	lookupAccID := scope.AccountID
 
 	user, err := h.repo.FindByExternalIDByAccount(ctx, externalID, lookupAccID)
 	if err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "user not found")
+			writeError(w, http.StatusNotFound, "usuário não encontrado")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "lookup error: "+err.Error())
+		slog.Error("admin tracked_users journey lookup failed", "external_id", externalID, "account_id", lookupAccID, "error", err)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar jornada do usuário")
 		return
 	}
 
-	if !scope.IsOwner && user.AccountID != scope.AccountID {
-		writeError(w, http.StatusForbidden, "forbidden")
+	if !canEdit(r, user) {
+		writeError(w, http.StatusForbidden, "sem acesso a este usuário")
 		return
 	}
 
-	sessions, err := h.repo.GetGroupSessions(ctx, scope.AccountID, externalID)
+	_ = h.repo.EnrichLTV(ctx, user)
+
+	effAccID := scope.AccountID
+	if effAccID == 0 {
+		effAccID = user.AccountID
+	}
+
+	sessions, err := h.repo.GetGroupSessions(ctx, effAccID, externalID)
 	if err != nil || len(sessions) == 0 {
 		sessions = []domain.TrackedUser{*user}
 	}
@@ -126,7 +130,7 @@ func (h *AdminTrackedUsers) Journey(w http.ResponseWriter, r *http.Request) {
 	for i, s := range sessions {
 		extIDs = append(extIDs, s.ExternalID)
 		pv := s.PageViewCount
-		if pv == 0 {
+		if pv == 0 && (s.URL != "" || s.FirstURL != "") && s.PixelName != "api_import" {
 			pv = 1
 		}
 		totalPageviews += pv
@@ -148,7 +152,7 @@ func (h *AdminTrackedUsers) Journey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	events, _, err := h.sentEvents.ListGrouped(ctx, repo.ListFilter{
-		AccountID:   scope.AccountID,
+		AccountID:   effAccID,
 		ExternalIDs: extIDs,
 		Limit:       200,
 	})

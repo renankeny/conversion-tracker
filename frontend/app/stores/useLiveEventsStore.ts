@@ -11,7 +11,7 @@ export interface LiveEvent {
   pixel_name: string
   external_id: string
   channels: string
-  status: 'sent' | 'failed'
+  status: 'sent' | 'partial' | 'failed'
   ts: string
   value?: number
   city?: string
@@ -25,6 +25,8 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
 
   const events = ref<LiveEvent[]>([])
   const lastEventSeq = ref(0)
+  const lastConversionSeq = ref(0)
+  const lastConversionEvent = ref<LiveEvent | null>(null)
   const connected = ref(false)
   const connecting = ref(false)
   const pixelFilter = ref('')
@@ -46,9 +48,7 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
     }
     const typed = handler as unknown as (payload: never) => void
     set.add(typed)
-    return () => {
-      set?.delete(typed)
-    }
+    return () => { set?.delete(typed) }
   }
 
   function clearReconnectTimer(): void {
@@ -61,9 +61,7 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
   function scheduleReconnect(): void {
     if (!shouldReconnect || !currentToken) return
     clearReconnectTimer()
-    reconnectTimer = setTimeout(() => {
-      void connect(currentToken, currentPixel)
-    }, RECONNECT_DELAY)
+    reconnectTimer = setTimeout(() => { void connect(currentToken, currentPixel) }, RECONNECT_DELAY)
   }
 
   async function connect(token?: string, pixel = ''): Promise<void> {
@@ -72,7 +70,6 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
     const tenantStore = useTenantStore()
     const resolvedToken = token || authStore.token || ''
     if (!resolvedToken) return
-
     if (connecting.value || (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))) {
       return
     }
@@ -103,6 +100,11 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
         return
       }
       const status = errorStatusCode(err)
+      if (status === 403 && authStore.canManageAccounts && !tenantStore.loaded) {
+        connecting.value = false
+        scheduleReconnect()
+        return
+      }
       if (status === 401 || status === 403 || status === 423) {
         shouldReconnect = false
         connecting.value = false
@@ -137,38 +139,33 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
         connected.value = false
         connecting.value = false
       }
-      if (myGen === connectGen) {
-        scheduleReconnect()
-      }
+      if (myGen === connectGen) scheduleReconnect()
     }
 
-    socket.onerror = () => {
-      socket.close()
-    }
+    socket.onerror = () => { socket.close() }
 
     socket.onmessage = (e: MessageEvent) => {
       try {
         const msg = JSON.parse(e.data as string) as { type: string; data?: Record<string, unknown> }
         const msgAccId = Number(msg.data?.account_id || 0)
-        if (activeAccountId.value > 0 && msgAccId > 0 && msgAccId !== activeAccountId.value) {
-          return
-        }
+        if (activeAccountId.value > 0 && msgAccId > 0 && msgAccId !== activeAccountId.value) return
         if (msg.type === 'new_event' && msg.data) {
-          events.value.unshift(msg.data as unknown as LiveEvent)
-          if (events.value.length > MAX_EVENTS) {
-            events.value.splice(MAX_EVENTS)
-          }
+          const ev = msg.data as unknown as LiveEvent
+          events.value.unshift(ev)
+          if (events.value.length > MAX_EVENTS) events.value.splice(MAX_EVENTS)
           lastEventSeq.value++
+          if (ev.event_name !== 'PageView' && ev.event_name !== 'ViewContent') {
+            lastConversionEvent.value = ev
+            lastConversionSeq.value++
+          }
           return
         }
         const handlers = customListeners.get(msg.type)
         if (handlers?.size) {
-          for (const cb of handlers) {
-            cb(msg.data as never)
-          }
+          for (const cb of handlers) cb(msg.data as never)
         }
       } catch {
-        // Mensagem malformada — ignora silenciosamente
+        // Mensagem malformada: ignora silenciosamente
       }
     }
   }
@@ -179,6 +176,7 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
     clearReconnectTimer()
     currentToken = ''
     currentPixel = ''
+    pixelFilter.value = ''
     ws?.close()
     ws = null
     connected.value = false
@@ -187,15 +185,16 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
 
   function clearEvents(): void {
     events.value = []
+    lastConversionEvent.value = null
   }
 
   function reconnectForAccount(accountId: number): void {
     activeAccountId.value = accountId
+    currentPixel = ''
+    pixelFilter.value = ''
     clearEvents()
     if (!import.meta.client) return
-    const authStore = useAuthStore()
-    const tok = currentToken || authStore.token || ''
-    const pix = currentPixel
+    const tok = currentToken || useAuthStore().token || ''
     connectGen++
     clearReconnectTimer()
     ws?.close()
@@ -204,13 +203,15 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
     connecting.value = false
     if (tok) {
       shouldReconnect = true
-      void connect(tok, pix)
+      void connect(tok, '')
     }
   }
 
   return {
     events,
     lastEventSeq,
+    lastConversionSeq,
+    lastConversionEvent,
     connected,
     connecting,
     pixelFilter,

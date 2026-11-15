@@ -109,6 +109,10 @@ func (c *Client) SendWithOptions(ctx context.Context, account *domain.GoogleAdsA
 	res.Body = proxyOut.Body
 	if res.StatusCode >= 300 {
 		res.Err = fmt.Errorf("google ads api returned %d: %s", res.StatusCode, res.Body)
+	} else if res.StatusCode >= 200 && res.StatusCode < 300 {
+		if pfMsg := detectPartialFailure(res.Body); pfMsg != "" {
+			res.Err = fmt.Errorf("google ads partial failure: %s", pfMsg)
+		}
 	}
 	return []SendResult{res}
 }

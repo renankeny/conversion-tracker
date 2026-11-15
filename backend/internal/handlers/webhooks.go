@@ -104,6 +104,8 @@ type purchaseInput struct {
 	LastName  string
 	Email     string
 	Phone     string
+	FBC       string
+	FBP       string
 
 	// Identificação de produto e tipo de oferta (Order Bump / Upsell)
 	ProductName string

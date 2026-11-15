@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -44,7 +45,8 @@ func (h *AdminWhatsAppAI) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 	s, err := h.ai.GetSettings(ctx, accID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("get whatsapp ai settings failed", "err", err, "account_id", accID)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar configurações da IA")
 		return
 	}
 	s.HasOpenAIKey = h.ai.ResolveOpenAIKey(ctx, accID, userID) != ""
@@ -84,7 +86,8 @@ func (h *AdminWhatsAppAI) UpdateSettings(w http.ResponseWriter, r *http.Request)
 
 	existing, err := h.ai.GetSettings(ctx, accID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("load existing whatsapp ai settings failed", "err", err, "account_id", accID)
+		writeError(w, http.StatusInternalServerError, "erro ao carregar configurações da IA")
 		return
 	}
 
@@ -116,7 +119,8 @@ func (h *AdminWhatsAppAI) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		LearnedRules:     rules,
 	}
 	if err := h.ai.UpsertSettings(ctx, next); err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao salvar configurações da IA: "+err.Error())
+		slog.Error("upsert whatsapp ai settings failed", "err", err, "account_id", accID)
+		writeError(w, http.StatusInternalServerError, "erro ao salvar configurações da IA")
 		return
 	}
 
@@ -196,7 +200,8 @@ func (h *AdminWhatsAppAI) ContestEvent(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "evento de IA não encontrado ou já contestado")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		slog.Error("contest whatsapp ai event failed", "err", err, "account_id", accID, "event_id", eventID)
+		writeError(w, http.StatusInternalServerError, "erro ao contestar evento de IA")
 		return
 	}
 
@@ -213,6 +218,12 @@ func (h *AdminWhatsAppAI) ContestEvent(w http.ResponseWriter, r *http.Request) {
 
 	if h.rdb != nil {
 		cache.BumpDashboardVersion(ctx, h.rdb, accID)
+		if ev.DispatchedEventID != "" {
+			wshub.PublishCustom(ctx, h.rdb, accID, "events_updated", map[string]any{
+				"action":   "contested",
+				"event_id": ev.DispatchedEventID,
+			})
+		}
 		wshub.PublishCustom(ctx, h.rdb, accID, "whatsapp_ai_event", map[string]any{
 			"chat_id":         ev.ChatID,
 			"crm_lead_id":     ev.CRMLeadID,

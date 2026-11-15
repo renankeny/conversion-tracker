@@ -1,11 +1,10 @@
 <template>
   <div class="auto-capture-sections">
-    <!-- 1. Eventos automáticos -->
     <section class="config-section">
       <header class="section-header">
         <h4 class="section-title">Eventos automáticos</h4>
         <p class="section-hint">
-          Eventos que o tracker dispara sem precisar de código no site.
+          Eventos que o tracker dispara sem precisar de código extra no site.
         </p>
       </header>
 
@@ -25,26 +24,26 @@
         <ToggleCard
           v-model="config.auto_form_scraping"
           title="Captura de formulário"
-          description="Lê email, telefone e nome dos forms da página automaticamente"
+          description="Lê e-mail, telefone e nome dos formulários da página automaticamente"
           tag="PII"
         />
         <ToggleCard
           v-model="config.auto_form_lead"
           title="Lead em formulário"
-          description="Dispara Lead automaticamente quando um form com email ou telefone é submetido"
+          description="Dispara Lead automaticamente quando um formulário com e-mail ou telefone é submetido"
           tag="Lead"
         />
         <ToggleCard
           v-model="config.whatsapp_protocol"
           title="Protocolo WhatsApp"
-          description="Adiciona &quot;Protocolo: <id>&quot; no parâmetro text= dos links wa.me e api.whatsapp.com — correlaciona a conversa que entra no WhatsApp com o lead"
+          description="Adiciona &quot;Protocolo: <id>&quot; no parâmetro text= dos links wa.me e api.whatsapp.com para correlacionar a conversa que entra no WhatsApp com o lead."
           tag="WhatsApp"
         />
         <div class="toggle-with-option">
           <ToggleCard
             v-model="config.whatsapp_lead"
             title="Evento no clique do WhatsApp"
-            description="Dispara o evento escolhido abaixo (web + servidor com mesmo eventID, deduplicado pela Meta) quando o usuário clica em um link wa.me. Independente do toggle acima."
+            description="Dispara o evento escolhido abaixo (web + servidor com mesmo eventID, deduplicado pela Meta) quando o usuário clica em um link wa.me."
             :tag="whatsappLeadEvent"
           />
           <BaseDropdown
@@ -75,12 +74,11 @@
       </div>
     </section>
 
-    <!-- 2. Produto -->
     <section class="config-section">
       <header class="section-header">
         <h4 class="section-title">Produto e checkout</h4>
         <p class="section-hint">
-          Valor e moeda enviados nos eventos InitiateCheckout/Purchase.
+          Valor e moeda enviados nos eventos InitiateCheckout e Purchase.
         </p>
       </header>
 
@@ -105,14 +103,14 @@
           Cada valor corresponde a um botão de checkout, em ordem de aparição na página.
         </p>
         <div
-          v-for="(_, idx) in (config.product_value || [])"
+          v-for="(_, idx) in priceDrafts"
           :key="idx"
           class="price-row"
         >
           <BaseInput
-            :model-value="formatPrice(config.product_value[idx])"
-            type="number"
-            :placeholder="'Valor do botão ' + (idx + 1)"
+            :model-value="priceDrafts[idx]"
+            inputmode="decimal"
+            :placeholder="'Valor do botão ' + (idx + 1) + ' (ex: 97.00)'"
             @update:model-value="(v) => updatePrice(idx, v)"
           />
           <button
@@ -162,34 +160,51 @@ const whatsappLeadEvent = computed({
   },
 })
 
-const formatPrice = (n: number | undefined | null): string => {
-  if (n === undefined || n === null || typeof n !== 'number' || Number.isNaN(n)) return ''
-  return n === 0 ? '' : String(n)
-}
+const priceDrafts = ref<string[]>([])
+let internalPriceUpdate = false
+
+watch(
+  () => props.modelValue.product_value,
+  (vals) => {
+    if (internalPriceUpdate) {
+      internalPriceUpdate = false
+      return
+    }
+    priceDrafts.value = (vals || []).map((n) =>
+      typeof n === 'number' && Number.isFinite(n) && n > 0 ? String(n) : '',
+    )
+  },
+  { immediate: true },
+)
 
 const parsePrice = (raw: string): number => {
-  if (!raw) return 0
-  const n = parseFloat(String(raw).replace(',', '.').trim())
-  return Number.isNaN(n) ? 0 : n
+  const clean = String(raw || '').replace(',', '.').trim()
+  if (!clean) return 0
+  const n = parseFloat(clean)
+  return Number.isNaN(n) || n < 0 ? 0 : n
 }
 
-const updatePrice = (idx: number, raw: string) => {
-  const arr = [...(config.value.product_value || [])]
-  arr[idx] = parsePrice(raw)
-  config.value = { ...config.value, product_value: arr }
-}
-
-const addPrice = () => {
+const syncPrices = () => {
+  internalPriceUpdate = true
   config.value = {
     ...config.value,
-    product_value: [...(config.value.product_value || []), 0],
+    product_value: priceDrafts.value.map(parsePrice),
   }
 }
 
+const updatePrice = (idx: number, raw: string) => {
+  priceDrafts.value[idx] = raw
+  syncPrices()
+}
+
+const addPrice = () => {
+  priceDrafts.value.push('')
+  syncPrices()
+}
+
 const removePrice = (idx: number) => {
-  const next = [...(config.value.product_value || [])]
-  next.splice(idx, 1)
-  config.value = { ...config.value, product_value: next }
+  priceDrafts.value.splice(idx, 1)
+  syncPrices()
 }
 </script>
 

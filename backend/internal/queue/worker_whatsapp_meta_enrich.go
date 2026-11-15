@@ -41,19 +41,15 @@ func dispatchMetaWithOAuthFallback(ctx context.Context, deps Deps, pixel *domain
 		if i < len(pixel.AccessTokens) {
 			tok = strings.TrimSpace(pixel.AccessTokens[i])
 		}
-		testCode := ""
-		if i < len(pixel.TestCodes) {
-			testCode = pixel.TestCodes[i]
-		}
 		if tok != "" || oauthAcc == nil {
 			sub := *pixel
 			sub.PixelIDs = []string{pid}
 			sub.AccessTokens = []string{tok}
-			sub.TestCodes = []string{testCode}
+			sub.TestCodes = nil
 			results = append(results, deps.Meta.Send(ctx, &sub, in)...)
 			continue
 		}
-		rawBody, err := meta.BuildCAPIPayload(in, testCode, deps.Meta.PartnerAgent())
+		rawBody, err := meta.BuildCAPIPayload(in, "", deps.Meta.PartnerAgent())
 		if err != nil {
 			results = append(results, meta.SendResult{PixelID: pid, Err: err})
 			continue

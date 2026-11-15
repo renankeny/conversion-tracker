@@ -1,12 +1,13 @@
 <template>
   <div v-if="user" class="user-modal-header">
     <div class="user-header-left">
-      <div class="user-avatar-circle">
-        {{ userInitials }}
+      <div class="user-avatar-circle" :class="{ 'is-anonymous': isAnonymousUser(user) }">
+        <User v-if="isAnonymousUser(user)" :size="18" />
+        <template v-else>{{ userInitials(user) }}</template>
       </div>
       <div class="user-header-info">
         <div class="user-name-row">
-          <h2 class="user-header-name">{{ userTitle }}</h2>
+          <h2 class="user-header-name">{{ userPrimaryLabel(user) }}</h2>
           <span
             v-if="user.traffic_type"
             class="header-traffic-badge"
@@ -19,7 +20,7 @@
           </span>
         </div>
         <div class="user-sub-row">
-          <span class="user-id-code font-mono">ID: {{ user.external_id }}</span>
+          <span class="user-id-code">ID: {{ user.external_id }}</span>
           <button
             type="button"
             class="id-copy-action"
@@ -43,8 +44,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { ShieldCheck, Bot, Copy, Check } from 'lucide-vue-next'
+import { ref, computed, onBeforeUnmount } from 'vue'
+import { ShieldCheck, Bot, Copy, Check, User } from 'lucide-vue-next'
+import { isAnonymousUser, userInitials, userPrimaryLabel } from '~/components/users/userFormatters'
 import type { TrackedUser } from '#shared/types'
 
 interface Props {
@@ -54,13 +56,15 @@ interface Props {
 const props = defineProps<Props>()
 
 const copiedField = ref<string | null>(null)
+let copyTimer: ReturnType<typeof setTimeout> | null = null
 
 const copyToClipboard = async (text: string | null | undefined, field: string) => {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
     copiedField.value = field
-    setTimeout(() => {
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
       if (copiedField.value === field) copiedField.value = null
     }, 2000)
   } catch {
@@ -68,26 +72,8 @@ const copyToClipboard = async (text: string | null | undefined, field: string) =
   }
 }
 
-const userTitle = computed(() => {
-  if (!props.user) return ''
-  const parts = [props.user.first_name, props.user.last_name].filter(Boolean)
-  const name = parts.join(' ').trim()
-  if (name) return name
-  return props.user.email || props.user.phone || 'Usuário rastreado'
-})
-
-const userInitials = computed(() => {
-  const u = props.user
-  if (!u) return '?'
-  const parts = [u.first_name, u.last_name].filter(Boolean).join(' ').trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 1) return (parts[0]?.substring(0, 2) || '?').toUpperCase()
-  if (parts.length > 1) {
-    const first = parts[0]?.charAt(0) || ''
-    const last = parts[parts.length - 1]?.charAt(0) || ''
-    return (first + last).toUpperCase()
-  }
-  if (u.email) return u.email.substring(0, 2).toUpperCase()
-  return 'US'
+onBeforeUnmount(() => {
+  if (copyTimer) clearTimeout(copyTimer)
 })
 
 const trafficTypeClass = computed(() => {
@@ -148,6 +134,12 @@ const trafficTypeSummary = computed(() => {
   letter-spacing: 0.02em;
 }
 
+.user-avatar-circle.is-anonymous {
+  background: var(--surface-soft);
+  border-color: var(--border);
+  color: var(--text-3);
+}
+
 .user-header-info {
   display: flex;
   flex-direction: column;
@@ -196,6 +188,7 @@ const trafficTypeSummary = computed(() => {
 }
 
 .user-id-code {
+  font-family: var(--font-mono);
   color: var(--text-2);
 }
 

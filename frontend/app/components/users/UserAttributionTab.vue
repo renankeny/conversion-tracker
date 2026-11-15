@@ -1,7 +1,6 @@
 <template>
   <div v-if="user" class="user-attribution-tab">
     <div class="attribution-grid">
-      <!-- Coluna 1: Primeiro Acesso (Descoberta) -->
       <div class="attribution-card">
         <div class="attribution-card-header">
           <span class="attr-badge first">Primeiro Acesso (Descoberta)</span>
@@ -29,23 +28,22 @@
               <span class="url-text">{{ user.first_url || user.url }}</span>
               <ExternalLink class="w-3.5 h-3.5 flex-shrink-0" />
             </a>
-            <span v-else-if="user.first_url || user.url" class="url-text text-[var(--text-2)]">
+            <span v-else-if="user.first_url || user.url" class="url-text url-plain">
               {{ user.first_url || user.url }}
             </span>
-            <span v-else class="muted">—</span>
+            <span v-else class="muted">-</span>
           </div>
 
           <div class="utm-subgrid">
-            <UserField label="Source" v-model="form.first_utm_source" :editing="editing" :original="decodeUTM(user.first_utm_source)" mono small />
-            <UserField label="Medium" v-model="form.first_utm_medium" :editing="editing" :original="decodeUTM(user.first_utm_medium)" mono small />
-            <UserField label="Campaign" v-model="form.first_utm_campaign" :editing="editing" :original="decodeUTM(user.first_utm_campaign)" mono small />
-            <UserField label="Content" v-model="form.first_utm_content" :editing="editing" :original="decodeUTM(user.first_utm_content)" mono small />
-            <UserField label="Term" v-model="form.first_utm_term" :editing="editing" :original="decodeUTM(user.first_utm_term)" mono small />
+            <UserField label="Source" v-model="form.first_utm_source" :editing="editing" :original="decodeUtm(user.first_utm_source)" mono small />
+            <UserField label="Medium" v-model="form.first_utm_medium" :editing="editing" :original="decodeUtm(user.first_utm_medium)" mono small />
+            <UserField label="Campaign" v-model="form.first_utm_campaign" :editing="editing" :original="decodeUtm(user.first_utm_campaign)" mono small />
+            <UserField label="Content" v-model="form.first_utm_content" :editing="editing" :original="decodeUtm(user.first_utm_content)" mono small />
+            <UserField label="Term" v-model="form.first_utm_term" :editing="editing" :original="decodeUtm(user.first_utm_term)" mono small />
           </div>
         </div>
       </div>
 
-      <!-- Coluna 2: Último Acesso (Conversão) -->
       <div class="attribution-card">
         <div class="attribution-card-header">
           <span class="attr-badge last">Último Acesso (Conversão)</span>
@@ -73,18 +71,18 @@
               <span class="url-text">{{ user.url }}</span>
               <ExternalLink class="w-3.5 h-3.5 flex-shrink-0" />
             </a>
-            <span v-else-if="user.url" class="url-text text-[var(--text-2)]">
+            <span v-else-if="user.url" class="url-text url-plain">
               {{ user.url }}
             </span>
-            <span v-else class="muted">—</span>
+            <span v-else class="muted">-</span>
           </div>
 
           <div class="utm-subgrid">
-            <UserField label="Source" v-model="form.last_utm_source" :editing="editing" :original="decodeUTM(user.last_utm_source)" mono small />
-            <UserField label="Medium" v-model="form.last_utm_medium" :editing="editing" :original="decodeUTM(user.last_utm_medium)" mono small />
-            <UserField label="Campaign" v-model="form.last_utm_campaign" :editing="editing" :original="decodeUTM(user.last_utm_campaign)" mono small />
-            <UserField label="Content" v-model="form.last_utm_content" :editing="editing" :original="decodeUTM(user.last_utm_content)" mono small />
-            <UserField label="Term" v-model="form.last_utm_term" :editing="editing" :original="decodeUTM(user.last_utm_term)" mono small />
+            <UserField label="Source" v-model="form.last_utm_source" :editing="editing" :original="decodeUtm(user.last_utm_source)" mono small />
+            <UserField label="Medium" v-model="form.last_utm_medium" :editing="editing" :original="decodeUtm(user.last_utm_medium)" mono small />
+            <UserField label="Campaign" v-model="form.last_utm_campaign" :editing="editing" :original="decodeUtm(user.last_utm_campaign)" mono small />
+            <UserField label="Content" v-model="form.last_utm_content" :editing="editing" :original="decodeUtm(user.last_utm_content)" mono small />
+            <UserField label="Term" v-model="form.last_utm_term" :editing="editing" :original="decodeUtm(user.last_utm_term)" mono small />
           </div>
         </div>
       </div>
@@ -95,6 +93,7 @@
 <script setup lang="ts">
 import { ExternalLink } from 'lucide-vue-next'
 import UserField from '~/components/users/UserField.vue'
+import { decodeUtm } from '~/components/users/userFormatters'
 import type { TrackedUser, TrackedUserUpdateInput } from '#shared/types'
 import { formatDateTimeSP } from '~/utils/formatDate'
 
@@ -117,15 +116,6 @@ const safeExternalUrl = (raw: string | null | undefined): string | undefined => 
     return undefined
   }
   return undefined
-}
-
-const decodeUTM = (val: string | null | undefined): string => {
-  if (!val) return ''
-  try {
-    return decodeURIComponent(val.replace(/\+/g, ' '))
-  } catch {
-    return val.replace(/\+/g, ' ')
-  }
 }
 
 const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
@@ -226,11 +216,12 @@ const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.url-plain { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-2); }
 .url-link:hover .url-text { text-decoration: underline; }
 .url-edit { font-size: var(--fs-sm); font-family: var(--font-mono); background: var(--surface-deep); border: 1px solid var(--border); border-radius: 6px; padding: 0.375rem 0.625rem; color: var(--text-1); width: 100%; min-width: 0; outline: none; transition: border-color 0.15s; }
 .url-edit:focus { border-color: var(--brand); }
 .utm-subgrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; min-width: 0; width: 100%; }
-.muted { color: var(--text-3); font-style: italic; font-size: var(--fs-sm); }
+.muted { color: var(--text-3); font-size: var(--fs-sm); }
 
 @media (max-width: 768px) {
   .attribution-grid {

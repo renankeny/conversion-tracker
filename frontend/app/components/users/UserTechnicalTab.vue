@@ -1,8 +1,6 @@
 <template>
   <div v-if="user" class="user-technical-tab">
-    <!-- Grid de Cookies de Plataforma -->
     <div class="cookies-grid">
-      <!-- Meta Cookies -->
       <div class="cookie-card">
         <div class="cookie-card-header">
           <div class="flex items-center gap-1.5">
@@ -11,13 +9,12 @@
           </div>
         </div>
         <div class="cookie-card-fields">
-          <UserField label="FBP" v-model="form.fbp" :editing="editing" :original="user.fbp" mono small />
-          <UserField label="FBC" v-model="form.fbc" :editing="editing" :original="user.fbc" mono small />
-          <UserField v-if="user.ctwa_clid || editing" label="CTWA Clid" v-model="form.ctwa_clid" :editing="editing" :original="user.ctwa_clid" mono small />
+          <UserField label="FBP" v-model="form.fbp" :editing="editing" :original="user.fbp" mono small copyable />
+          <UserField label="FBC" v-model="form.fbc" :editing="editing" :original="user.fbc" mono small copyable />
+          <UserField v-if="user.ctwa_clid || editing" label="CTWA Clid" v-model="form.ctwa_clid" :editing="editing" :original="user.ctwa_clid" mono small copyable />
         </div>
       </div>
 
-      <!-- Google Ads Cookies -->
       <div class="cookie-card">
         <div class="cookie-card-header">
           <div class="flex items-center gap-1.5">
@@ -26,13 +23,12 @@
           </div>
         </div>
         <div class="cookie-card-fields">
-          <UserField label="GCLID" v-model="form.gclid" :editing="editing" :original="user.gclid" mono small />
-          <UserField label="GBraid" v-model="form.gbraid" :editing="editing" :original="user.gbraid" mono small />
-          <UserField label="WBraid" v-model="form.wbraid" :editing="editing" :original="user.wbraid" mono small />
+          <UserField label="GCLID" v-model="form.gclid" :editing="editing" :original="user.gclid" mono small copyable />
+          <UserField label="GBraid" v-model="form.gbraid" :editing="editing" :original="user.gbraid" mono small copyable />
+          <UserField label="WBraid" v-model="form.wbraid" :editing="editing" :original="user.wbraid" mono small copyable />
         </div>
       </div>
 
-      <!-- TikTok Cookies -->
       <div class="cookie-card">
         <div class="cookie-card-header">
           <div class="flex items-center gap-1.5">
@@ -41,12 +37,11 @@
           </div>
         </div>
         <div class="cookie-card-fields">
-          <UserField label="TTP" v-model="form.ttp" :editing="editing" :original="user.ttp" mono small />
-          <UserField label="TTClid" v-model="form.ttclid" :editing="editing" :original="user.ttclid" mono small />
+          <UserField label="TTP" v-model="form.ttp" :editing="editing" :original="user.ttp" mono small copyable />
+          <UserField label="TTClid" v-model="form.ttclid" :editing="editing" :original="user.ttclid" mono small copyable />
         </div>
       </div>
 
-      <!-- GA4 Cookies -->
       <div class="cookie-card">
         <div class="cookie-card-header">
           <div class="flex items-center gap-1.5">
@@ -55,13 +50,12 @@
           </div>
         </div>
         <div class="cookie-card-fields">
-          <UserField label="GA4 Client ID" v-model="form.ga4_client_id" :editing="editing" :original="user.ga4_client_id" mono small />
-          <UserField label="GA4 Session ID" v-model="form.ga4_session_id" :editing="editing" :original="user.ga4_session_id" mono small />
+          <UserField label="GA4 Client ID" v-model="form.ga4_client_id" :editing="editing" :original="user.ga4_client_id" mono small copyable />
+          <UserField label="GA4 Session ID" v-model="form.ga4_session_id" :editing="editing" :original="user.ga4_session_id" mono small copyable />
         </div>
       </div>
     </div>
 
-    <!-- User Agent -->
     <section v-if="editing || user.client_user_agent" class="section">
       <div class="section-header-row">
         <h4 class="section-title">User-Agent do Navegador</h4>
@@ -86,7 +80,6 @@
       <code v-else class="ua">{{ user.client_user_agent }}</code>
     </section>
 
-    <!-- Timestamps -->
     <section class="section">
       <h4 class="section-title">Registros & Auditoria</h4>
       <div class="grid-timestamps">
@@ -98,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import { Copy, Check } from 'lucide-vue-next'
 import BrandIcon from '~/components/events/BrandIcon.vue'
 import UserField from '~/components/users/UserField.vue'
@@ -114,19 +107,25 @@ interface Props {
 defineProps<Props>()
 
 const copiedField = ref<string | null>(null)
+let copyTimer: ReturnType<typeof setTimeout> | null = null
 
 const copyToClipboard = async (text: string | null | undefined, field: string) => {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
     copiedField.value = field
-    setTimeout(() => {
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
       if (copiedField.value === field) copiedField.value = null
     }, 2000)
   } catch {
     /* silent */
   }
 }
+
+onBeforeUnmount(() => {
+  if (copyTimer) clearTimeout(copyTimer)
+})
 
 const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
 </script>
@@ -181,7 +180,7 @@ const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
 
 .ua, .ua-edit {
   display: block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   background: var(--surface-deep);
   border: 1px solid var(--border-soft);
@@ -193,9 +192,7 @@ const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
   resize: vertical;
 }
 
-.ua-edit {
-  color: var(--text-1);
-}
+.ua-edit { color: var(--text-1); }
 
 .id-copy-action {
   display: inline-flex;
@@ -212,19 +209,10 @@ const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
   transition: all 0.15s ease;
 }
 
-.id-copy-action:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-
-.id-copy-action.copied {
-  color: var(--success);
-  border-color: var(--success);
-}
+.id-copy-action:hover { border-color: var(--brand); color: var(--brand); }
+.id-copy-action.copied { color: var(--success); border-color: var(--success); }
 
 @media (max-width: 768px) {
-  .cookies-grid {
-    grid-template-columns: 1fr;
-  }
+  .cookies-grid { grid-template-columns: 1fr; }
 }
 </style>

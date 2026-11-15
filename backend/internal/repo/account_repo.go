@@ -163,6 +163,7 @@ func (r *AccountRepo) Delete(ctx context.Context, id int64) error {
 		`DELETE FROM whatsapp_instances WHERE account_id = $1`,
 		`DELETE FROM tracked_users WHERE account_id = $1`,
 		`DELETE FROM pixels WHERE account_id = $1`,
+		`DELETE FROM meta_accounts WHERE account_id = $1`,
 		`DELETE FROM google_ads_accounts WHERE account_id = $1`,
 	}
 	for _, q := range cleanupQueries {

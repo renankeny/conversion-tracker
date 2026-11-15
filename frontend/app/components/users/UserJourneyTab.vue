@@ -1,31 +1,28 @@
 <template>
   <div class="user-journey-tab">
-    <!-- Auditoria de Tráfego Heurística -->
     <UserTrafficAuditBox :user="user" />
 
-    <!-- Histórico de Compras Aprovadas -->
     <section class="section">
       <div class="section-header-row">
         <h4 class="section-title">Histórico de Compras Aprovadas ({{ purchaseHistory.length }})</h4>
         <span v-if="purchaseHistory.length && user" class="ltv-summary">
-          Total: {{ formatCurrency(user.ltv) }}
+          Total: {{ formatCurrencyBRL(totalPurchasesAmount) }}
         </span>
       </div>
 
-      <div v-if="loadingPurchases" class="muted py-2">Carregando compras…</div>
+      <div v-if="loadingPurchases" class="muted py-2">Carregando compras...</div>
       <div v-else-if="!purchaseHistory.length" class="empty-hint-card">
         Nenhuma compra aprovada registrada para este perfil.
       </div>
       <div v-else class="purchase-history">
-        <div v-for="p in purchaseHistory" :key="p.event_id" class="purchase-history-row">
+        <div v-for="p in purchaseHistory" :key="`${p.event_id}-${p.pixel_name}`" class="purchase-history-row">
           <span class="purchase-history-date">{{ formatDate(p.created_at) }}</span>
-          <span class="purchase-history-pixel">{{ p.pixel_name }}</span>
-          <span class="purchase-history-value">{{ formatCurrency(p.purchase_value) }}</span>
+          <span class="purchase-history-pixel">{{ p.pixel_name || '-' }}</span>
+          <span class="purchase-history-value">{{ formatCurrencyBRL(p.purchase_value) }}</span>
         </div>
       </div>
     </section>
 
-    <!-- Jornada do Cliente (Linha do Tempo Completa) -->
     <section class="section">
       <div class="section-header-row">
         <div class="flex items-center gap-2">
@@ -50,8 +47,10 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import UserTrafficAuditBox from '~/components/users/UserTrafficAuditBox.vue'
 import UserJourneyTimeline, { type TimelineItem } from '~/components/users/UserJourneyTimeline.vue'
+import { formatCurrencyBRL } from '~/components/users/userFormatters'
 import type { GroupedEvent, TrackedUser, CustomerJourneyResponse } from '#shared/types'
 import { formatDateTimeSP } from '~/utils/formatDate'
 
@@ -64,11 +63,12 @@ interface Props {
   loadingTimeline: boolean
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
-const formatCurrency = (val: number | undefined): string => {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0)
-}
+const totalPurchasesAmount = computed(() => {
+  if (props.user?.ltv && props.user.ltv > 0) return props.user.ltv
+  return props.purchaseHistory.reduce((acc, item) => acc + (item.purchase_value || 0), 0)
+})
 
 const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
 </script>
@@ -125,7 +125,6 @@ const formatDate = (iso: string): string => formatDateTimeSP(iso, true)
   font-size: var(--fs-sm);
 }
 
-/* Histórico de Compras */
 .purchase-history {
   display: flex;
   flex-direction: column;

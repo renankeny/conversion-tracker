@@ -125,7 +125,7 @@ func (h *AdminAuth) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Logout POST /api/v1/admin/logout — revoga imediatamente o JTI atual no Redis.
+// Logout POST /api/v1/admin/logout: revoga imediatamente o JTI atual no Redis.
 func (h *AdminAuth) Logout(w http.ResponseWriter, r *http.Request) {
 	c, ok := auth.ClaimsFrom(r.Context())
 	if ok && c != nil && c.ID != "" && h.sessions != nil {
@@ -140,16 +140,16 @@ func (h *AdminAuth) Logout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"logged_out": true})
 }
 
-// IssueWSTicket POST /api/v1/admin/ws-ticket — emite ticket de uso único (30s)
+// IssueWSTicket POST /api/v1/admin/ws-ticket: emite ticket de uso único (30s)
 // já escopado pela empresa ativa (X-Account-ID validado pelo TenantMiddleware).
 func (h *AdminAuth) IssueWSTicket(w http.ResponseWriter, r *http.Request) {
 	c, ok := auth.ClaimsFrom(r.Context())
 	if !ok || c == nil || c.IsAPIKey() {
-		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		writeError(w, http.StatusUnauthorized, "sessão não autenticada")
 		return
 	}
 	if h.wsTickets == nil {
-		writeError(w, http.StatusServiceUnavailable, "ticket service unavailable")
+		writeError(w, http.StatusServiceUnavailable, "serviço de tickets indisponível")
 		return
 	}
 	scope := TenantFromContext(r.Context())
@@ -157,9 +157,13 @@ func (h *AdminAuth) IssueWSTicket(w http.ResponseWriter, r *http.Request) {
 	if accID == 0 && !scope.IsOwner {
 		accID = c.AccountID
 	}
-	ticket, err := h.wsTickets.Issue(r.Context(), c.UserID, accID, c.Role)
+	var iat int64
+	if c.IssuedAt != nil {
+		iat = c.IssuedAt.Unix()
+	}
+	ticket, err := h.wsTickets.Issue(r.Context(), c.UserID, accID, c.Role, scope.IsOwner, c.ID, iat)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "ticket issue error")
+		writeError(w, http.StatusInternalServerError, "erro ao emitir ticket")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ticket": ticket, "expires_in": 30})

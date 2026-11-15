@@ -76,7 +76,7 @@ func (h *Webhooks) Vega(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	first, last := util.SplitFullName(strings.ToLower(p.Customer.Name))
+	first, last := util.SplitFullName(p.Customer.Name)
 
 	value := util.ParseMoneyAny(p.TotalPrice)
 	if value == 0 {
@@ -120,6 +120,7 @@ func (h *Webhooks) Vega(w http.ResponseWriter, r *http.Request) {
 		ProductName: prodName,
 		AccountID:   accID,
 		PixelQuery:  webhookPixelQuery(r),
+		RawPayload:  jsonBytes,
 	}
 	h.processGenericPurchase(r.Context(), w, in, fromPurchaseInput(in))
 }

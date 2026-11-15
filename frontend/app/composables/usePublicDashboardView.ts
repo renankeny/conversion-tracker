@@ -11,7 +11,8 @@ import type { CounterSummaryRow, GroupedEvent } from '#shared/types'
 
 export const PUBLIC_PERIOD_LABELS: Record<string, string> = {
   today: 'Hoje', yesterday: 'Ontem', '7d': 'Últimos 7 dias',
-  '30d': 'Últimos 30 dias', '60d': 'Últimos 60 dias', '90d': 'Últimos 90 dias', custom: 'Personalizado',
+  '30d': 'Últimos 30 dias', '60d': 'Últimos 60 dias', '90d': 'Últimos 90 dias',
+  this_month: 'Este mês', last_month: 'Mês passado', custom: 'Personalizado',
 }
 
 export const usePublicDashboardView = (token: string) => {
