@@ -17,6 +17,9 @@
         :placeholder="placeholder"
         :disabled="disabled"
         :required="required"
+        :autocomplete="resolvedAutocomplete"
+        :data-lpignore="isSecretInput ? 'true' : undefined"
+        :data-1p-ignore="isSecretInput ? 'true' : undefined"
         :class="['input-base', { 'input-error-state': !!error }]"
         @input="onInput"
         @blur="$emit('blur', $event)"
@@ -39,9 +42,13 @@ interface Props {
   hint?: string
   disabled?: boolean
   required?: boolean
+  autocomplete?: string
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
+
+const isSecretInput = computed(() => props.type === 'password' || props.autocomplete === 'new-password')
+const resolvedAutocomplete = computed(() => props.autocomplete ?? (props.type === 'password' ? 'new-password' : undefined))
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]

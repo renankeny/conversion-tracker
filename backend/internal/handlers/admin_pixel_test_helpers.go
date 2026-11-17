@@ -66,7 +66,7 @@ func (h *AdminPixelTestEvent) resolveTestMetaOAuth(ctx context.Context, p *domai
 
 func hasNonEmptyToken(tokens []string) bool {
 	for _, t := range tokens {
-		if strings.TrimSpace(t) != "" {
+		if util.IsPlausibleMetaToken(t) {
 			return true
 		}
 	}
@@ -99,23 +99,28 @@ func (h *AdminPixelTestEvent) sendTestMeta(
 	for i, pid := range p.PixelIDs {
 		tok := ""
 		if i < len(p.AccessTokens) {
-			tok = strings.TrimSpace(p.AccessTokens[i])
+			tok = util.CleanTokenInput(p.AccessTokens[i])
 		}
 		testCode := overrideTestCode
 		var r meta.SendResult
-		if tok != "" || oauthAcc == nil {
+		usedManual := false
+		if tok != "" && (oauthAcc == nil || util.IsPlausibleMetaToken(tok)) {
 			sub := *p
 			sub.PixelIDs, sub.AccessTokens, sub.TestCodes = []string{pid}, []string{tok}, []string{testCode}
 			if sent := client.Send(ctx, &sub, input); len(sent) > 0 {
 				r = sent[0]
+				usedManual = !(r.Err != nil && oauthAcc != nil && util.IsMetaAuthFailure(r.StatusCode, r.Body))
 			}
-		} else if rawBody, berr := meta.BuildCAPIPayload(input, testCode, h.metaPartner); berr != nil {
-			r = meta.SendResult{PixelID: pid, Err: berr}
-		} else {
-			code, body, perr := h.metaOAuth.SendCAPIEvent(ctx, oauthAcc, pid, rawBody)
-			r = meta.SendResult{PixelID: pid, StatusCode: code, Body: body, Err: perr}
-			if perr == nil && code >= 300 {
-				r.Err = fmt.Errorf("meta oauth capi returned %d: %s", code, body)
+		}
+		if !usedManual {
+			if rawBody, berr := meta.BuildCAPIPayload(input, testCode, h.metaPartner); berr != nil {
+				r = meta.SendResult{PixelID: pid, Err: berr}
+			} else if oauthAcc != nil {
+				code, body, perr := h.metaOAuth.SendCAPIEvent(ctx, oauthAcc, pid, rawBody)
+				r = meta.SendResult{PixelID: pid, StatusCode: code, Body: body, Err: perr}
+				if perr == nil && code >= 300 {
+					r.Err = fmt.Errorf("meta oauth capi returned %d: %s", code, body)
+				}
 			}
 		}
 		errStr := ""

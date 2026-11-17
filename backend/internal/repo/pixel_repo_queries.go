@@ -168,14 +168,19 @@ func scanPixel(row rowScanner) (*domain.Pixel, error) {
 	}
 
 	// Decrypt
+	hasMetaOAuth := p.MetaAccountID != nil && *p.MetaAccountID > 0
 	for i, t := range p.AccessTokens {
-		p.AccessTokens[i] = util.Decrypt(t)
+		dec := util.CleanTokenInput(util.Decrypt(t))
+		if hasMetaOAuth && dec != "" && !util.IsPlausibleMetaToken(dec) {
+			dec = ""
+		}
+		p.AccessTokens[i] = dec
 	}
 	for i, t := range p.TikTokAccessTokens {
-		p.TikTokAccessTokens[i] = util.Decrypt(t)
+		p.TikTokAccessTokens[i] = util.CleanTokenInput(util.Decrypt(t))
 	}
-	p.GA4APISecret = util.Decrypt(p.GA4APISecret)
-	p.MetaPermanentToken = util.Decrypt(p.MetaPermanentToken)
+	p.GA4APISecret = util.CleanTokenInput(util.Decrypt(p.GA4APISecret))
+	p.MetaPermanentToken = util.CleanTokenInput(util.Decrypt(p.MetaPermanentToken))
 
 	return &p, nil
 }

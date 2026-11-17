@@ -24,7 +24,7 @@
     <p class="section-hint">
       {{ remotePixels.length
         ? 'O Pixel da sua Conta de Anúncios já vem selecionado e configurado automaticamente para envio CAPI via OAuth.'
-        : 'Espelha eventos em tempo real para todos os Pixel IDs abaixo. Se uma Conta Meta OAuth estiver selecionada acima, o Access Token manual fica opcional.' }}
+        : 'Espelha eventos em tempo real para todos os Pixel IDs abaixo. Se uma Conta Meta OAuth estiver selecionada acima, não é necessário informar token manual.' }}
     </p>
 
     <div v-if="loadingPixels" class="empty-channel-box">
@@ -65,20 +65,32 @@
           </button>
         </div>
 
-        <div class="pixel-select-col">
+        <div v-if="isOAuthAutoTokenRow(idx)" class="pixel-select-col">
+          <span class="auto-token-label">Autenticação CAPI</span>
+          <div class="oauth-auto-pill">
+            <span class="oauth-auto-dot" />
+            <span>Automático via OAuth</span>
+          </div>
+          <button type="button" class="switch-mode-btn" @click="enableManualTokenRow(idx)">
+            Informar token manual (opcional)
+          </button>
+        </div>
+
+        <div v-else class="pixel-select-col">
           <BaseInput
             v-model="form.access_tokens[idx]"
             :label="form.meta_account_id ? 'Access Token (opcional)' : 'Access Token'"
             type="password"
+            autocomplete="new-password"
             :placeholder="tokenPlaceholder(idx)"
           />
           <button
-            v-if="form.meta_account_id && hasSavedManualMetaToken(form.pixel_ids[idx] || '')"
+            v-if="form.meta_account_id"
             type="button"
             class="switch-mode-btn"
-            @click="$emit('clearManualMetaToken', idx)"
+            @click="resetRowToOAuth(idx)"
           >
-            Remover token manual e usar OAuth
+            {{ hasSavedManualMetaToken(form.pixel_ids[idx] || '') ? 'Remover token manual e usar OAuth' : 'Usar envio automático via OAuth' }}
           </button>
         </div>
       </div>
@@ -98,7 +110,7 @@ const props = defineProps<{
   hasSavedManualMetaToken: (pixelId: string) => boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   clearManualMetaToken: [idx: number]
 }>()
 
@@ -109,10 +121,27 @@ const {
   onSelectPixel, switchToList, addPixelRow, removePixelRow,
 } = usePixelMetaTab(props)
 
+const manualTokenRows = reactive<Record<number, boolean>>({})
+
+const isOAuthAutoTokenRow = (idx: number): boolean => {
+  if (!props.form.meta_account_id || manualTokenRows[idx]) return false
+  const pid = props.form.pixel_ids[idx] || ''
+  return !props.hasSavedManualMetaToken(pid) && !(props.form.access_tokens[idx] || '').trim()
+}
+
+const enableManualTokenRow = (idx: number) => {
+  manualTokenRows[idx] = true
+}
+
+const resetRowToOAuth = (idx: number) => {
+  manualTokenRows[idx] = false
+  emit('clearManualMetaToken', idx)
+}
+
 const tokenPlaceholder = (idx: number): string => {
   const pid = props.form.pixel_ids[idx] || ''
   if (props.hasSavedManualMetaToken(pid)) return 'Token manual salvo (vazio mantém)'
-  if (props.form.meta_account_id) return 'Automático via OAuth (não precisa preencher)'
+  if (props.form.meta_account_id) return 'EAAxxxxxxxxxxxx... (opcional)'
   return props.isEditing ? 'Informe o Access Token' : 'EAAxxxxxxxxxxxx...'
 }
 </script>
@@ -131,6 +160,9 @@ const tokenPlaceholder = (idx: number): string => {
 .pixel-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; align-items: start; }
 @media (max-width: 768px) { .pixel-row-grid { grid-template-columns: 1fr; } }
 .pixel-select-col { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.auto-token-label { font-size: var(--fs-base); font-weight: var(--fw-medium); color: var(--text-2); margin-bottom: 0.125rem; }
+.oauth-auto-pill { display: flex; align-items: center; gap: 0.5rem; height: 36px; padding: 0 0.75rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--success); font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.oauth-auto-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
 .switch-mode-btn { align-self: flex-start; background: transparent; border: none; padding: 0; color: var(--brand); font-size: var(--fs-xs); font-weight: var(--fw-medium); cursor: pointer; }
 .switch-mode-btn:hover { text-decoration: underline; }
 .inline-error { font-size: var(--fs-xs); color: var(--danger); }

@@ -147,6 +147,12 @@ func (h *AdminPixels) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	syncPixelGoogleAdsDefaults(r.Context(), h.gads, existing)
 	syncPixelMetaAdsDefaults(r.Context(), h.metaAccs, existing)
+	cleanMetaTokens, tokErr := sanitizeMetaTokens(existing.AccessTokens, existing.MetaAccountID != nil && *existing.MetaAccountID > 0)
+	if tokErr != nil {
+		writeError(w, http.StatusBadRequest, tokErr.Error())
+		return
+	}
+	existing.AccessTokens = cleanMetaTokens
 	if err := h.repo.Update(r.Context(), existing); err != nil {
 		if isDuplicateKey(err) {
 			writeError(w, http.StatusConflict, "já existe um pixel com este nome (slug)")

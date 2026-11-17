@@ -152,52 +152,6 @@ func cleanStringSlice(in []string) []string {
 	return out
 }
 
-func indexTokensByPixelID(pixelIDs, tokens []string) map[string]string {
-	out := make(map[string]string, len(pixelIDs))
-	for i, pid := range pixelIDs {
-		if i < len(tokens) {
-			out[strings.TrimSpace(pid)] = tokens[i]
-		}
-	}
-	return out
-}
-
-func padOrTrim(s []string, n int) []string {
-	out := make([]string, n)
-	for i := 0; i < n && i < len(s); i++ {
-		out[i] = strings.TrimSpace(s[i])
-	}
-	return out
-}
-
-func isMaskedOrEmpty(s string) bool {
-	s = strings.TrimSpace(s)
-	return s == "" || s == "****" || strings.Contains(s, "...")
-}
-
-func mergeTokens(pixelIDs, incomingTokens []string, oldByPixelID map[string]string) []string {
-	out := make([]string, len(pixelIDs))
-	for i, pid := range pixelIDs {
-		pid = strings.TrimSpace(pid)
-		tok := ""
-		if i < len(incomingTokens) {
-			tok = strings.TrimSpace(incomingTokens[i])
-		}
-		if tok == clearTokenSentinel {
-			out[i] = ""
-			continue
-		}
-		if !isMaskedOrEmpty(tok) {
-			out[i] = tok
-			continue
-		}
-		if prev, ok := oldByPixelID[pid]; ok && prev != "" {
-			out[i] = prev
-		}
-	}
-	return out
-}
-
 func nilIfZeroInt64(v int64) *int64 {
 	if v == 0 {
 		return nil

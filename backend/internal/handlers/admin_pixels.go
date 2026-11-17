@@ -195,6 +195,12 @@ func (h *AdminPixels) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyOptionalPixelFields(p, in)
+	cleanMetaTokens, tokErr := sanitizeMetaTokens(p.AccessTokens, p.MetaAccountID != nil && *p.MetaAccountID > 0)
+	if tokErr != nil {
+		writeError(w, http.StatusBadRequest, tokErr.Error())
+		return
+	}
+	p.AccessTokens = cleanMetaTokens
 	syncPixelGoogleAdsDefaults(r.Context(), h.gads, p)
 	syncPixelMetaAdsDefaults(r.Context(), h.metaAccs, p)
 	if err := h.repo.Create(r.Context(), p); err != nil {

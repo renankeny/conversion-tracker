@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
@@ -48,15 +47,20 @@ func dispatchMetaWithOAuthFallback(ctx context.Context, deps Deps, pixel *domain
 		}
 		tok := ""
 		if i < len(pixel.AccessTokens) {
-			tok = strings.TrimSpace(pixel.AccessTokens[i])
+			tok = util.CleanTokenInput(pixel.AccessTokens[i])
 		}
-		if tok != "" {
+		if tok != "" && (oauthAcc == nil || util.IsPlausibleMetaToken(tok)) {
 			sub := *pixel
 			sub.PixelIDs = []string{pid}
 			sub.AccessTokens = []string{tok}
 			sub.TestCodes = nil
-			results = append(results, deps.Meta.Send(ctx, &sub, in)...)
-			continue
+			directRes := deps.Meta.Send(ctx, &sub, in)
+			if len(directRes) > 0 && directRes[0].Err != nil && oauthAcc != nil && util.IsMetaAuthFailure(directRes[0].StatusCode, directRes[0].Body) {
+				slog.Warn("manual meta token rejected, falling back to OAuth account", "pixel_name", pixel.Name, "pixel_id", pid)
+			} else {
+				results = append(results, directRes...)
+				continue
+			}
 		}
 		if oauthPaused {
 			continue
