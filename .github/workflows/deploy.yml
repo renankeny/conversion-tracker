@@ -7,7 +7,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Transforma o dono do repo para minúsculo para evitar erro no ghcr.io (ex: renankeny)
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
 
 jobs:
@@ -35,13 +34,25 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Build and push MinIO image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.minio
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/trackeado-minio:latest
+            ${{ env.IMAGE_PREFIX }}/trackfind-minio:latest
+
       - name: Build and push API image
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile.api
           push: true
-          tags: ${{ env.IMAGE_PREFIX }}/trackfind-api:latest
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/trackeado-api:latest
+            ${{ env.IMAGE_PREFIX }}/trackfind-api:latest
 
       - name: Build and push Worker image
         uses: docker/build-push-action@v5
@@ -49,7 +60,9 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile.worker
           push: true
-          tags: ${{ env.IMAGE_PREFIX }}/trackfind-worker:latest
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/trackeado-worker:latest
+            ${{ env.IMAGE_PREFIX }}/trackfind-worker:latest
 
       - name: Build and push Frontend image
         uses: docker/build-push-action@v5
@@ -57,7 +70,9 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
-          tags: ${{ env.IMAGE_PREFIX }}/trackfind-frontend:latest
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/trackeado-frontend:latest
+            ${{ env.IMAGE_PREFIX }}/trackfind-frontend:latest
 
   deploy:
     needs: build-and-push
