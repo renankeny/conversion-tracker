@@ -116,14 +116,14 @@ const loadRemoteAssets = async (forceRefresh = false, targetAccount?: MetaAccoun
     remotePages.value = pageRes.pages || []
     if (accRes.oauth_picture_url) oauthPictureUrl.value = accRes.oauth_picture_url
 
-    if (!form.ad_account_id && remoteAdAccounts.value.length === 1) {
-      const only = remoteAdAccounts.value[0]!
-      form.ad_account_id = normalizeAct(only)
-      form.ad_account_name = only.name || ''
-      form.ad_account_picture_url = only.picture_url || oauthPictureUrl.value || ''
-      if (!form.name.trim() || form.name === 'Meta Ads') {
-        form.name = only.name || 'Meta Ads'
-      }
+    let autoChanged = false
+    if (!form.ad_account_id && remoteAdAccounts.value.length >= 1) {
+      const pick = remoteAdAccounts.value.find((a) => a.account_status === 1) || remoteAdAccounts.value[0]!
+      form.ad_account_id = normalizeAct(pick)
+      form.ad_account_name = pick.name || ''
+      form.ad_account_picture_url = pick.picture_url || oauthPictureUrl.value || ''
+      if (!form.name.trim() || form.name === 'Meta Ads') form.name = pick.name || acc.oauth_name || 'Meta Ads'
+      autoChanged = true
     } else if (form.ad_account_id && !form.ad_account_picture_url) {
       const matched = remoteAdAccounts.value.find((a) => normalizeAct(a) === form.ad_account_id)
       if (matched?.picture_url) form.ad_account_picture_url = matched.picture_url
@@ -133,6 +133,19 @@ const loadRemoteAssets = async (forceRefresh = false, targetAccount?: MetaAccoun
       form.default_page_id = remotePages.value[0]!.id
       form.default_page_name = remotePages.value[0]!.name
       form.default_page_picture_url = remotePages.value[0]!.picture_url || ''
+      autoChanged = true
+    }
+
+    if (autoChanged && !acc.ad_account_id && form.ad_account_id) {
+      try {
+        const saved = await metaApi.update(acc.id, {
+          name: form.name.trim() || 'Meta Ads', ad_account_id: form.ad_account_id,
+          ad_account_name: form.ad_account_name, ad_account_picture_url: form.ad_account_picture_url,
+          default_page_id: form.default_page_id, default_page_name: form.default_page_name,
+          default_page_picture_url: form.default_page_picture_url, enabled: form.enabled,
+        })
+        emit('connected', saved)
+      } catch {}
     }
 
     if (form.ad_account_id) {

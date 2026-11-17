@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -12,23 +13,31 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
-func resolvePixelMetaOAuth(ctx context.Context, deps Deps, pixel *domain.Pixel) *domain.MetaAccount {
+func resolvePixelMetaOAuth(ctx context.Context, deps Deps, pixel *domain.Pixel) (*domain.MetaAccount, bool) {
 	if deps.MetaAcc == nil || deps.MetaOAuth == nil || pixel == nil {
-		return nil
+		return nil, false
 	}
 	if pixel.MetaAccountID != nil && *pixel.MetaAccountID > 0 {
-		if acc, err := deps.MetaAcc.FindByID(ctx, *pixel.MetaAccountID); err == nil && acc != nil && acc.Enabled && acc.IsConnected() {
-			return acc
+		acc, err := deps.MetaAcc.FindByID(ctx, *pixel.MetaAccountID)
+		if err != nil || acc == nil || acc.AccountID != pixel.AccountID {
+			return nil, false
 		}
+		if !acc.Enabled {
+			return nil, true
+		}
+		if acc.IsConnected() {
+			return acc, false
+		}
+		return nil, false
 	}
 	if acc, err := deps.MetaAcc.FindFirstConnectedByAccount(ctx, pixel.AccountID); err == nil && acc != nil && acc.Enabled && acc.IsConnected() {
-		return acc
+		return acc, false
 	}
-	return nil
+	return nil, false
 }
 
 func dispatchMetaWithOAuthFallback(ctx context.Context, deps Deps, pixel *domain.Pixel, in domain.SendEventInput, skip func(string) bool) []meta.SendResult {
-	oauthAcc := resolvePixelMetaOAuth(ctx, deps, pixel)
+	oauthAcc, oauthPaused := resolvePixelMetaOAuth(ctx, deps, pixel)
 	if oauthAcc != nil && in.PageID == "" && oauthAcc.DefaultPageID != "" && (in.ActionSource == "business_messaging" || in.CtwaClid != "") {
 		in.PageID = oauthAcc.DefaultPageID
 	}
@@ -41,7 +50,7 @@ func dispatchMetaWithOAuthFallback(ctx context.Context, deps Deps, pixel *domain
 		if i < len(pixel.AccessTokens) {
 			tok = strings.TrimSpace(pixel.AccessTokens[i])
 		}
-		if tok != "" || oauthAcc == nil {
+		if tok != "" {
 			sub := *pixel
 			sub.PixelIDs = []string{pid}
 			sub.AccessTokens = []string{tok}
@@ -49,9 +58,21 @@ func dispatchMetaWithOAuthFallback(ctx context.Context, deps Deps, pixel *domain
 			results = append(results, deps.Meta.Send(ctx, &sub, in)...)
 			continue
 		}
+		if oauthPaused {
+			continue
+		}
 		rawBody, err := meta.BuildCAPIPayload(in, "", deps.Meta.PartnerAgent())
 		if err != nil {
 			results = append(results, meta.SendResult{PixelID: pid, Err: err})
+			continue
+		}
+		if oauthAcc == nil {
+			results = append(results, meta.SendResult{
+				PixelID:     pid,
+				StatusCode:  401,
+				RequestBody: string(rawBody),
+				Err:         errors.New("conta Meta Ads OAuth desconectada; reconecte em Integrações > Meta Ads"),
+			})
 			continue
 		}
 		code, respBody, perr := deps.MetaOAuth.SendCAPIEvent(ctx, oauthAcc, pid, rawBody)
@@ -77,7 +98,7 @@ func enrichCTWAAdMetadata(
 		return nil, ""
 	}
 
-	oauthAcc := resolvePixelMetaOAuth(ctx, deps, pixel)
+	oauthAcc, _ := resolvePixelMetaOAuth(ctx, deps, pixel)
 	var metaInfo cachedAdMetadata
 	if sourceID != "" {
 		metaInfo = fetchAdMetadataCached(ctx, deps, sourceID, oauthAcc, pixel.MetaPermanentToken)

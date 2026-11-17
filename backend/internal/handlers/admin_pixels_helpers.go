@@ -121,6 +121,20 @@ func syncPixelGoogleAdsDefaults(ctx context.Context, gads *repo.GoogleAdsAccount
 	p.GoogleAdsLoginCustomerID = strings.TrimSpace(acc.LoginCustomerID)
 }
 
+func syncPixelMetaAdsDefaults(ctx context.Context, metaAccs *repo.MetaAccountRepo, p *domain.Pixel) {
+	if metaAccs == nil || p == nil || p.MetaAccountID == nil || *p.MetaAccountID <= 0 {
+		return
+	}
+	if strings.TrimSpace(p.MetaAdAccountID) != "" {
+		return
+	}
+	acc, err := metaAccs.FindByID(ctx, *p.MetaAccountID)
+	if err != nil || acc == nil || strings.TrimSpace(acc.AdAccountID) == "" {
+		return
+	}
+	p.MetaAdAccountID = strings.TrimSpace(acc.AdAccountID)
+}
+
 func derefString(s *string) string {
 	if s == nil {
 		return ""

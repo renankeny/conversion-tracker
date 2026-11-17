@@ -37,7 +37,6 @@
       :pixel-ids-error="errors.pixel_ids"
       :is-editing="isEditing"
       :has-saved-manual-meta-token="hasSavedManualMetaToken"
-      v-model:show-tokens="showTokens"
       @clear-manual-meta-token="clearManualMetaToken"
     />
 
@@ -80,7 +79,6 @@ const {
   activeTab,
   form,
   domainsInput,
-  showTokens,
   errors,
   hasSavedManualMetaToken,
   clearManualMetaToken,

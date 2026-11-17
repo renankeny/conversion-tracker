@@ -196,6 +196,7 @@ func (h *AdminPixels) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	applyOptionalPixelFields(p, in)
 	syncPixelGoogleAdsDefaults(r.Context(), h.gads, p)
+	syncPixelMetaAdsDefaults(r.Context(), h.metaAccs, p)
 	if err := h.repo.Create(r.Context(), p); err != nil {
 		if isDuplicateKey(err) {
 			writeError(w, http.StatusConflict, "já existe um pixel com este nome (slug); escolha outro identificador")

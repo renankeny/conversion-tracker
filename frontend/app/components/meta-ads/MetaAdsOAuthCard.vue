@@ -69,7 +69,11 @@ const expiryWarning = computed(() => {
 const connectedLabel = computed(
   () => props.account?.oauth_name || props.account?.oauth_email || 'Perfil Meta autorizado',
 )
-const connectedSub = computed(() => props.account?.oauth_email || '')
+const connectedSub = computed(() => {
+  if (props.account?.oauth_email) return props.account.oauth_email
+  if (isConnected.value && !props.account?.token_expires_at) return 'Conexão permanente ativa'
+  return ''
+})
 const connectedAvatar = computed(
   () => props.account?.oauth_picture_url || props.account?.picture_url || '',
 )

@@ -68,8 +68,8 @@
         <div class="pixel-select-col">
           <BaseInput
             v-model="form.access_tokens[idx]"
-            label="Access Token"
-            :type="showTokens ? 'text' : 'password'"
+            :label="form.meta_account_id ? 'Access Token (opcional)' : 'Access Token'"
+            type="password"
             :placeholder="tokenPlaceholder(idx)"
           />
           <button
@@ -84,14 +84,6 @@
       </div>
       <button type="button" class="row-remove" aria-label="Remover pixel Meta" @click="removePixelRow(idx)">×</button>
     </div>
-
-    <BaseCheckbox
-      v-if="form.pixel_ids.length"
-      :model-value="showTokens"
-      size="sm"
-      label="Exibir tokens"
-      @update:model-value="$emit('update:showTokens', $event)"
-    />
   </div>
 </template>
 
@@ -103,12 +95,10 @@ const props = defineProps<{
   form: MetaTabFormState
   pixelIdsError: string
   isEditing: boolean
-  showTokens: boolean
   hasSavedManualMetaToken: (pixelId: string) => boolean
 }>()
 
 defineEmits<{
-  'update:showTokens': [value: boolean]
   clearManualMetaToken: [idx: number]
 }>()
 
@@ -122,7 +112,7 @@ const {
 const tokenPlaceholder = (idx: number): string => {
   const pid = props.form.pixel_ids[idx] || ''
   if (props.hasSavedManualMetaToken(pid)) return 'Token manual salvo (vazio mantém)'
-  if (props.form.meta_account_id) return 'Automático via OAuth'
+  if (props.form.meta_account_id) return 'Automático via OAuth (não precisa preencher)'
   return props.isEditing ? 'Informe o Access Token' : 'EAAxxxxxxxxxxxx...'
 }
 </script>

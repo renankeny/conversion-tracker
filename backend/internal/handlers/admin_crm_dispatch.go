@@ -162,14 +162,11 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 		}
 		if pageID == "" && h.metaAcc != nil {
 			if resolvedPixel != nil && resolvedPixel.MetaAccountID != nil && *resolvedPixel.MetaAccountID > 0 {
-				if mAcc, merr := h.metaAcc.FindByID(ctx, *resolvedPixel.MetaAccountID); merr == nil && mAcc != nil {
+				if mAcc, merr := h.metaAcc.FindByID(ctx, *resolvedPixel.MetaAccountID); merr == nil && mAcc != nil && mAcc.AccountID == accountID && mAcc.Enabled && mAcc.IsConnected() {
 					pageID = mAcc.DefaultPageID
 				}
-			}
-			if pageID == "" {
-				if mAcc, merr := h.metaAcc.FindFirstConnectedByAccount(ctx, accountID); merr == nil && mAcc != nil {
-					pageID = mAcc.DefaultPageID
-				}
+			} else if mAcc, merr := h.metaAcc.FindFirstConnectedByAccount(ctx, accountID); merr == nil && mAcc != nil && mAcc.Enabled && mAcc.IsConnected() {
+				pageID = mAcc.DefaultPageID
 			}
 		}
 	}

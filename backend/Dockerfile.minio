@@ -2,7 +2,7 @@ FROM golang:1.22-alpine AS builder
 RUN apk add --no-cache git ca-certificates
 WORKDIR /build
 RUN git clone --depth 1 --branch RELEASE.2024-01-13T07-53-03Z https://github.com/minio/minio.git .
-ENV CGO_ENABLED=0 GOAMD64=v1
+ENV CGO_ENABLED=0
 RUN go build -trimpath -ldflags "\
     -s -w \
     -X github.com/minio/minio/cmd.Version=2024-01-13T07:53:03Z \

@@ -200,6 +200,7 @@ const handleOAuthCallback = async () => {
     const payload = { type: 'trackfind:oauth-complete', channel: 'meta', status, accountId, message, ts: Date.now() }
     try { new BroadcastChannel('trackfind_oauth').postMessage(payload) } catch {}
     try { localStorage.setItem('trackfind_oauth_event', JSON.stringify(payload)) } catch {}
+    try { if (window.opener && !window.opener.closed) window.opener.postMessage(payload, window.location.origin) } catch {}
     window.close()
     return
   }

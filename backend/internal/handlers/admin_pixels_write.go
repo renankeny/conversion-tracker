@@ -146,6 +146,7 @@ func (h *AdminPixels) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	syncPixelGoogleAdsDefaults(r.Context(), h.gads, existing)
+	syncPixelMetaAdsDefaults(r.Context(), h.metaAccs, existing)
 	if err := h.repo.Update(r.Context(), existing); err != nil {
 		if isDuplicateKey(err) {
 			writeError(w, http.StatusConflict, "já existe um pixel com este nome (slug)")

@@ -63,7 +63,6 @@ export const usePixelForm = (props: { pixel?: Pixel | null; initialTab?: PixelFo
   })
 
   const domainsInput = ref('')
-  const showTokens = ref(false)
   const errors = reactive({ name: '', pixel_ids: '' })
   const savedMetaTokens = reactive<Record<string, boolean>>({})
   const clearedMetaTokens = reactive<Record<string, boolean>>({})
@@ -239,7 +238,7 @@ export const usePixelForm = (props: { pixel?: Pixel | null; initialTab?: PixelFo
   }
 
   return {
-    isEditing, activeTab, form, domainsInput, showTokens, errors,
+    isEditing, activeTab, form, domainsInput, errors,
     hasSavedManualMetaToken, clearManualMetaToken, validate, buildPayload,
   }
 }

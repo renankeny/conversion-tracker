@@ -54,15 +54,14 @@ func (s *resolvedMetaSource) credKey() string {
 }
 
 func (h *AdminDashboardMeta) resolveMetaSourceForPixel(ctx context.Context, p *domain.Pixel) (*resolvedMetaSource, error) {
-	if h.metaAccs != nil && h.metaOAuth != nil {
+	if h.metaAccs != nil && h.metaOAuth != nil && p != nil {
 		var acc *domain.MetaAccount
 		if p.MetaAccountID != nil && *p.MetaAccountID > 0 {
 			acc, _ = h.metaAccs.FindByID(ctx, *p.MetaAccountID)
-		}
-		if acc == nil || !acc.IsConnected() {
+		} else if strings.TrimSpace(p.MetaAdAccountID) != "" && p.MetaPermanentToken == "" {
 			acc, _ = h.metaAccs.FindFirstConnectedByAccount(ctx, p.AccountID)
 		}
-		if acc != nil && acc.Enabled && acc.IsConnected() {
+		if acc != nil && acc.AccountID == p.AccountID && acc.Enabled && acc.IsConnected() {
 			adAccID := strings.TrimSpace(p.MetaAdAccountID)
 			if adAccID == "" {
 				adAccID = strings.TrimSpace(acc.AdAccountID)

@@ -191,7 +191,7 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
       }))
 
       if (!props.isEditing && !props.form.meta_account_id && !userClearedAccount.value) {
-        const firstAcc = metaAccounts.value.find((a) => a.connected && a.enabled)
+        const firstAcc = metaAccounts.value.find((a) => a.connected && !a.token_expired && a.enabled)
         if (firstAcc) {
           const firstRem = remoteAccountsByMeta[firstAcc.id]?.[0]
           const actId = firstAcc.ad_account_id || (firstRem ? normalizeAct(firstRem) : '')
@@ -201,7 +201,8 @@ export const usePixelMetaTab = (props: { form: MetaTabFormState; isEditing: bool
         }
       } else if (props.form.meta_account_id) {
         const acc = metaAccounts.value.find((a) => a.id === props.form.meta_account_id)
-        const actId = props.form.meta_ad_account_id || acc?.ad_account_id || ''
+        const firstRem = remoteAccountsByMeta[props.form.meta_account_id]?.[0]
+        const actId = props.form.meta_ad_account_id || acc?.ad_account_id || (firstRem ? normalizeAct(firstRem) : '')
         if (actId && !props.form.meta_ad_account_id) props.form.meta_ad_account_id = actId
         await loadPixels(props.form.meta_account_id, actId, false)
       }

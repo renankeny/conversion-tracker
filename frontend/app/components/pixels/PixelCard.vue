@@ -129,6 +129,8 @@ const hasMetaAny = computed(() => Boolean((props.pixel.pixel_count ?? 0) > 0 || 
 
 const metaWarning = computed(() => {
   if (props.pixel.meta_account_id && !(props.pixel.pixel_count ?? 0)) return 'sem ID'
+  if (props.pixel.meta_account_id && !props.metaAccount) return 'sem conta'
+  if (props.metaAccount && !props.metaAccount.enabled) return 'pausada'
   if (props.metaAccount && (!props.metaAccount.connected || props.metaAccount.token_expired)) return 'reconectar'
   return ''
 })

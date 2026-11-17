@@ -106,7 +106,7 @@ func (h *AdminPixelTestEvent) SendTestEvent(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	oauthAcc := h.resolveTestMetaOAuth(r.Context(), p)
+	oauthAcc, oauthReason := h.resolveTestMetaOAuth(r.Context(), p)
 	hasMeta := len(p.PixelIDs) > 0 && (hasNonEmptyToken(p.AccessTokens) || oauthAcc != nil)
 	hasTikTok := p.HasTikTok()
 	channel := strings.ToLower(strings.TrimSpace(in.Channel))
@@ -127,6 +127,10 @@ func (h *AdminPixelTestEvent) SendTestEvent(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if wantMeta && !hasMeta {
+		if oauthReason != "" {
+			writeError(w, http.StatusBadRequest, oauthReason)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "pixel sem Pixel ID ou credenciais da Meta configuradas")
 		return
 	}

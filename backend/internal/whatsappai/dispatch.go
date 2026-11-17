@@ -18,9 +18,10 @@ func resolveMetaDefaultPageID(ctx context.Context, metaRepo *repo.MetaAccountRep
 		return ""
 	}
 	if pixel.MetaAccountID != nil && *pixel.MetaAccountID > 0 {
-		if acc, err := metaRepo.FindByID(ctx, *pixel.MetaAccountID); err == nil && acc != nil && acc.Enabled && acc.IsConnected() && acc.DefaultPageID != "" {
+		if acc, err := metaRepo.FindByID(ctx, *pixel.MetaAccountID); err == nil && acc != nil && acc.AccountID == pixel.AccountID && acc.Enabled && acc.IsConnected() {
 			return acc.DefaultPageID
 		}
+		return ""
 	}
 	if acc, err := metaRepo.FindFirstConnectedByAccount(ctx, pixel.AccountID); err == nil && acc != nil && acc.Enabled && acc.IsConnected() {
 		return acc.DefaultPageID

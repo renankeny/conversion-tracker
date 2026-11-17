@@ -40,21 +40,28 @@ func buildTestSendInput(r *http.Request, p *domain.Pixel, in testEventInput) (do
 	}, eventID
 }
 
-func (h *AdminPixelTestEvent) resolveTestMetaOAuth(ctx context.Context, p *domain.Pixel) *domain.MetaAccount {
+func (h *AdminPixelTestEvent) resolveTestMetaOAuth(ctx context.Context, p *domain.Pixel) (*domain.MetaAccount, string) {
 	if h.metaAccs == nil || h.metaOAuth == nil || p == nil {
-		return nil
+		return nil, ""
 	}
-	var acc *domain.MetaAccount
 	if p.MetaAccountID != nil && *p.MetaAccountID > 0 {
-		acc, _ = h.metaAccs.FindByID(ctx, *p.MetaAccountID)
+		acc, err := h.metaAccs.FindByID(ctx, *p.MetaAccountID)
+		if err != nil || acc == nil || acc.AccountID != p.AccountID {
+			return nil, "a Conta Meta Ads vinculada a este pixel não foi encontrada"
+		}
+		if !acc.Enabled {
+			return nil, "a Conta Meta Ads vinculada está pausada em Integrações > Meta Ads"
+		}
+		if !acc.IsConnected() {
+			return nil, "a Conta Meta Ads vinculada está desconectada ou com token expirado; reconecte em Integrações > Meta Ads"
+		}
+		return acc, ""
 	}
-	if acc == nil || !acc.IsConnected() {
-		acc, _ = h.metaAccs.FindFirstConnectedByAccount(ctx, p.AccountID)
-	}
+	acc, _ := h.metaAccs.FindFirstConnectedByAccount(ctx, p.AccountID)
 	if acc != nil && (!acc.Enabled || !acc.IsConnected()) {
-		return nil
+		return nil, ""
 	}
-	return acc
+	return acc, ""
 }
 
 func hasNonEmptyToken(tokens []string) bool {
@@ -113,7 +120,7 @@ func (h *AdminPixelTestEvent) sendTestMeta(
 		}
 		errStr := ""
 		if r.Err != nil {
-			errStr = r.Err.Error()
+			errStr = util.RedactSecrets(r.Err.Error())
 		}
 		out = append(out, testEventResult{
 			Channel: "meta", PixelID: pid, StatusCode: r.StatusCode,
@@ -142,7 +149,7 @@ func (h *AdminPixelTestEvent) sendTestTikTok(
 	for i, r := range rawResults {
 		errStr := ""
 		if r.Err != nil {
-			errStr = r.Err.Error()
+			errStr = util.RedactSecrets(r.Err.Error())
 		}
 		used := i < len(codes) && codes[i] != ""
 		out = append(out, testEventResult{

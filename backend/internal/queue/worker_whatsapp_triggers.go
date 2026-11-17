@@ -52,7 +52,7 @@ func evaluateAttendantTriggers(
 		pageID = chat.PageID
 	}
 	if ctwaClid != "" && pageID == "" {
-		if oauthAcc := resolvePixelMetaOAuth(ctx, deps, pixel); oauthAcc != nil && oauthAcc.DefaultPageID != "" {
+		if oauthAcc, _ := resolvePixelMetaOAuth(ctx, deps, pixel); oauthAcc != nil && oauthAcc.DefaultPageID != "" {
 			pageID = oauthAcc.DefaultPageID
 		}
 	}

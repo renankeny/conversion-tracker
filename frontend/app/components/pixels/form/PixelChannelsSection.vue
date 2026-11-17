@@ -5,9 +5,7 @@
       :form="form"
       :pixel-ids-error="pixelIdsError"
       :is-editing="isEditing"
-      :show-tokens="showTokens"
       :has-saved-manual-meta-token="hasSavedManualMetaToken"
-      @update:show-tokens="$emit('update:showTokens', $event)"
       @clear-manual-meta-token="$emit('clearManualMetaToken', $event)"
     />
 
@@ -38,20 +36,12 @@
           <BaseInput
             v-model="form.tiktok_access_tokens[idx]"
             label="Access Token"
-            :type="showTokens ? 'text' : 'password'"
+            type="password"
             :placeholder="isEditing ? 'Mantém o atual se vazio' : 'TTAxxxxxxxxxxxx...'"
           />
         </div>
         <button type="button" class="row-remove" aria-label="Remover pixel TikTok" @click="removeTiktokRow(idx)">×</button>
       </div>
-
-      <BaseCheckbox
-        v-if="form.tiktok_pixel_ids.length"
-        :model-value="showTokens"
-        size="sm"
-        label="Exibir tokens"
-        @update:model-value="$emit('update:showTokens', $event)"
-      />
     </div>
   </div>
 </template>
@@ -77,12 +67,10 @@ const props = defineProps<{
   form: ChannelsFormState
   pixelIdsError: string
   isEditing: boolean
-  showTokens: boolean
   hasSavedManualMetaToken: (pixelId: string) => boolean
 }>()
 
 defineEmits<{
-  'update:showTokens': [value: boolean]
   clearManualMetaToken: [idx: number]
 }>()
 
