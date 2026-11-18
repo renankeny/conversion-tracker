@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -18,15 +22,78 @@ type MediaStorage struct {
 	bucket string
 }
 
+func buildMinIOEndpointAndTransport(rawEndpoint string, secure bool) (string, http.RoundTripper, minio.BucketLookupType, error) {
+	clean := strings.TrimSpace(rawEndpoint)
+	clean = strings.TrimPrefix(strings.TrimPrefix(clean, "https://"), "http://")
+	clean = strings.TrimRight(clean, "/")
+
+	host, port, splitErr := net.SplitHostPort(clean)
+	if splitErr != nil {
+		host = clean
+		port = ""
+	}
+
+	if !strings.Contains(host, "_") {
+		return clean, nil, minio.BucketLookupAuto, nil
+	}
+
+	// EasyPanel / Docker Swarm usa "<projeto>_<servico>" no DNS interno, mas o
+	// servidor MinIO rejeita qualquer header HTTP Host contendo "_" (RFC 1123).
+	// Assinamos o SigV4 com hostname higienizado ("-") e discamos via TCP para o DNS real ("_").
+	safeHost := strings.Trim(strings.ReplaceAll(host, "_", "-"), "-")
+	if safeHost == "" {
+		safeHost = "minio-internal"
+	}
+
+	dialPort := port
+	if dialPort == "" {
+		if secure {
+			dialPort = "443"
+		} else {
+			dialPort = "80"
+		}
+	}
+	realDialAddr := net.JoinHostPort(host, dialPort)
+	expectedSafeAddr := net.JoinHostPort(safeHost, dialPort)
+
+	safeEndpoint := safeHost
+	if port != "" {
+		safeEndpoint = net.JoinHostPort(safeHost, port)
+	}
+
+	tr, err := minio.DefaultTransport(secure)
+	if err != nil {
+		return "", nil, minio.BucketLookupAuto, fmt.Errorf("default minio transport: %w", err)
+	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if addr == expectedSafeAddr {
+			return dialer.DialContext(ctx, network, realDialAddr)
+		}
+		return dialer.DialContext(ctx, network, addr)
+	}
+
+	return safeEndpoint, tr, minio.BucketLookupPath, nil
+}
+
 func NewMediaStorage(cfg *config.Config) (*MediaStorage, error) {
 	if !cfg.MinIOConfigured() {
 		return nil, nil
 	}
-	cli, err := minio.New(cfg.MinIOEndpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
-		Secure: cfg.MinIOUseSSL,
-		Region: cfg.MinIORegion,
-	})
+	endpoint, transport, lookupType, err := buildMinIOEndpointAndTransport(cfg.MinIOEndpoint, cfg.MinIOUseSSL)
+	if err != nil {
+		return nil, fmt.Errorf("prepare minio endpoint: %w", err)
+	}
+	opts := &minio.Options{
+		Creds:        credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
+		Secure:       cfg.MinIOUseSSL,
+		Region:       cfg.MinIORegion,
+		BucketLookup: lookupType,
+	}
+	if transport != nil {
+		opts.Transport = transport
+	}
+	cli, err := minio.New(endpoint, opts)
 	if err != nil {
 		return nil, fmt.Errorf("init minio client: %w", err)
 	}
@@ -53,15 +120,31 @@ func (s *MediaStorage) EnsureBucket(ctx context.Context, retentionDays int) erro
 	if !s.Enabled() {
 		return nil
 	}
-	exists, err := s.client.BucketExists(ctx, s.bucket)
-	if err != nil {
-		return fmt.Errorf("check minio bucket %q: %w", s.bucket, err)
+	var exists bool
+	var err error
+	for attempt := 1; attempt <= 6; attempt++ {
+		exists, err = s.client.BucketExists(ctx, s.bucket)
+		if err == nil {
+			break
+		}
+		if attempt == 6 {
+			return fmt.Errorf("check minio bucket %q: %w", s.bucket, err)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("check minio bucket %q canceled: %w", s.bucket, ctx.Err())
+		case <-time.After(1500 * time.Millisecond):
+		}
 	}
 	if !exists {
 		if err := s.client.MakeBucket(ctx, s.bucket, minio.MakeBucketOptions{}); err != nil {
-			return fmt.Errorf("create minio bucket %q: %w", s.bucket, err)
+			errCode := minio.ToErrorResponse(err).Code
+			if errCode != "BucketAlreadyOwnedByYou" && errCode != "BucketAlreadyExists" {
+				return fmt.Errorf("create minio bucket %q: %w", s.bucket, err)
+			}
+		} else {
+			slog.Info("minio bucket created", "bucket", s.bucket)
 		}
-		slog.Info("minio bucket created", "bucket", s.bucket)
 	}
 
 	if retentionDays > 0 {

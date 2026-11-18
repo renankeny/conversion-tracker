@@ -3,10 +3,12 @@ package db
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,10 +40,35 @@ func New(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, error)
 	if err != nil {
 		return nil, fmt.Errorf("connect db: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
+	if err := pingWithRetry(ctx, pool, 15, time.Second); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 	return pool, nil
+}
+
+func pingWithRetry(ctx context.Context, pool *pgxpool.Pool, maxAttempts int, delay time.Duration) error {
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		lastErr = pool.Ping(pingCtx)
+		cancel()
+		if lastErr == nil {
+			return nil
+		}
+		if attempt == 1 {
+			slog.Info("waiting for postgres to accept connections", "attempt", attempt)
+		}
+		if attempt == maxAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return lastErr
 }
 
 // Migrate aplica apenas migrações pendentes registradas em schema_migrations,
