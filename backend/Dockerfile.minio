@@ -1,9 +1,11 @@
-FROM golang:1.22-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS builder
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 RUN apk add --no-cache git ca-certificates
 WORKDIR /build
 RUN git clone --depth 1 --branch RELEASE.2024-01-13T07-53-03Z https://github.com/minio/minio.git .
-ENV CGO_ENABLED=0 GOAMD64=v1
-RUN go build -trimpath -ldflags "\
+RUN if [ "$TARGETARCH" = "amd64" ]; then export GOAMD64=v1; fi && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "\
     -s -w \
     -X github.com/minio/minio/cmd.Version=2024-01-13T07:53:03Z \
     -X github.com/minio/minio/cmd.ReleaseTag=RELEASE.2024-01-13T07-53-03Z-cpuv1 \

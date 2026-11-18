@@ -1,7 +1,7 @@
 # =============================================================================
-# TrackFind Frontend - Nuxt 4 SSR
+# TrackFind Frontend - Nuxt 4 SSR (multi-arch via native BUILDPLATFORM builder)
 # =============================================================================
-FROM node:20-alpine3.20 AS builder
+FROM --platform=$BUILDPLATFORM node:20-alpine3.20 AS builder
 
 WORKDIR /app
 RUN apk add --no-cache libc6-compat tzdata

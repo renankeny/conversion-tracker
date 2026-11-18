@@ -31,6 +31,9 @@ jobs:
         run: |
           echo "IMAGE_PREFIX=$(echo ${{ env.IMAGE_PREFIX }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -39,40 +42,52 @@ jobs:
         with:
           context: ./backend
           file: ./backend/Dockerfile.minio
+          platforms: linux/amd64,linux/arm64
+          provenance: false
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/trackeado-minio:latest
-            ${{ env.IMAGE_PREFIX }}/trackfind-minio:latest
+          cache-from: type=gha,scope=minio
+          cache-to: type=gha,mode=max,scope=minio
 
       - name: Build and push API image
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile.api
+          platforms: linux/amd64,linux/arm64
+          provenance: false
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/trackeado-api:latest
-            ${{ env.IMAGE_PREFIX }}/trackfind-api:latest
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
       - name: Build and push Worker image
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile.worker
+          platforms: linux/amd64,linux/arm64
+          provenance: false
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/trackeado-worker:latest
-            ${{ env.IMAGE_PREFIX }}/trackfind-worker:latest
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
 
       - name: Build and push Frontend image
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          provenance: false
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}/trackeado-frontend:latest
-            ${{ env.IMAGE_PREFIX }}/trackfind-frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
   deploy:
     needs: build-and-push
