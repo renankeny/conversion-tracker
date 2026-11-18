@@ -168,9 +168,10 @@ func (r *WhatsAppAIRepo) ResolveTargetStages(ctx context.Context, accountID int6
 		_ = r.pool.QueryRow(ctx, `
 			SELECT id FROM crm_stages
 			WHERE account_id = $1
+			  AND order_index > 0
 			  AND (
-			    LOWER(trigger_event) IN ('lead', 'leadsubmitted')
-			    OR LOWER(trigger_event_ctwa) IN ('lead', 'leadsubmitted')
+			    LOWER(trigger_event) IN ('lead', 'leadsubmitted', 'qualifiedlead')
+			    OR LOWER(trigger_event_ctwa) IN ('lead', 'leadsubmitted', 'qualifiedlead')
 			    OR name ILIKE '%qualific%'
 			  )
 			ORDER BY order_index ASC, id ASC LIMIT 1

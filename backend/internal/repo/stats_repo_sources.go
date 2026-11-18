@@ -46,13 +46,14 @@ func trafficSourceUserCond(source, userAlias string) string {
 		}
 		return strings.ReplaceAll(sql, "u.", ua)
 	}
+	wppCond := "(" + ua + "ctwa_clid <> '' OR " + ua + "wa_ad_id <> '' OR " + ua + "external_id LIKE 'wpp:%' OR EXISTS (SELECT 1 FROM whatsapp_chats wc WHERE wc.tracked_user_id = " + ua + "id AND wc.account_id = " + ua + "account_id))"
 	switch source {
 	case "meta":
 		return repl(metaSourceSQL)
 	case "meta_lp":
-		return repl(metaSourceSQL) + " AND (" + ua + "wa_chat_id = '' OR " + ua + "wa_chat_id IS NULL)"
+		return repl(metaSourceSQL) + " AND NOT " + wppCond
 	case "meta_wpp":
-		return repl(metaSourceSQL) + " AND (" + ua + "wa_chat_id <> '' AND " + ua + "wa_chat_id IS NOT NULL)"
+		return repl(metaSourceSQL) + " AND " + wppCond
 	case "google":
 		return repl(googleSourceSQL)
 	case "tiktok":
@@ -101,12 +102,8 @@ func (s *StatsRepo) populateSourceBreakdown(ctx context.Context, f StatsFilter, 
 		LEFT JOIN tracked_users u ON e.external_id = u.external_id AND e.account_id = u.account_id
 	`
 	if err := s.pool.QueryRow(ctx, q, args...).Scan(
-		&out.SourceBreakdown.Meta.Leads,
-		&out.SourceBreakdown.Meta.Purchases,
-		&out.SourceBreakdown.Meta.Revenue,
-		&out.SourceBreakdown.Google.Leads,
-		&out.SourceBreakdown.Google.Purchases,
-		&out.SourceBreakdown.Google.Revenue,
+		&out.SourceBreakdown.Meta.Leads, &out.SourceBreakdown.Meta.Purchases, &out.SourceBreakdown.Meta.Revenue,
+		&out.SourceBreakdown.Google.Leads, &out.SourceBreakdown.Google.Purchases, &out.SourceBreakdown.Google.Revenue,
 	); err != nil {
 		return err
 	}
@@ -239,12 +236,10 @@ func (s *StatsRepo) EnrichCreativesWithTrackedConversions(ctx context.Context, f
 		if c.ThumbnailURL == "" && c.ImageURL == "" && thumb != "" {
 			c.ThumbnailURL = thumb
 		}
-		if c.Placement == "" && srcApp != "" {
-			if strings.EqualFold(srcApp, "instagram") {
-				c.Placement = "Instagram"
-			} else if strings.EqualFold(srcApp, "facebook") {
-				c.Placement = "Facebook"
-			}
+	if c.Placement == "" && strings.EqualFold(srcApp, "instagram") {
+			c.Placement = "Instagram"
+		} else if c.Placement == "" && strings.EqualFold(srcApp, "facebook") {
+			c.Placement = "Facebook"
 		}
 	}
 }

@@ -62,13 +62,18 @@ func fetchAdMetadataCached(ctx context.Context, deps Deps, sourceID string, oaut
 }
 
 func fetchAdMetadataDirect(ctx context.Context, sourceID, token string) cachedAdMetadata {
-	adURL := fmt.Sprintf("https://graph.facebook.com/v26.0/%s?fields=name,campaign{id,name},adset{id,name},creative{thumbnail_url,image_url},tracking_specs&access_token=%s",
-		url.PathEscape(sourceID), url.QueryEscape(token))
+	cleanTok := util.CleanTokenInput(token)
+	if cleanTok == "" {
+		return cachedAdMetadata{}
+	}
+	adURL := fmt.Sprintf("https://graph.facebook.com/v26.0/%s?fields=name,campaign{id,name},adset{id,name},creative{thumbnail_url,image_url},tracking_specs",
+		url.PathEscape(sourceID))
 	cli := &http.Client{Timeout: 8 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adURL, nil)
 	if err != nil {
 		return cachedAdMetadata{}
 	}
+	req.Header.Set("Authorization", "Bearer "+cleanTok)
 	resp, err := cli.Do(req)
 	if err != nil {
 		return cachedAdMetadata{}

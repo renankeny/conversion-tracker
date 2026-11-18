@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
+	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -53,7 +54,10 @@ func collapseChannelResults(results []dispatchResult) []dispatchResult {
 		}
 		if idx, exists := idxByChan[ch]; exists {
 			if r.Err != nil {
-				out[idx] = r
+				// Não sobrescreve um erro transiente (retentável) com um erro permanente de outro sub-pixel.
+				if out[idx].Err == nil || (isPermanentResult(out[idx]) && !isPermanentResult(r)) {
+					out[idx] = r
+				}
 			}
 			continue
 		}
@@ -105,6 +109,10 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 			aggItemsJSON = &s
 		}
 	}
+	persistedEventName := in.EventName
+	if channel == "meta" {
+		persistedEventName, _, _ = meta.ResolveEffectiveEvent(in)
+	}
 	_, err := pool.Exec(ctx, `
 		INSERT INTO sent_events
 			(event_id, event_name, pixel_name, external_id, account_id,
@@ -112,7 +120,8 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 			 aggregated_count, aggregated_items, updated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13::jsonb,$14,$15::jsonb,NOW())
 		ON CONFLICT (account_id, pixel_name, channel, event_id) DO UPDATE SET
-			status           = CASE WHEN sent_events.status = 'sent' THEN 'sent' ELSE EXCLUDED.status END,
+			event_name       = EXCLUDED.event_name,
+			status           = CASE WHEN sent_events.status = 'sent' AND NOT $16 THEN 'sent' ELSE EXCLUDED.status END,
 			response_code    = EXCLUDED.response_code,
 			response_body    = EXCLUDED.response_body,
 			error            = EXCLUDED.error,
@@ -123,9 +132,9 @@ func persistResult(ctx context.Context, pool *pgxpool.Pool, accountID int64, in 
 			aggregated_items = COALESCE(EXCLUDED.aggregated_items, sent_events.aggregated_items),
 			updated_at       = NOW()
 	`,
-		in.EventID, in.EventName, in.PixelName, in.ExternalID, accountID,
+		in.EventID, persistedEventName, in.PixelName, in.ExternalID, accountID,
 		channel, status, r.StatusCode, util.RedactSecrets(r.Body), errMsg, payload, purchaseValue(in), inputJSON,
-		aggCount, aggItemsJSON,
+		aggCount, aggItemsJSON, in.IsReplay,
 	)
 	if err != nil {
 		slog.Error("sent_event persist failed",

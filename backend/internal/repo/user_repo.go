@@ -205,3 +205,8 @@ func (r *UserRepo) UpdateEmail(ctx context.Context, id int64, email string) erro
 	_, err := r.pool.Exec(ctx, `UPDATE tracked_users SET email = $1, updated_at = NOW() WHERE id = $2`, email, id)
 	return err
 }
+
+// EnrichGroupFields consolida cookies, click IDs, URL/UA e PII entre sessões unificadas pelo group_id.
+func (r *UserRepo) EnrichGroupFields(ctx context.Context, u *domain.TrackedUser) {
+	enrichTrackedUserGroupFields(ctx, r.pool, u)
+}

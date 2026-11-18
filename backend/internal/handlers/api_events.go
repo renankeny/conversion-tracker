@@ -99,8 +99,12 @@ type apiEventRequest struct {
 	GA4SessionID string `json:"ga4_session_id,omitempty"` // Cookie _ga_<id> Session ID
 
 	// URLs e contexto
-	SourceURL string `json:"source_url,omitempty"` // URL da página de origem
-	Referrer  string `json:"referrer,omitempty"`   // Referrer HTTP
+	SourceURL        string `json:"source_url,omitempty"` // URL da página de origem
+	Referrer         string `json:"referrer,omitempty"`   // Referrer HTTP
+	ActionSource     string `json:"action_source,omitempty"`
+	MessagingChannel string `json:"messaging_channel,omitempty"`
+	CtwaClid         string `json:"ctwa_clid,omitempty"`
+	PageID           string `json:"page_id,omitempty"`
 
 	// User Agent (inferido do request se omitido)
 	ClientUserAgent string `json:"client_user_agent,omitempty"`

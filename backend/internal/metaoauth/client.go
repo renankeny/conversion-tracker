@@ -34,9 +34,22 @@ type AdMetadata struct {
 	ThumbnailURL string `json:"thumbnail_url"`
 }
 
+type ProxyError struct {
+	StatusCode int
+	Body       string
+	Message    string
+}
+
+func (e *ProxyError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return fmt.Sprintf("gateway meta ads status %d", e.StatusCode)
+}
+
 func (c *Client) callProxy(ctx context.Context, action, vaultToken, adAccountID, targetID, timeRange string, payload any, out any) error {
 	if vaultToken == "" {
-		return errors.New("conta Meta Ads sem conexão OAuth ativa")
+		return &ProxyError{StatusCode: http.StatusUnauthorized, Message: "conta Meta Ads sem conexão OAuth ativa"}
 	}
 	hostname, _ := os.Hostname()
 	var rawPld json.RawMessage
@@ -79,10 +92,11 @@ func (c *Client) callProxy(ctx context.Context, action, vaultToken, adAccountID,
 			Error string `json:"error"`
 		}
 		_ = json.Unmarshal(raw, &errEnv)
-		if errEnv.Error != "" {
-			return errors.New(errEnv.Error)
+		return &ProxyError{
+			StatusCode: resp.StatusCode,
+			Body:       string(raw),
+			Message:    errEnv.Error,
 		}
-		return fmt.Errorf("gateway meta ads status %d", resp.StatusCode)
 	}
 	var env struct {
 		Vector string `json:"v"`
@@ -152,5 +166,11 @@ func (c *Client) SendCAPIEvent(ctx context.Context, acc *domain.MetaAccount, pix
 		Body       string `json:"body"`
 	}
 	err := c.callProxy(ctx, "send_capi_event", acc.VaultTokenEncrypted, acc.AdAccountID, pixelID, "", rawPayload, &out)
+	if err != nil {
+		var pErr *ProxyError
+		if errors.As(err, &pErr) && out.StatusCode == 0 {
+			return pErr.StatusCode, pErr.Body, err
+		}
+	}
 	return out.StatusCode, out.Body, err
 }

@@ -132,7 +132,7 @@ const {
 } = useEventsFilters()
 
 const selectedCurrency = computed(() =>
-  pixelStore.pixels.find((p) => p.name === selected.value?.pixel_name)?.currency || 'BRL',
+  pixelStore.pixels.find((p) => p.name === selected.value?.pixel_name)?.tracker_config?.product_currency || 'BRL',
 )
 
 const deleteModalOpen = ref(false)

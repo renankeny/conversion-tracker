@@ -142,7 +142,9 @@ func (r *WhatsAppRepo) ResolveCurrencyForLead(ctx context.Context, accountID, tr
 }
 
 type ChatConversionContext struct {
+	TrackedUserID      int64
 	PixelName          string
+	Currency           string
 	MetaPermanentToken string
 	ExternalID         string
 	Phone              string
@@ -155,8 +157,9 @@ type ChatConversionContext struct {
 func (r *WhatsAppRepo) GetChatConversionContext(ctx context.Context, accountID, chatID int64) (*ChatConversionContext, error) {
 	var out ChatConversionContext
 	var metadata []byte
+	var rawCurrency string
 	err := r.db.QueryRow(ctx, `
-		SELECT p.name, p.meta_permanent_token, u.external_id, COALESCE(NULLIF(u.phone, ''), c.phone),
+		SELECT u.id, p.name, COALESCE(i.currency, 'BRL'), p.meta_permanent_token, u.external_id, COALESCE(NULLIF(u.phone, ''), c.phone),
 		       u.first_name, COALESCE(NULLIF(c.ctwa_clid, ''), u.ctwa_clid), c.source_id, c.page_id, c.metadata
 		FROM whatsapp_chats c
 		JOIN whatsapp_instances i ON c.instance_id = i.id
@@ -164,7 +167,7 @@ func (r *WhatsAppRepo) GetChatConversionContext(ctx context.Context, accountID, 
 		JOIN tracked_users u ON c.tracked_user_id = u.id
 		WHERE c.id = $1 AND i.account_id = $2
 	`, chatID, accountID).Scan(
-		&out.PixelName, &out.MetaPermanentToken, &out.ExternalID, &out.Phone,
+		&out.TrackedUserID, &out.PixelName, &rawCurrency, &out.MetaPermanentToken, &out.ExternalID, &out.Phone,
 		&out.FirstName, &out.CtwaClid, &out.SourceID, &out.PageID, &metadata,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -173,6 +176,7 @@ func (r *WhatsAppRepo) GetChatConversionContext(ctx context.Context, accountID, 
 	if err != nil {
 		return nil, err
 	}
+	out.Currency = domain.NormalizeWhatsAppCurrency(rawCurrency)
 	if out.SourceID == "" && len(metadata) > 0 {
 		var chatMeta map[string]string
 		if json.Unmarshal(metadata, &chatMeta) == nil {
@@ -180,5 +184,36 @@ func (r *WhatsAppRepo) GetChatConversionContext(ctx context.Context, accountID, 
 		}
 	}
 	return &out, nil
+}
+
+// CheckCtwaInboundThreshold informa se o lead possui conversa WhatsApp e se já atingiu a meta
+// configurada de 1ª ou 3ª mensagem inbound na instância para disparo de LeadSubmitted na Etapa 0.
+func (r *WhatsAppRepo) CheckCtwaInboundThreshold(ctx context.Context, accountID, trackedUserID int64) (hasChat bool, reached bool) {
+	if accountID <= 0 || trackedUserID <= 0 {
+		return false, true
+	}
+	var chatID int64
+	var minMsgs int
+	err := r.db.QueryRow(ctx, `
+		SELECT c.id, COALESCE(i.ctwa_min_inbound_messages, 1)
+		FROM whatsapp_chats c
+		JOIN whatsapp_instances i ON c.instance_id = i.id
+		WHERE i.account_id = $1
+		  AND (
+		    c.tracked_user_id = $2
+		    OR c.tracked_user_id IN (
+		      SELECT u2.id FROM tracked_users u1
+		      JOIN tracked_users u2 ON u2.group_id = u1.group_id
+		      WHERE u1.id = $2 AND u1.group_id IS NOT NULL
+		    )
+		  )
+		ORDER BY c.last_message_time DESC LIMIT 1
+	`, accountID, trackedUserID).Scan(&chatID, &minMsgs)
+	if err != nil || chatID <= 0 {
+		return false, true
+	}
+	var inbound int64
+	_ = r.db.QueryRow(ctx, `SELECT COUNT(*) FROM whatsapp_messages WHERE chat_id = $1 AND is_from_me = FALSE`, chatID).Scan(&inbound)
+	return true, int(inbound) >= domain.NormalizeCtwaMinMessages(minMsgs)
 }
 

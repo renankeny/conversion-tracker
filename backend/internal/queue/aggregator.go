@@ -29,10 +29,15 @@ type AggregatedPurchasePayload struct {
 type AggregatedSession struct {
 	PixelName       string                  `json:"pixel_name"`
 	EventName       string                  `json:"event_name"`
-	FirstEventID    string                  `json:"first_event_id"`
-	FirstEventTime  int64                   `json:"first_event_time"`
-	SourceURL       string                  `json:"source_url"`
-	TotalValue      float64                 `json:"total_value"`
+	FirstEventID     string                  `json:"first_event_id"`
+	FirstEventTime   int64                   `json:"first_event_time"`
+	SourceURL        string                  `json:"source_url"`
+	ActionSource     string                  `json:"action_source,omitempty"`
+	MessagingChannel string                  `json:"messaging_channel,omitempty"`
+	CtwaClid         string                  `json:"ctwa_clid,omitempty"`
+	PageID           string                  `json:"page_id,omitempty"`
+	Gateway          string                  `json:"gateway,omitempty"`
+	TotalValue       float64                 `json:"total_value"`
 	Currency        string                  `json:"currency"`
 	Count           int                     `json:"count"`
 	OrderIDs        []string                `json:"order_ids"`

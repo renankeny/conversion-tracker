@@ -99,6 +99,7 @@ func New(deps Deps) (*Server, error) {
 	metaAccountRepo := repo.NewMetaAccountRepo(deps.Pool)
 	whatsappRepo := repo.NewWhatsAppRepo(deps.Pool)
 	webhookH.SetWhatsAppRepo(whatsappRepo)
+	webhookH.SetMetaAndCRMDeps(metaAccountRepo, crmRepo, sentEvents)
 
 	adminPixelH := handlers.NewAdminPixels(pixels)
 	adminPixelH.SetDNSTarget(deps.Cfg.TrackingTargetHost)
@@ -124,6 +125,7 @@ func New(deps Deps) (*Server, error) {
 	adminCRM.SetSecurityDeps(pixels, googleAdsAccountRepo)
 	adminCRM.SetWhatsAppRepo(whatsappRepo)
 	adminCRM.SetMetaAccountRepo(metaAccountRepo)
+	adminCRM.SetSentEventRepo(sentEvents)
 	adminCRM.SetRedis(rdb)
 	adminURL := handlers.NewAdminURLMappings(urlMaps, deps.URLs)
 	adminURL.SetPool(deps.Pool)
@@ -173,6 +175,7 @@ func New(deps Deps) (*Server, error) {
 	adminCountersH.SetQueryCache(queryCache)
 	adminSalesConfirmH := handlers.NewAdminSalesConfirmation(sentEvents, users, deps.Enqueuer)
 	adminSalesConfirmH.SetRedis(rdb)
+	adminSalesConfirmH.SetAttributionDeps(pixels, whatsappRepo, metaAccountRepo, crmRepo)
 	adminPixelTestH := handlers.NewAdminPixelTestEvent(pixels, deps.Cfg.MetaAPIVersion, deps.Cfg.MetaPartnerAgent, deps.Cfg.TikTokPartnerName)
 	adminPixelTestH.SetMetaOAuth(metaAccountRepo, metaOAuthClient)
 
@@ -233,9 +236,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.calibrator.StartCompactionLoop(ctx)
 	}
 
-	srv := &http.Server{
-		Addr: s.cfg.HTTPAddr, Handler: s.router, ReadHeaderTimeout: 5 * time.Second,
-	}
+	srv := &http.Server{Addr: s.cfg.HTTPAddr, Handler: s.router, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

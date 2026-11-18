@@ -2,78 +2,23 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
-func (h *AdminCRM) resolveOrCreateCRMTrackedUser(
-	ctx context.Context,
-	accountID int64,
-	firstName, lastName, email, phone, externalID, pixelName string,
-) *domain.TrackedUser {
-	var trackedUser *domain.TrackedUser
-	if email != "" {
-		trackedUser, _ = h.users.FindByEmailByAccount(ctx, email, accountID)
-	}
-	if trackedUser == nil && phone != "" {
-		trackedUser, _ = h.users.FindByPhoneVariantsByAccount(ctx, util.PhoneVariants(phone), accountID)
-	}
-	if trackedUser == nil && strings.TrimSpace(externalID) != "" {
-		trackedUser, _ = h.users.FindByExternalIDByAccount(ctx, strings.TrimSpace(externalID), accountID)
-	}
-
-	if trackedUser == nil {
-		extID := strings.TrimSpace(externalID)
-		if extID == "" {
-			extID = "api_" + util.GenerateID10()
-		}
-		pxName := strings.TrimSpace(pixelName)
-		if pxName == "" {
-			pxName = "api_import"
-		}
-		tu := &domain.TrackedUser{
-			ExternalID: extID,
-			PixelName:  pxName,
-			AccountID:  accountID,
-			FirstName:  firstName,
-			LastName:   lastName,
-			Email:      email,
-			Phone:      phone,
-		}
-		if err := h.users.Create(ctx, tu); err != nil {
-			return nil
-		}
-		return tu
-	}
-
-	if firstName != "" {
-		trackedUser.FirstName = firstName
-	}
-	if lastName != "" {
-		trackedUser.LastName = lastName
-	}
-	if email != "" && trackedUser.Email == "" {
-		trackedUser.Email = email
-	}
-	if phone != "" && trackedUser.Phone == "" {
-		trackedUser.Phone = phone
-	}
-	if pixelName != "" && pixelName != "api_import" && (trackedUser.PixelName == "" || trackedUser.PixelName == "api_import") {
-		trackedUser.PixelName = pixelName
-	}
-	_ = h.users.Upsert(ctx, trackedUser)
-	return trackedUser
-}
-
-// dispatchCRMStageTrigger enfileira o evento de conversão da etapa do CRM enriquecendo Pixel padrão,
-// chaves geográficas, URL de origem e metadados CTWA/Meta OAuth.
+// dispatchCRMStageTrigger enfileira o evento de conversão da etapa do CRM respeitando:
+// - a regra de 1ª ou 3ª mensagem CTWA na Etapa 0 (order_index == 0);
+// - o valor sentinela "none" (desativado em CTWA);
+// - deduplicação cruzada de Lead/LeadSubmitted e Purchase contra webhooks, IA e gatilhos;
+// - atribuição correta entre CTWA (business_messaging), LP->WhatsApp (website com URL) e manual (system_generated).
 func (h *AdminCRM) dispatchCRMStageTrigger(
 	ctx context.Context,
 	accountID int64,
+	leadID int64,
 	stage *domain.CRMStage,
 	tu *domain.TrackedUser,
 	eventVal float64,
@@ -81,16 +26,12 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 	if h.queue == nil || stage == nil || tu == nil {
 		return
 	}
-
-	isCTWALead := tu.CtwaClid != "" || tu.WaAdID != "" || (tu.IDWpp != "" && strings.HasPrefix(tu.ExternalID, "wpp:"))
-	targetEvent := stage.TriggerEvent
-	if isCTWALead {
-		if stage.TriggerEventCTWA != "" {
-			targetEvent = stage.TriggerEventCTWA
-		} else if targetEvent == domain.EventLead {
-			targetEvent = domain.EventLeadSubmitted
-		}
+	if h.users != nil {
+		h.users.EnrichGroupFields(ctx, tu)
 	}
+
+	isWppOrCTWA := domain.IsWhatsAppOrCTWAUser(tu)
+	targetEvent := domain.EffectiveStageTrigger(stage, isWppOrCTWA)
 	if targetEvent == "" {
 		return
 	}
@@ -98,38 +39,53 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 		return
 	}
 
-	pixelName := tu.PixelName
-	var resolvedPixel *domain.Pixel
-	if h.pixels != nil {
-		if pixelName != "" && pixelName != "api_import" {
-			if px, err := RequireAccountPixel(ctx, h.pixels, accountID, pixelName); err == nil {
-				resolvedPixel = px
-			} else {
-				pixelName = ""
-			}
+	// Na Etapa 0 ("Novo Lead"), nunca fura a regra da 1ª ou 3ª mensagem da instância WhatsApp.
+	if stage.OrderIndex == 0 && isWppOrCTWA && h.whatsapp != nil && tu.ID > 0 {
+		if hasChat, reached := h.whatsapp.CheckCtwaInboundThreshold(ctx, accountID, tu.ID); hasChat && !reached {
+			return
 		}
-		if (pixelName == "" || pixelName == "api_import") && h.whatsapp != nil && tu.ID > 0 {
-			if pxName := h.whatsapp.FindPixelNameByTrackedUserID(ctx, accountID, tu.ID); pxName != "" {
-				if px, err := RequireAccountPixel(ctx, h.pixels, accountID, pxName); err == nil {
-					resolvedPixel = px
-					pixelName = pxName
-				}
+	}
+
+	resolvedPixel, pixelName := h.resolveCRMDispatchPixel(ctx, accountID, tu)
+	if pixelName == "" || pixelName == "api_import" {
+		return
+	}
+
+	isLeadEv := targetEvent == domain.EventLead || targetEvent == domain.EventLeadSubmitted || targetEvent == domain.EventQualifiedLead
+	if h.sentEvents != nil {
+		if isLeadEv {
+			if already, _ := h.sentEvents.HasLeadConversionSent(ctx, accountID, tu.ID, tu.ExternalID, pixelName); already {
+				return
 			}
-		}
-		if pixelName == "" || pixelName == "api_import" {
-			if list, err := h.pixels.ListByAccount(ctx, accountID); err == nil {
-				for i := range list {
-					if list[i].Enabled {
-						resolvedPixel = &list[i]
-						pixelName = list[i].Name
-						break
-					}
-				}
+		} else if targetEvent == domain.EventPurchase {
+			if dup, _ := h.sentEvents.HasMatchingPurchaseSent(ctx, accountID, tu.ID, tu.ExternalID, pixelName, eventVal, time.Now()); dup {
+				slog.Info("skipping duplicate crm Purchase already sent by webhook/ai/trigger", "pixel", pixelName, "lead_id", leadID)
+				return
 			}
 		}
 	}
-	if pixelName == "" || pixelName == "api_import" {
-		return
+
+	sourceURL := util.FirstNonEmpty(tu.URL, tu.FirstURL)
+	actionSource := "website"
+	msgChannel := ""
+	sendClid := ""
+	pageID := ""
+	if tu.CtwaClid != "" {
+		pageID = h.resolveCRMPageID(ctx, accountID, tu, resolvedPixel)
+		if pageID != "" {
+			actionSource = "business_messaging"
+			msgChannel = "whatsapp"
+			sendClid = tu.CtwaClid
+			sourceURL = ""
+		} else if sourceURL == "" {
+			actionSource = "system_generated"
+		}
+	} else if sourceURL == "" {
+		actionSource = "system_generated"
+	}
+
+	if actionSource != "business_messaging" && targetEvent == domain.EventLeadSubmitted {
+		targetEvent = domain.EventLead
 	}
 
 	var valuePtr *float64
@@ -138,75 +94,59 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 		valuePtr = &v
 	}
 
-	linked, err := h.users.LinkedFieldsByAccount(ctx, accountID, tu.ExternalID)
-	if err != nil {
-		linked = domain.LinkedTrackingFields{
-			FBP: tu.FBP, FBC: tu.FBC, GCLID: tu.GCLID, WBraid: tu.WBraid, GBraid: tu.GBraid,
-			TTClid: tu.TTClid, TTP: tu.TTP, GA4ClientID: tu.GA4ClientID, GA4SessionID: tu.GA4SessionID,
-		}
-	}
-
-	actionSource := "website"
-	msgChannel := ""
-	pageID := ""
-	sourceURL := util.FirstNonEmpty(tu.URL, tu.FirstURL)
-	if isCTWALead {
-		actionSource = "business_messaging"
-		msgChannel = "whatsapp"
-		sourceURL = ""
-		if tu.CtwaClid != "" && h.whatsapp != nil {
-			pageID = h.whatsapp.FindPageIDByCtwaClid(ctx, accountID, tu.CtwaClid)
-		}
-		if pageID == "" && h.whatsapp != nil {
-			pageID = h.whatsapp.FindPageIDByTrackedUserID(ctx, accountID, tu.ID)
-		}
-		if pageID == "" && h.metaAcc != nil {
-			if resolvedPixel != nil && resolvedPixel.MetaAccountID != nil && *resolvedPixel.MetaAccountID > 0 {
-				if mAcc, merr := h.metaAcc.FindByID(ctx, *resolvedPixel.MetaAccountID); merr == nil && mAcc != nil && mAcc.AccountID == accountID && mAcc.Enabled && mAcc.IsConnected() {
-					pageID = mAcc.DefaultPageID
-				}
-			} else if mAcc, merr := h.metaAcc.FindFirstConnectedByAccount(ctx, accountID); merr == nil && mAcc != nil && mAcc.Enabled && mAcc.IsConnected() {
-				pageID = mAcc.DefaultPageID
-			}
-		}
-	}
-
 	currency := "BRL"
+	gateway := "crm"
 	if h.whatsapp != nil {
 		var pxID int64
 		if resolvedPixel != nil {
 			pxID = resolvedPixel.ID
 		}
 		currency = h.whatsapp.ResolveCurrencyForLead(ctx, accountID, tu.ID, pxID)
+		if isWppOrCTWA {
+			gateway = "whatsapp_crm"
+		} else if chat, _ := h.whatsapp.GetChatByTrackedUser(ctx, accountID, tu.ID); chat != nil {
+			gateway = "whatsapp_crm"
+		}
+	}
+
+	eventID := "crm_pur:" + util.GenerateID10()
+	if leadID > 0 && targetEvent != domain.EventPurchase {
+		eventID = fmt.Sprintf("crm:%d:%d:%s", leadID, stage.ID, targetEvent)
+		if h.sentEvents != nil {
+			if exists, _ := h.sentEvents.ExistsSent(ctx, accountID, eventID, pixelName, ""); exists {
+				return
+			}
+		}
 	}
 
 	in := domain.SendEventInput{
 		PixelName:             pixelName,
 		EventName:             targetEvent,
-		EventID:               util.GenerateID10(),
+		EventID:               eventID,
 		EventTime:             time.Now().Unix(),
 		SourceURL:             sourceURL,
+		Gateway:               gateway,
 		ActionSource:          actionSource,
 		MessagingChannel:      msgChannel,
-		CtwaClid:              tu.CtwaClid,
+		CtwaClid:              sendClid,
 		PageID:                pageID,
 		ExternalID:            tu.ExternalID,
+		IDWpp:                 tu.IDWpp,
 		ClientIP:              tu.ClientIP,
 		ClientUserAgent:       tu.ClientUserAgent,
-		FBP:                   linked.FBP,
-		FBC:                   linked.FBC,
-		GCLID:                 linked.GCLID,
-		WBraid:                linked.WBraid,
-		GBraid:                linked.GBraid,
-		TTClid:                linked.TTClid,
-		TTP:                   linked.TTP,
-		GA4ClientID:           linked.GA4ClientID,
-		GA4SessionID:          linked.GA4SessionID,
+		FBP:                   tu.FBP,
+		FBC:                   tu.FBC,
+		GCLID:                 tu.GCLID,
+		WBraid:                tu.WBraid,
+		GBraid:                tu.GBraid,
+		TTClid:                tu.TTClid,
+		TTP:                   tu.TTP,
+		GA4ClientID:           tu.GA4ClientID,
+		GA4SessionID:          tu.GA4SessionID,
 		Email:                 tu.Email,
 		Phone:                 tu.Phone,
 		FirstName:             tu.FirstName,
 		LastName:              tu.LastName,
-		IDWpp:                 tu.IDWpp,
 		Country:               tu.Country,
 		State:                 tu.State,
 		City:                  tu.City,
@@ -215,6 +155,7 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 		Currency:              currency,
 		OverrideGadsAccountID: stage.GoogleAdsAccountID,
 		OverrideGadsActionID:  stage.GoogleAdsActionID,
+		CRMSynced:             true,
 	}
 
 	if err := h.queue.EnqueueSendEvent(ctx, in); err != nil {

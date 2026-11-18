@@ -19,14 +19,15 @@ import (
 )
 
 type AdminCRM struct {
-	crmRepo  *repo.CRMRepo
-	users    *repo.UserRepo
-	queue    *queue.Enqueuer
-	pixels   *repo.PixelRepo
-	gads     *repo.GoogleAdsAccountRepo
-	whatsapp *repo.WhatsAppRepo
-	metaAcc  *repo.MetaAccountRepo
-	rdb      *redis.Client
+	crmRepo    *repo.CRMRepo
+	users      *repo.UserRepo
+	queue      *queue.Enqueuer
+	pixels     *repo.PixelRepo
+	gads       *repo.GoogleAdsAccountRepo
+	whatsapp   *repo.WhatsAppRepo
+	metaAcc    *repo.MetaAccountRepo
+	sentEvents *repo.SentEventRepo
+	rdb        *redis.Client
 }
 
 func NewAdminCRM(crmRepo *repo.CRMRepo, users *repo.UserRepo, q *queue.Enqueuer) *AdminCRM {
@@ -42,13 +43,9 @@ func (h *AdminCRM) SetWhatsAppRepo(wa *repo.WhatsAppRepo) {
 	h.whatsapp = wa
 }
 
-func (h *AdminCRM) SetMetaAccountRepo(m *repo.MetaAccountRepo) {
-	h.metaAcc = m
-}
-
-func (h *AdminCRM) SetRedis(rdb *redis.Client) {
-	h.rdb = rdb
-}
+func (h *AdminCRM) SetMetaAccountRepo(m *repo.MetaAccountRepo) { h.metaAcc = m }
+func (h *AdminCRM) SetSentEventRepo(s *repo.SentEventRepo)     { h.sentEvents = s }
+func (h *AdminCRM) SetRedis(rdb *redis.Client)                 { h.rdb = rdb }
 
 func (h *AdminCRM) notifyCRMUpdated(ctx context.Context, accountID int64, action string) {
 	if h.rdb == nil || accountID <= 0 {

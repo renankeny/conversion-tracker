@@ -70,8 +70,8 @@ func (c *Client) sendOne(ctx context.Context, pixelID, token, testCode string, i
 		return res
 	}
 
-	if isWebEvent(in.EventName) && in.SourceURL == "" && in.ActionSource != "business_messaging" {
-		slog.Warn("missing event_source_url for web event", "event", in.EventName, "pixel_id", pixelID, "event_id", in.EventID)
+	if isWebEvent(in.EventName) && strings.TrimSpace(in.SourceURL) == "" && in.ActionSource != "business_messaging" {
+		slog.Warn("missing event_source_url for web event, falling back to system_generated", "event", in.EventName, "pixel_id", pixelID, "event_id", in.EventID)
 	}
 
 	body := buildPayload(in, testCode, c.partnerAgent)
@@ -89,7 +89,6 @@ func (c *Client) sendOne(ctx context.Context, pixelID, token, testCode string, i
 		return res
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// Token via header (nunca na URL) para não vazar em logs de *url.Error.
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := c.http.Do(req)
@@ -119,34 +118,24 @@ func BuildCAPIPayload(in domain.SendEventInput, testCode, partnerAgent string) (
 func buildPayload(in domain.SendEventInput, testCode, partnerAgent string) map[string]any {
 	userData := map[string]any{}
 	setHashed(userData, "em", util.NormalizeEmail(in.Email))
-	setHashed(userData, "ph", util.NormalizePhone(in.Phone))
+	setPhoneHashed(userData, in.Phone, in.Country)
 	setHashed(userData, "fn", util.NormalizeName(in.FirstName))
 	setHashed(userData, "ln", util.NormalizeName(in.LastName))
 	setHashed(userData, "ct", util.NormalizeCity(in.City))
 	setHashed(userData, "st", util.NormalizeStateISO(in.State))
-	setHashed(userData, "zp", util.NormalizeZip(in.PostalCode))
+	setHashed(userData, "zp", util.NormalizeZipWithCountry(in.PostalCode, in.Country))
 	setHashed(userData, "country", util.NormalizeCountry(in.Country))
-	setHashed(userData, "external_id", in.ExternalID)
+	setHashed(userData, "external_id", strings.TrimSpace(in.ExternalID))
 
 	setIfNotEmpty(userData, "client_ip_address", in.ClientIP)
 	setIfNotEmpty(userData, "client_user_agent", in.ClientUserAgent)
-	setIfNotEmpty(userData, "fbp", in.FBP)
-	setIfNotEmpty(userData, "fbc", in.FBC)
+	setIfNotEmpty(userData, "fbp", cleanFBP(in.FBP))
+	setIfNotEmpty(userData, "fbc", cleanFBC(in.FBC, in.EventTime))
 
-	// business_messaging (CTWA) só é válido com ctwa_clid + page_id. Fora disso, ctwa_clid/page_id
-	// não são enviados e o action_source original é mantido (evita 400 permanente da Meta).
-	actionSrc := validActionSource(in.ActionSource)
-	isMessaging := in.CtwaClid != "" && in.PageID != "" &&
-		(actionSrc == "business_messaging" || in.ActionSource == "")
+	eventName, actionSrc, isMessaging := ResolveEffectiveEvent(in)
 	if isMessaging {
-		actionSrc = "business_messaging"
 		setIfNotEmpty(userData, "ctwa_clid", in.CtwaClid)
 		setIfNotEmpty(userData, "page_id", in.PageID)
-	} else {
-		if actionSrc == "business_messaging" {
-			actionSrc = "system_generated"
-		}
-		setIfNotEmpty(userData, "subscription_id", in.IDWpp)
 	}
 
 	customData := map[string]any{}
@@ -168,7 +157,7 @@ func buildPayload(in domain.SendEventInput, testCode, partnerAgent string) map[s
 	}
 	if in.Value != nil {
 		customData["value"] = *in.Value
-		customData["currency"] = orDefault(in.Currency, "BRL")
+		customData["currency"] = domain.NormalizeWhatsAppCurrency(in.Currency)
 	}
 	if in.OrderID != "" {
 		customData["order_id"] = in.OrderID
@@ -179,24 +168,22 @@ func buildPayload(in domain.SendEventInput, testCode, partnerAgent string) map[s
 		customData["num_items"] = in.AggregatedCount
 	}
 
-	eventName := in.EventName
-	if isMessaging && eventName == domain.EventLead {
-		eventName = domain.EventLeadSubmitted
-	} else if !isMessaging && eventName == domain.EventLeadSubmitted {
-		eventName = domain.EventLead
+	evTime := in.EventTime
+	if evTime <= 0 {
+		evTime = time.Now().Unix()
 	}
 
 	event := map[string]any{
 		"event_name":    eventName,
-		"event_time":    in.EventTime,
+		"event_time":    evTime,
 		"event_id":      in.EventID,
 		"action_source": actionSrc,
 		"user_data":     userData,
 	}
 	if isMessaging {
 		event["messaging_channel"] = orDefault(in.MessagingChannel, "whatsapp")
-	} else if in.SourceURL != "" {
-		event["event_source_url"] = in.SourceURL
+	} else if actionSrc == "website" && strings.TrimSpace(in.SourceURL) != "" {
+		event["event_source_url"] = strings.TrimSpace(in.SourceURL)
 	}
 	if len(customData) > 0 {
 		event["custom_data"] = customData
@@ -211,4 +198,3 @@ func buildPayload(in domain.SendEventInput, testCode, partnerAgent string) map[s
 	}
 	return payload
 }
-

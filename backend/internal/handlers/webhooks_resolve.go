@@ -9,11 +9,6 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
-// resolveWebhookAccount resolve e valida a conta/pixel alvo do webhook ANTES de qualquer lookup.
-//
-// Regras de isolamento multi-conta:
-//   - ?pixel= de outra conta que não a do ?acc= é rejeitado (403).
-//   - Sem conta resolvida, só aceita se a instalação tiver exatamente uma conta (400 caso contrário).
 func (h *Webhooks) resolveWebhookAccount(ctx context.Context, in *purchaseInput) (*domain.Pixel, int, string) {
 	var resolved *domain.Pixel
 	if in.PixelQuery != "" && h.pixels != nil {
@@ -42,8 +37,6 @@ func (h *Webhooks) resolveWebhookAccount(ctx context.Context, in *purchaseInput)
 	return resolved, 0, ""
 }
 
-// selectFallbackPixel retorna o pixel explícito da URL (?pixel=) ou, na ausência dele,
-// o pixel ativo primário (mais antigo) da conta quando não houve match prévio de lead.
 func (h *Webhooks) selectFallbackPixel(ctx context.Context, resolvedQueryPixel *domain.Pixel, accountID int64) *domain.Pixel {
 	if resolvedQueryPixel != nil {
 		return resolvedQueryPixel
@@ -63,8 +56,6 @@ func (h *Webhooks) selectFallbackPixel(ctx context.Context, resolvedQueryPixel *
 	return nil
 }
 
-// webhookEventID gera um event_id único por item: order bump/upsell recebem sufixo
-// para não serem deduplicados contra o item principal (worker + Meta).
 func webhookEventID(orderID, itemType, productID string) string {
 	if orderID == "" {
 		return util.GenerateID10()
@@ -75,18 +66,29 @@ func webhookEventID(orderID, itemType, productID string) string {
 	return orderID + ":" + itemType + ":" + productID
 }
 
-// ctwaAttribution decide se a venda vai como business_messaging (CTWA) ou website.
-// business_messaging só é usado quando há ctwa_clid E page_id resolvido; caso contrário
-// ctwa_clid não é enviado (evita 400 permanente da Meta).
-func (h *Webhooks) ctwaAttribution(ctx context.Context, accountID int64, user *domain.TrackedUser, fbc, sourceURL string) (actionSource, channel, ctwaClid, pageID string) {
-	actionSource = "website"
-	if user.CtwaClid == "" || fbc != "" || sourceURL != "" || h.whatsapp == nil {
-		return
+// ctwaAttribution decide se a venda vai como business_messaging (CTWA), website ou system_generated.
+// Preserva atribuição CTWA mesmo quando o cliente abriu o link de pagamento (sourceURL != ""),
+// desde que não haja fbc de campanha web sobreposto e exista page_id resolvido.
+func (h *Webhooks) ctwaAttribution(ctx context.Context, accountID int64, pixel *domain.Pixel, user *domain.TrackedUser, fbc, sourceURL string) (actionSource, channel, ctwaClid, pageID string) {
+	if user != nil && user.CtwaClid != "" && fbc == "" {
+		var pid string
+		if h.whatsapp != nil {
+			pid = h.whatsapp.FindPageIDByCtwaClid(ctx, accountID, user.CtwaClid)
+			if pid == "" && user.ID > 0 {
+				pid = h.whatsapp.FindPageIDByTrackedUserID(ctx, accountID, user.ID)
+			}
+		}
+		if pid == "" && h.metaAcc != nil && pixel != nil && pixel.MetaAccountID != nil && *pixel.MetaAccountID > 0 {
+			if mAcc, merr := h.metaAcc.FindByID(ctx, *pixel.MetaAccountID); merr == nil && mAcc != nil && mAcc.AccountID == accountID && mAcc.Enabled && mAcc.IsConnected() {
+				pid = mAcc.DefaultPageID
+			}
+		}
+		if pid != "" {
+			return "business_messaging", "whatsapp", user.CtwaClid, pid
+		}
 	}
-	pid := h.whatsapp.FindPageIDByCtwaClid(ctx, accountID, user.CtwaClid)
-	if pid == "" {
-		return
+	if sourceURL != "" {
+		return "website", "", "", ""
 	}
-	return "business_messaging", "whatsapp", user.CtwaClid, pid
+	return "system_generated", "", "", ""
 }
-

@@ -46,6 +46,11 @@ end
 local function mergePII(s, p)
   if (not s.external_id or s.external_id == '') and p.external_id ~= '' then s.external_id = p.external_id end
   if (not s.source_url or s.source_url == '') and p.source_url ~= '' then s.source_url = p.source_url end
+  if (not s.action_source or s.action_source == '') and p.action_source ~= '' then s.action_source = p.action_source end
+  if (not s.messaging_channel or s.messaging_channel == '') and p.messaging_channel ~= '' then s.messaging_channel = p.messaging_channel end
+  if (not s.ctwa_clid or s.ctwa_clid == '') and p.ctwa_clid ~= '' then s.ctwa_clid = p.ctwa_clid end
+  if (not s.page_id or s.page_id == '') and p.page_id ~= '' then s.page_id = p.page_id end
+  if (not s.gateway or s.gateway == '') and p.gateway ~= '' then s.gateway = p.gateway end
   local preferIncoming = {
     'email','phone','first_name','last_name','country','state','city','postal_code',
     'fbp','fbc','gclid','wbraid','gbraid','ttclid','ttp','ga4_client_id','ga4_session_id',
@@ -122,9 +127,14 @@ return {0, 0, encoded}
 `)
 
 type piiPatch struct {
-	ExternalID      string `json:"external_id"`
-	SourceURL       string `json:"source_url"`
-	Email           string `json:"email"`
+	ExternalID       string `json:"external_id"`
+	SourceURL        string `json:"source_url"`
+	ActionSource     string `json:"action_source,omitempty"`
+	MessagingChannel string `json:"messaging_channel,omitempty"`
+	CtwaClid         string `json:"ctwa_clid,omitempty"`
+	PageID           string `json:"page_id,omitempty"`
+	Gateway          string `json:"gateway,omitempty"`
+	Email            string `json:"email"`
 	Phone           string `json:"phone"`
 	FirstName       string `json:"first_name"`
 	LastName        string `json:"last_name"`
@@ -165,6 +175,8 @@ func evalAggregatePurchaseLua(
 	}
 	piiBytes, err := json.Marshal(piiPatch{
 		ExternalID: in.ExternalID, SourceURL: in.SourceURL,
+		ActionSource: in.ActionSource, MessagingChannel: in.MessagingChannel,
+		CtwaClid: in.CtwaClid, PageID: in.PageID, Gateway: in.Gateway,
 		Email: in.Email, Phone: in.Phone, FirstName: in.FirstName, LastName: in.LastName,
 		Country: in.Country, State: in.State, City: in.City, PostalCode: in.PostalCode,
 		FBP: in.FBP, FBC: in.FBC, GCLID: in.GCLID, WBraid: in.WBraid, GBraid: in.GBraid,

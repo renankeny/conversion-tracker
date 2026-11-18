@@ -61,7 +61,7 @@ func (r *CRMRepo) GetLeads(ctx context.Context, accountID int64, pixel string) (
 			COALESCE(t.first_utm_source, ''), COALESCE(t.last_utm_source, ''), COALESCE(t.first_utm_campaign, ''),
 			COALESCE(t.city, ''), COALESCE(t.state, ''), COALESCE(t.traffic_type, ''),
 			COALESCE(t.fbc, ''), COALESCE(t.gclid, ''), COALESCE(t.wbraid, ''), COALESCE(t.gbraid, ''),
-			COALESCE(t.ttclid, ''), COALESCE(t.ctwa_clid, ''),
+			COALESCE(t.ttclid, ''), COALESCE(t.ctwa_clid, ''), COALESCE(t.wa_ad_id, ''), COALESCE(t.id_wpp, ''),
 			COALESCE(c.group_id, t.group_id)
 		FROM crm_leads c
 		JOIN tracked_users t ON t.id = c.tracked_user_id
@@ -96,7 +96,7 @@ func (r *CRMRepo) GetLeads(ctx context.Context, accountID int64, pixel string) (
 			&tu.FirstUTMSource, &tu.LastUTMSource, &tu.FirstUTMCampaign,
 			&tu.City, &tu.State, &tu.TrafficType,
 			&tu.FBC, &tu.GCLID, &tu.WBraid, &tu.GBraid,
-			&tu.TTClid, &tu.CtwaClid,
+			&tu.TTClid, &tu.CtwaClid, &tu.WaAdID, &tu.IDWpp,
 			&tu.GroupID,
 		); err != nil {
 			return nil, err
@@ -127,7 +127,7 @@ func (r *CRMRepo) GetLeadByID(ctx context.Context, id, accountID int64) (*domain
 			COALESCE(t.external_id, ''), COALESCE(t.first_name, ''), COALESCE(t.last_name, ''),
 			COALESCE(t.email, ''), COALESCE(t.phone, ''), COALESCE(t.pixel_name, ''),
 			COALESCE(t.fbp, ''), COALESCE(t.fbc, ''), COALESCE(t.gclid, ''), COALESCE(t.wbraid, ''), COALESCE(t.gbraid, ''),
-			COALESCE(t.ttclid, ''), COALESCE(t.ttp, ''), COALESCE(t.ctwa_clid, ''), COALESCE(t.id_wpp, ''),
+			COALESCE(t.ttclid, ''), COALESCE(t.ttp, ''), COALESCE(t.ctwa_clid, ''), COALESCE(t.wa_ad_id, ''), COALESCE(t.id_wpp, ''),
 			COALESCE(t.client_ip, ''), COALESCE(t.client_user_agent, ''),
 			COALESCE(t.ga4_client_id, ''), COALESCE(t.ga4_session_id, ''),
 			COALESCE(t.country, ''), COALESCE(t.state, ''), COALESCE(t.city, ''), COALESCE(t.postal_code, ''),
@@ -145,7 +145,7 @@ func (r *CRMRepo) GetLeadByID(ctx context.Context, id, accountID int64) (*domain
 		&tu.ExternalID, &tu.FirstName, &tu.LastName,
 		&tu.Email, &tu.Phone, &tu.PixelName,
 		&tu.FBP, &tu.FBC, &tu.GCLID, &tu.WBraid, &tu.GBraid,
-		&tu.TTClid, &tu.TTP, &tu.CtwaClid, &tu.IDWpp,
+		&tu.TTClid, &tu.TTP, &tu.CtwaClid, &tu.WaAdID, &tu.IDWpp,
 		&tu.ClientIP, &tu.ClientUserAgent,
 		&tu.GA4ClientID, &tu.GA4SessionID,
 		&tu.Country, &tu.State, &tu.City, &tu.PostalCode,

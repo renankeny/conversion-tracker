@@ -215,6 +215,7 @@ const onSubmit = () => {
   emit('submit', {
     name: form.name.trim(),
     provider: form.provider,
+    external_api_url: isExternalProvider.value ? (props.editing?.external_api_url || undefined) : undefined,
     pixel_id: Number(form.pixel_id),
     currency: form.currency || 'BRL',
     ctwa_min_inbound_messages: Number(form.ctwa_min_inbound_messages) === 3 ? 3 : 1,

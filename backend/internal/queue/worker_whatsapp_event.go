@@ -212,7 +212,7 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		}
 	}
 
-	if err := evaluateAttendantTriggers(ctx, deps, inst, trackedUser, chatID, phone, parsed.MessageID, parsed.Content); err != nil {
+	if err := evaluateAttendantTriggers(ctx, deps, inst, trackedUser, chatID, phone, parsed.MessageID, parsed.Content, parsed.IsFromMe); err != nil {
 		return fmt.Errorf("evaluate attendant triggers: %w", err)
 	}
 	if !inserted {

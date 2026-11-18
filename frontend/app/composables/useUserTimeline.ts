@@ -148,7 +148,10 @@ export const useUserTimeline = (
       }
       if (firstTouch.gclid) meta.push({ label: 'GCLID', value: firstTouch.gclid.slice(0, 10) + '...' })
       if (firstTouch.fbc) meta.push({ label: 'FBC', value: 'Presente' })
+      if (firstTouch.ctwa_clid) meta.push({ label: 'CTWA CLID', value: 'Presente' })
 
+      const isCtwa = Boolean(firstTouch.ctwa_clid || firstTouch.wa_ad_id)
+      const isWpp = isCtwa || Boolean(firstTouch.external_id?.startsWith('wpp:'))
       const isOfflineOrigin = (firstTouch.pageview_count === 0) && !firstTouch.first_url && !firstTouch.url
       const initialSession = journeyData.value?.sessions?.find((s) => s.is_initial)
       if (initialSession && (!isOfflineOrigin || firstTouch.client_user_agent)) {
@@ -156,9 +159,14 @@ export const useUserTimeline = (
       }
 
       const firstUrl = firstTouch.first_url || firstTouch.url
+      const originBadge = isOfflineOrigin ? (isCtwa ? 'Meta CTWA' : (isWpp ? 'WhatsApp' : 'Origem')) : 'Descoberta'
+      const originTitle = isOfflineOrigin
+        ? (isCtwa ? 'Entrada via Anúncio Click-to-WhatsApp (Meta CTWA)' : (isWpp ? 'Entrada via Conversa no WhatsApp' : 'Registro Inicial (Webhook / Integração)'))
+        : 'Primeiro Acesso ao Site'
+
       items.push({
-        badge: isOfflineOrigin ? 'Origem' : 'Descoberta',
-        title: isOfflineOrigin ? 'Registro Inicial (Webhook / Integração)' : 'Primeiro Acesso ao Site',
+        badge: originBadge,
+        title: originTitle,
         description: !isOfflineOrigin && firstUrl ? `Acessou: ${firstUrl}` : undefined,
         date: formatDate(firstTouch.created_at),
         typeClass: 'type-discovery',

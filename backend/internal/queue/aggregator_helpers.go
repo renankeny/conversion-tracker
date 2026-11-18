@@ -34,6 +34,11 @@ func newAggregatedSession(pixelName string, in domain.SendEventInput, val float6
 		FirstEventID:          in.EventID,
 		FirstEventTime:        in.EventTime,
 		SourceURL:             in.SourceURL,
+		ActionSource:          in.ActionSource,
+		MessagingChannel:      in.MessagingChannel,
+		CtwaClid:              in.CtwaClid,
+		PageID:                in.PageID,
+		Gateway:               in.Gateway,
 		TotalValue:            val,
 		Currency:              util.FirstNonEmpty(in.Currency, "BRL"),
 		Count:                 1,
@@ -80,6 +85,11 @@ func newAggregatedSession(pixelName string, in domain.SendEventInput, val float6
 func mergeSessionPII(session *AggregatedSession, in domain.SendEventInput) {
 	session.ExternalID = util.FirstNonEmpty(session.ExternalID, in.ExternalID)
 	session.SourceURL = util.FirstNonEmpty(session.SourceURL, in.SourceURL)
+	session.ActionSource = util.FirstNonEmpty(session.ActionSource, in.ActionSource)
+	session.MessagingChannel = util.FirstNonEmpty(session.MessagingChannel, in.MessagingChannel)
+	session.CtwaClid = util.FirstNonEmpty(session.CtwaClid, in.CtwaClid)
+	session.PageID = util.FirstNonEmpty(session.PageID, in.PageID)
+	session.Gateway = util.FirstNonEmpty(session.Gateway, in.Gateway)
 	session.Email = util.FirstNonEmpty(in.Email, session.Email)
 	session.Phone = util.FirstNonEmpty(in.Phone, session.Phone)
 	session.FirstName = util.FirstNonEmpty(in.FirstName, session.FirstName)

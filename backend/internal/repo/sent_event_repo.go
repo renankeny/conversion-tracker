@@ -103,11 +103,11 @@ func (r *SentEventRepo) ExistsSent(ctx context.Context, accountID int64, eventID
 		SELECT EXISTS (
 			SELECT 1 FROM sent_events
 			WHERE ($1::bigint = 0 OR account_id = $1)
-			  AND event_id = $2 AND pixel_name = $3 AND status = 'sent'
+			  AND event_id = $2 AND pixel_name = $3 AND channel <> 'internal' AND status = 'sent'
 		) AND NOT EXISTS (
 			SELECT 1 FROM sent_events
 			WHERE ($1::bigint = 0 OR account_id = $1)
-			  AND event_id = $2 AND pixel_name = $3 AND status = 'failed'
+			  AND event_id = $2 AND pixel_name = $3 AND channel <> 'internal' AND status = 'failed'
 		)
 	`, accountID, eventID, pixelName).Scan(&exists)
 	return exists, err
@@ -141,7 +141,7 @@ func (r *SentEventRepo) GetSuccessfulChannels(ctx context.Context, accountID int
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT channel FROM sent_events
 		WHERE ($1::bigint = 0 OR account_id = $1)
-		  AND event_id = $2 AND pixel_name = $3 AND status = 'sent'
+		  AND event_id = $2 AND pixel_name = $3 AND channel <> 'internal' AND status = 'sent'
 	`, accountID, eventID, pixelName)
 	if err != nil {
 		return nil, err

@@ -28,15 +28,15 @@ func (r *CRMRepo) EnsureDefaultStages(ctx context.Context, accountID int64) erro
 
 	if count == 0 {
 		stages := []domain.CRMStage{
-			{Name: "Novo Lead", Color: "#3B82F6", OrderIndex: 0, TriggerEvent: ""},
-			{Name: "Em Contato", Color: "#F59E0B", OrderIndex: 1, TriggerEvent: ""},
-			{Name: "Venda Fechada", Color: "#10B981", OrderIndex: 2, TriggerEvent: "Purchase"},
+			{Name: "Novo Lead", Color: "#3B82F6", OrderIndex: 0, TriggerEvent: "", TriggerEventCTWA: domain.EventLeadSubmitted},
+			{Name: "Em Contato", Color: "#F59E0B", OrderIndex: 1, TriggerEvent: "", TriggerEventCTWA: ""},
+			{Name: "Venda Fechada", Color: "#10B981", OrderIndex: 2, TriggerEvent: domain.EventPurchase, TriggerEventCTWA: domain.EventPurchase},
 		}
 		for _, s := range stages {
 			if _, err := r.pool.Exec(ctx, `
-				INSERT INTO crm_stages (account_id, name, color, order_index, trigger_event)
-				VALUES ($1, $2, $3, $4, $5)
-			`, accountID, s.Name, s.Color, s.OrderIndex, s.TriggerEvent); err != nil {
+				INSERT INTO crm_stages (account_id, name, color, order_index, trigger_event, trigger_event_ctwa)
+				VALUES ($1, $2, $3, $4, $5, $6)
+			`, accountID, s.Name, s.Color, s.OrderIndex, s.TriggerEvent, s.TriggerEventCTWA); err != nil {
 				return err
 			}
 		}

@@ -30,10 +30,18 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		return nil
 	}
 
+	now := time.Now()
+	if in.EventTime <= 0 {
+		in.EventTime = now.Unix()
+	} else {
+		in.EventTime = util.ClampEventTime(in.EventTime, now)
+	}
+
 	service.EnrichSendInput(ctx, deps.Users, pixel.AccountID, &in)
 
 	var (
 		metaResults      []meta.SendResult
+		metaPausedSkip   bool
 		tiktokResults    []tiktok.SendResult
 		googleAdsResults []googleads.SendResult
 		ga4Result        ga4.SendResult
@@ -41,19 +49,28 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		wg               sync.WaitGroup
 	)
 	alreadySent := make(map[string]bool)
-	if deps.SentEvents != nil && in.EventID != "" {
-		if sentMap, err := deps.SentEvents.GetSuccessfulChannels(ctx, pixel.AccountID, in.EventID, pixel.Name); err == nil {
-			alreadySent = sentMap
+	var doneTargets map[string]bool
+	if !in.IsReplay {
+		if deps.SentEvents != nil && in.EventID != "" {
+			if sentMap, err := deps.SentEvents.GetSuccessfulChannels(ctx, pixel.AccountID, in.EventID, pixel.Name); err == nil {
+				alreadySent = sentMap
+			}
 		}
+		doneTargets = cache.LoadDoneTargets(ctx, deps.Redis, pixel.AccountID, pixel.Name, in.EventID)
+	} else {
+		doneTargets = make(map[string]bool)
 	}
-	doneTargets := cache.LoadDoneTargets(ctx, deps.Redis, pixel.AccountID, pixel.Name, in.EventID)
+
+	hasAnyConfiguredChannel := len(pixel.PixelIDs) > 0 || pixel.HasTikTok() ||
+		pixel.HasGoogleAds() || in.OverrideGadsAccountID != nil || in.OverrideGadsActionID != "" ||
+		(pixel.GA4MeasurementID != "" && pixel.GA4APISecret != "")
 
 	if len(pixel.PixelIDs) > 0 && deps.Meta != nil && !alreadySent["meta"] {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			defer recoverDispatchPanic("meta", in)
-			metaResults = dispatchMetaWithOAuthFallback(ctx, deps, pixel, in, func(pid string) bool { return doneTargets["meta:"+pid] })
+			metaResults, metaPausedSkip = dispatchMetaWithOAuthFallback(ctx, deps, pixel, in, func(pid string) bool { return doneTargets["meta:"+pid] })
 		}()
 	}
 	if pixel.HasTikTok() && deps.TikTok != nil && !alreadySent["tiktok"] {
@@ -104,15 +121,19 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 
 	hasErr := false
 	hasRetryableErr := false
+	for _, rawR := range results {
+		if rawR.Err != nil && !isPermanentResult(rawR) {
+			hasRetryableErr = true
+			break
+		}
+	}
+
 	hasSuccess := false
 	eventTime := time.Unix(in.EventTime, 0)
-	if in.EventTime <= 0 {
-		eventTime = time.Now()
-	}
 	storeFullPayload := domain.ShouldStoreFullPayload(in.EventName)
 	retryCount, _ := asynq.GetRetryCount(ctx)
 
-	if len(results) == 0 && len(alreadySent) == 0 && len(doneTargets) == 0 && storeFullPayload {
+	if len(results) == 0 && len(alreadySent) == 0 && len(doneTargets) == 0 && !metaPausedSkip && !hasAnyConfiguredChannel && storeFullPayload {
 		results = append(results, dispatchResult{
 			Channel:    "internal",
 			PixelID:    pixel.Name,
@@ -124,9 +145,6 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 	for _, r := range collapseChannelResults(results) {
 		if r.Err != nil {
 			hasErr = true
-			if !isPermanentResult(r) {
-				hasRetryableErr = true
-			}
 			slog.Error("send failed", "channel", r.Channel, "pixel_id", r.PixelID, "event", in.EventName, "event_id", in.EventID, "status", r.StatusCode, "err", util.RedactSecrets(r.Err.Error()))
 		} else {
 			hasSuccess = true
@@ -137,11 +155,19 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		}
 	}
 
-	if len(results) > 0 || len(alreadySent) == 0 {
+	if (len(results) > 0 || (len(alreadySent) == 0 && !hasAnyConfiguredChannel)) && !metaPausedSkip {
 		applyCounters(ctx, deps, pixel, in, eventTime, retryCount, hasErr, hasSuccess)
 	}
 
-	if deps.Redis != nil && storeFullPayload {
+	if in.EventName == domain.EventPurchase && !in.CRMSynced && !in.IsReplay && retryCount == 0 && deps.CRM != nil && deps.Users != nil && in.ExternalID != "" {
+		if u, uerr := deps.Users.FindByExternalIDByAccount(ctx, in.ExternalID, pixel.AccountID); uerr == nil && u != nil && u.ID > 0 {
+			if leadID, synced := deps.CRM.SyncOrCreateLeadOnPurchase(ctx, pixel.AccountID, u.ID, purchaseValue(in), false); synced && deps.Redis != nil {
+				wshub.PublishCustom(ctx, deps.Redis, pixel.AccountID, "crm_updated", map[string]any{"action": "worker_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
+			}
+		}
+	}
+
+	if deps.Redis != nil && storeFullPayload && len(results) > 0 {
 		cache.BumpDashboardVersion(ctx, deps.Redis, pixel.AccountID)
 	}
 
@@ -151,18 +177,10 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 			status = "failed"
 		}
 		wshub.Publish(ctx, deps.Redis, wshub.LiveEvent{
-			AccountID:  pixel.AccountID,
-			EventID:    in.EventID,
-			EventName:  in.EventName,
-			PixelName:  in.PixelName,
-			ExternalID: in.ExternalID,
-			Channels:   summarizeChannels(results),
-			Status:     status,
-			Ts:         time.Now().Format(time.RFC3339),
-			Value:      purchaseValue(in),
-			City:       in.City,
-			State:      in.State,
-			Country:    in.Country,
+			AccountID: pixel.AccountID, EventID: in.EventID, EventName: in.EventName,
+			PixelName: in.PixelName, ExternalID: in.ExternalID, Channels: summarizeChannels(results),
+			Status: status, Ts: now.Format(time.RFC3339), Value: purchaseValue(in),
+			City: in.City, State: in.State, Country: in.Country,
 		})
 	}
 

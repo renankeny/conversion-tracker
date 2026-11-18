@@ -3,66 +3,43 @@ package util
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"regexp"
 	"strings"
+	"unicode"
 )
 
-var nonDigit = regexp.MustCompile(`\D+`)
-var nonAlpha = regexp.MustCompile(`[^a-z]`)
-
-var validBRDDDs = map[string]bool{
-	"11": true, "12": true, "13": true, "14": true, "15": true, "16": true, "17": true, "18": true, "19": true,
-	"21": true, "22": true, "24": true, "27": true, "28": true,
-	"31": true, "32": true, "33": true, "34": true, "35": true, "37": true, "38": true,
-	"41": true, "42": true, "43": true, "44": true, "45": true, "46": true, "47": true, "48": true, "49": true,
-	"51": true, "53": true, "54": true, "55": true,
-	"61": true, "62": true, "63": true, "64": true, "65": true, "66": true, "67": true, "68": true, "69": true,
-	"71": true, "73": true, "74": true, "75": true, "77": true, "79": true,
-	"81": true, "82": true, "83": true, "84": true, "85": true, "86": true, "87": true, "88": true, "89": true,
-	"91": true, "92": true, "93": true, "94": true, "95": true, "96": true, "97": true, "98": true, "99": true,
-}
-
-// NormalizePhone remove caracteres não numéricos, remove zero à esquerda no DDD brasileiro
-// se presente (ex: 011999999999 -> 5511999999999) e prefixa 55 apenas quando o DDD brasileiro for válido.
-// Quando a entrada já começa explicitamente com "+" ou "00" internacional, preserva o DDI original.
-func NormalizePhone(s string) string {
-	trimmed := strings.TrimSpace(s)
-	hasExplicitPlus := strings.HasPrefix(trimmed, "+")
-	s = nonDigit.ReplaceAllString(s, "")
-	if !hasExplicitPlus {
-		if strings.HasPrefix(s, "00") && len(s) > 4 {
-			return strings.TrimPrefix(s, "00")
-		}
-		if len(s) >= 11 && len(s) <= 12 && strings.HasPrefix(s, "0") {
-			candidate := strings.TrimPrefix(s, "0")
-			if len(candidate) >= 2 && validBRDDDs[candidate[:2]] {
-				s = candidate
-			}
-		}
-		if (len(s) == 10 || len(s) == 11) && validBRDDDs[s[:2]] {
-			s = "55" + s
+// IsSHA256Hex verifica se s já é um digest SHA-256 hexadecimal válido de 64 caracteres,
+// prevenindo double-hashing quando payloads de API/webhook já chegam hasheados.
+func IsSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := 0; i < 64; i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
 		}
 	}
-	return s
+	return true
 }
 
-// NormalizePhoneE164 devolve o telefone no formato E.164 com "+" inicial
-// (ex: "+5511999999999"), exigido por TikTok Events API e Google Ads Data Manager.
-func NormalizePhoneE164(s string) string {
-	digits := NormalizePhone(s)
-	if digits == "" {
-		return ""
-	}
-	return "+" + digits
-}
-
-// NormalizeName remove acentos e caracteres não-alfabéticos, lowercase.
+// NormalizeName remove acentos latinos, espaços, números e pontuação, mantendo letras Unicode lowercase.
 // Usado pra Meta CAPI advanced matching.
 func NormalizeName(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = stripAccents(s)
-	s = nonAlpha.ReplaceAllString(s, "")
-	return s
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return ""
+	}
+	if IsSHA256Hex(trimmed) {
+		return strings.ToLower(trimmed)
+	}
+	s = stripAccents(strings.ToLower(trimmed))
+	out := make([]rune, 0, len(s))
+	for _, r := range s {
+		if unicode.IsLetter(r) {
+			out = append(out, r)
+		}
+	}
+	return string(out)
 }
 
 // NormalizeCity igual a NormalizeName.
@@ -74,9 +51,13 @@ func NormalizeEmail(s string) string {
 }
 
 // SHA256Hex devolve o hash SHA256 hex (lowercase) de s. Se s vazio, devolve "".
+// Se s já for um hash SHA-256 hex de 64 caracteres, preserva em lowercase sem re-hashear.
 func SHA256Hex(s string) string {
 	if s == "" {
 		return ""
+	}
+	if IsSHA256Hex(s) {
+		return strings.ToLower(s)
 	}
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:])
@@ -93,19 +74,36 @@ var accentMap = strings.NewReplacer(
 
 func stripAccents(s string) string { return accentMap.Replace(s) }
 
-// NormalizeZip aplica o formato exigido pela Meta CAPI:
-// lowercase, remove espaços e traços, mantém alfanumérico.
-// Pra códigos US, mantém só os 5 primeiros dígitos.
+// NormalizeZip aplica o formato exigido pela Meta CAPI sem contexto explícito de país.
 func NormalizeZip(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	if s == "" {
+	return NormalizeZipWithCountry(s, "")
+}
+
+// NormalizeZipWithCountry aplica o formato exigido pela Meta CAPI:
+// lowercase, remove espaços e traços, mantém alfanumérico.
+// Para códigos dos EUA (country="us" ou formato ZIP+4 "12345-6789"), mantém apenas os 5 primeiros dígitos.
+func NormalizeZipWithCountry(s, country string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(s))
+	if trimmed == "" {
 		return ""
 	}
-	out := make([]rune, 0, len(s))
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+	if IsSHA256Hex(trimmed) {
+		return trimmed
+	}
+	isUSZipPlus4 := len(trimmed) == 10 && trimmed[5] == '-'
+	out := make([]rune, 0, len(trimmed))
+	allDigits := true
+	for _, r := range trimmed {
+		if r >= '0' && r <= '9' {
+			out = append(out, r)
+		} else if r >= 'a' && r <= 'z' {
+			allDigits = false
 			out = append(out, r)
 		}
+	}
+	normCountry := NormalizeCountry(country)
+	if (normCountry == "us" || (normCountry == "" && isUSZipPlus4)) && allDigits && len(out) >= 5 {
+		return string(out[:5])
 	}
 	return string(out)
 }
@@ -136,21 +134,19 @@ var countryMap = map[string]string{
 	"belgica": "be", "belgium": "be",
 }
 
-// NormalizeCountry aplica o formato ISO 3166-1 alpha-2 lowercase
-// exigido pela Meta CAPI (`br`, `us`, `pt`, ...).
+// NormalizeCountry aplica o formato ISO 3166-1 alpha-2 lowercase exigido pela Meta CAPI.
 func NormalizeCountry(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
+	if IsSHA256Hex(s) {
+		return s
+	}
 	s = stripAccents(s)
 	if s == "" {
 		return ""
 	}
-
-	// Se já for código ISO de 2 letras
 	if len(s) == 2 && s[0] >= 'a' && s[0] <= 'z' && s[1] >= 'a' && s[1] <= 'z' {
 		return s
 	}
-
-	// Busca no mapa canônico; nomes desconhecidos retornam "" em vez de truncar 2 letras erradas.
 	if code, ok := countryMap[s]; ok {
 		return code
 	}
@@ -182,32 +178,25 @@ var usStates = map[string]string{
 	"wisconsin": "wi", "wyoming": "wy", "district of columbia": "dc",
 }
 
-// NormalizeStateISO devolve o código ANSI/ISO lowercase de 2 caracteres
-// (ex: "sp", "rj", "mg", "ca", "ny"). Mapeia nomes por extenso do Brasil e EUA,
-// ou preserva a sigla de 2 caracteres se já vier formatada.
+// NormalizeStateISO devolve o código ANSI/ISO lowercase de 2 caracteres.
 func NormalizeStateISO(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
+	if IsSHA256Hex(s) {
+		return s
+	}
 	s = stripAccents(s)
 	if s == "" {
 		return ""
 	}
-
-	// Se já for código de 2 letras
 	if len(s) == 2 && s[0] >= 'a' && s[0] <= 'z' && s[1] >= 'a' && s[1] <= 'z' {
 		return s
 	}
-
-	// Mapeia estados brasileiros
 	if code, ok := brStates[s]; ok {
 		return code
 	}
-
-	// Mapeia estados americanos
 	if code, ok := usStates[s]; ok {
 		return code
 	}
-
-	// Fallback: primeiras 2 letras alfabéticas
 	out := make([]rune, 0, 2)
 	for _, r := range s {
 		if r >= 'a' && r <= 'z' {

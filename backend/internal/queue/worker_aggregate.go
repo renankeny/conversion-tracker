@@ -82,6 +82,11 @@ func makeProcessAggregatedPurchaseHandler(deps Deps) func(context.Context, *asyn
 			EventID:               session.FirstEventID,
 			EventTime:             session.FirstEventTime,
 			SourceURL:             session.SourceURL,
+			ActionSource:          session.ActionSource,
+			MessagingChannel:      session.MessagingChannel,
+			CtwaClid:              session.CtwaClid,
+			PageID:                session.PageID,
+			Gateway:               session.Gateway,
 			Value:                 &totalVal,
 			Currency:              session.Currency,
 			OrderID:               strings.Join(session.OrderIDs, ","),
@@ -114,6 +119,7 @@ func makeProcessAggregatedPurchaseHandler(deps Deps) func(context.Context, *asyn
 			OverrideGadsActionID:  session.OverrideGadsActionID,
 			AggregatedCount:       session.Count,
 			AggregatedItems:       session.Items,
+			CRMSynced:             true,
 		}
 
 		slog.Info("processing aggregated purchase dispatch",

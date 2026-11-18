@@ -31,6 +31,10 @@ func (a *Analyzer) applyQualification(
 	msgByID map[int64]*domain.WhatsAppMessage,
 ) bool {
 	evMsgID := resolveValidMsgID(q.TriggerMessageID, cand.NewestMsgID, msgByID)
+	evTime := time.Now()
+	if m, ok := msgByID[evMsgID]; ok && !m.Timestamp.IsZero() {
+		evTime = m.Timestamp
+	}
 	snap := a.AI.GetCRMLeadSnapshot(ctx, cand.AccountID, cand.TrackedUserID)
 
 	var prevStagePtr, newStagePtr *int64
@@ -64,12 +68,20 @@ func (a *Analyzer) applyQualification(
 		if alreadySent {
 			deduplicated = true
 		} else {
-			evID := fmt.Sprintf("ai_qual:%d", cand.ChatID)
-			in := buildAISendEventInput(ctx, a.Users, a.MetaAcc, pixel, u, cand, domain.EventLead, evID, nil)
-			if err := a.Enqueuer.EnqueueSendEvent(ctx, in); err != nil {
-				slog.Error("enqueue ai qualification event failed", "pixel_name", pixel.Name, "event_id", evID, "error", err)
-			} else {
-				dispatchedEventID = evID
+			thresholdOK := true
+			if (cand.CtwaClid != "" || u.CtwaClid != "") && a.WhatsApp != nil {
+				if hasChat, reached := a.WhatsApp.CheckCtwaInboundThreshold(ctx, cand.AccountID, cand.TrackedUserID); hasChat && !reached {
+					thresholdOK = false
+				}
+			}
+			if thresholdOK {
+				evID := fmt.Sprintf("ai_qual:%d", cand.ChatID)
+				in := buildAISendEventInput(ctx, a.Users, a.MetaAcc, pixel, u, cand, domain.EventLead, evID, evTime, nil, cand.Currency)
+				if err := a.Enqueuer.EnqueueSendEvent(ctx, in); err != nil {
+					slog.Error("enqueue ai qualification event failed", "pixel_name", pixel.Name, "event_id", evID, "error", err)
+				} else {
+					dispatchedEventID = evID
+				}
 			}
 		}
 	}
@@ -83,19 +95,10 @@ func (a *Analyzer) applyQualification(
 	}
 	tuID := cand.TrackedUserID
 	evRec := &domain.WhatsAppAIEvent{
-		AccountID:         cand.AccountID,
-		ChatID:            cand.ChatID,
-		CRMLeadID:         leadPtr,
-		TrackedUserID:     &tuID,
-		EventType:         domain.AIEventQualified,
-		EvidenceMessageID: &evMsgID,
-		Currency:          cand.Currency,
-		AIReason:          strings.TrimSpace(q.Reason),
-		CRMPrevStageID:    prevStagePtr,
-		CRMNewStageID:     newStagePtr,
-		CRMPrevValue:      snap.Value,
-		DispatchedEventID: dispatchedEventID,
-		Deduplicated:      deduplicated,
+		AccountID: cand.AccountID, ChatID: cand.ChatID, CRMLeadID: leadPtr, TrackedUserID: &tuID,
+		EventType: domain.AIEventQualified, EvidenceMessageID: &evMsgID, Currency: cand.Currency,
+		AIReason: strings.TrimSpace(q.Reason), CRMPrevStageID: prevStagePtr, CRMNewStageID: newStagePtr,
+		CRMPrevValue: snap.Value, DispatchedEventID: dispatchedEventID, Deduplicated: deduplicated,
 	}
 	inserted, err := a.AI.CreateAIEvent(ctx, evRec)
 	if err != nil || !inserted {
@@ -120,10 +123,15 @@ func (a *Analyzer) applySale(
 		evTime = m.Timestamp
 	}
 
+	snap := a.AI.GetCRMLeadSnapshot(ctx, cand.AccountID, cand.TrackedUserID)
 	saleAmount := s.Amount
+	if saleAmount <= 0 && snap.Value > 0 {
+		saleAmount = snap.Value
+	}
 	if saleAmount <= 0 && pixel != nil && len(pixel.TrackerConfig.ProductValue) > 0 && pixel.TrackerConfig.ProductValue[0] > 0 {
 		saleAmount = pixel.TrackerConfig.ProductValue[0]
 	}
+	effCurrency := domain.NormalizeWhatsAppCurrency(firstStr(s.Currency, cand.Currency))
 
 	deduplicated := false
 	dispatchedEventID := ""
@@ -131,23 +139,20 @@ func (a *Analyzer) applySale(
 		alreadySent, _ := a.AI.HasMatchingPurchaseSent(ctx, cand.AccountID, cand.TrackedUserID, pixel.Name, saleAmount, evTime)
 		if alreadySent {
 			deduplicated = true
-		} else if a.Enqueuer != nil {
+		} else if a.Enqueuer != nil && saleAmount > 0 {
 			evID := fmt.Sprintf("ai_sale:%d:%d", cand.ChatID, evMsgID)
-			var valPtr *float64
-			if saleAmount > 0 {
-				v := saleAmount
-				valPtr = &v
-			}
-			in := buildAISendEventInput(ctx, a.Users, a.MetaAcc, pixel, u, cand, domain.EventPurchase, evID, valPtr)
+			v := saleAmount
+			in := buildAISendEventInput(ctx, a.Users, a.MetaAcc, pixel, u, cand, domain.EventPurchase, evID, evTime, &v, effCurrency)
 			if err := a.Enqueuer.EnqueueSendEvent(ctx, in); err != nil {
 				slog.Error("enqueue ai purchase event failed", "pixel_name", pixel.Name, "event_id", evID, "error", err)
 			} else {
 				dispatchedEventID = evID
 			}
+		} else if saleAmount <= 0 {
+			slog.Warn("skipping ai Purchase CAPI dispatch without positive value", "chat_id", cand.ChatID)
 		}
 	}
 
-	snap := a.AI.GetCRMLeadSnapshot(ctx, cand.AccountID, cand.TrackedUserID)
 	var prevStagePtr, newStagePtr *int64
 	if snap.StageID > 0 {
 		st := snap.StageID
@@ -155,7 +160,11 @@ func (a *Analyzer) applySale(
 	}
 	newCRMVal := snap.Value
 	if !deduplicated && saleAmount > 0 {
-		newCRMVal = snap.Value + saleAmount
+		if saleStageID > 0 && snap.StageID == saleStageID && snap.Value > 0 {
+			newCRMVal = snap.Value + saleAmount
+		} else {
+			newCRMVal = saleAmount
+		}
 	} else if snap.Value <= 0 && saleAmount > 0 {
 		newCRMVal = saleAmount
 	}
@@ -188,20 +197,10 @@ func (a *Analyzer) applySale(
 	}
 	tuID := cand.TrackedUserID
 	evRec := &domain.WhatsAppAIEvent{
-		AccountID:         cand.AccountID,
-		ChatID:            cand.ChatID,
-		CRMLeadID:         leadPtr,
-		TrackedUserID:     &tuID,
-		EventType:         domain.AIEventPurchase,
-		EvidenceMessageID: &evMsgID,
-		Amount:            saleAmount,
-		Currency:          firstStr(s.Currency, cand.Currency),
-		AIReason:          strings.TrimSpace(s.Reason),
-		CRMPrevStageID:    prevStagePtr,
-		CRMNewStageID:     newStagePtr,
-		CRMPrevValue:      snap.Value,
-		DispatchedEventID: dispatchedEventID,
-		Deduplicated:      deduplicated,
+		AccountID: cand.AccountID, ChatID: cand.ChatID, CRMLeadID: leadPtr, TrackedUserID: &tuID,
+		EventType: domain.AIEventPurchase, EvidenceMessageID: &evMsgID, Amount: saleAmount, Currency: effCurrency,
+		AIReason: strings.TrimSpace(s.Reason), CRMPrevStageID: prevStagePtr, CRMNewStageID: newStagePtr,
+		CRMPrevValue: snap.Value, DispatchedEventID: dispatchedEventID, Deduplicated: deduplicated,
 	}
 	inserted, err := a.AI.CreateAIEvent(ctx, evRec)
 	if err != nil || !inserted {
@@ -216,17 +215,11 @@ func (a *Analyzer) publishUpdates(ctx context.Context, accountID int64, ev *doma
 		return
 	}
 	wshub.PublishCustom(ctx, a.Redis, accountID, "whatsapp_ai_event", map[string]any{
-		"chat_id":         ev.ChatID,
-		"crm_lead_id":     ev.CRMLeadID,
-		"tracked_user_id": ev.TrackedUserID,
-		"ai_event":        ev,
+		"chat_id": ev.ChatID, "crm_lead_id": ev.CRMLeadID, "tracked_user_id": ev.TrackedUserID, "ai_event": ev,
 	})
 	if crmChanged {
 		wshub.PublishCustom(ctx, a.Redis, accountID, "crm_updated", map[string]any{
-			"action":  "whatsapp_ai_synced",
-			"lead_id": ev.CRMLeadID,
-			"event":   ev.EventType,
+			"action": "whatsapp_ai_synced", "lead_id": ev.CRMLeadID, "event": ev.EventType,
 		})
 	}
 }
-

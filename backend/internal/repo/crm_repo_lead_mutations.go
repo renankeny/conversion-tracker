@@ -135,6 +135,13 @@ func (r *CRMRepo) SyncLeadFromEventTrigger(
 	if accountID <= 0 || trackedUserID <= 0 {
 		return 0, false
 	}
+	if strings.EqualFold(strings.TrimSpace(eventName), "Purchase") {
+		v := 0.0
+		if value != nil && *value > 0 {
+			v = *value
+		}
+		return r.SyncOrCreateLeadOnPurchase(ctx, accountID, trackedUserID, v, false)
+	}
 
 	var leadID int64
 	groupID, _ := r.groupIDOf(ctx, trackedUserID)
@@ -157,17 +164,22 @@ func (r *CRMRepo) SyncLeadFromEventTrigger(
 
 	var targetStageID int64
 	evNorm := strings.TrimSpace(eventName)
-	if strings.EqualFold(evNorm, "Lead") || strings.EqualFold(evNorm, "LeadSubmitted") {
+	if strings.EqualFold(evNorm, "Lead") || strings.EqualFold(evNorm, "LeadSubmitted") || strings.EqualFold(evNorm, "QualifiedLead") {
 		_ = r.pool.QueryRow(ctx, `
 			SELECT id FROM crm_stages
-			WHERE account_id = $1 AND LOWER(trigger_event) IN ('lead', 'leadsubmitted')
-			ORDER BY order_index ASC, id ASC LIMIT 1
+			WHERE account_id = $1
+			  AND (
+			    LOWER(trigger_event) IN ('lead', 'leadsubmitted', 'qualifiedlead')
+			    OR LOWER(trigger_event_ctwa) IN ('lead', 'leadsubmitted', 'qualifiedlead')
+			  )
+			ORDER BY (CASE WHEN order_index > 0 THEN 0 ELSE 1 END) ASC, order_index ASC, id ASC LIMIT 1
 		`, accountID).Scan(&targetStageID)
 	} else if evNorm != "" {
 		_ = r.pool.QueryRow(ctx, `
 			SELECT id FROM crm_stages
-			WHERE account_id = $1 AND LOWER(trigger_event) = LOWER($2)
-			ORDER BY order_index ASC, id ASC LIMIT 1
+			WHERE account_id = $1
+			  AND (LOWER(trigger_event) = LOWER($2) OR LOWER(trigger_event_ctwa) = LOWER($2))
+			ORDER BY order_index DESC, id DESC LIMIT 1
 		`, accountID, evNorm).Scan(&targetStageID)
 	}
 
@@ -190,6 +202,25 @@ func (r *CRMRepo) SyncLeadFromEventTrigger(
 		return leadID, false
 	}
 	return leadID, true
+}
+
+// GetLeadValueByTrackedUser retorna o valor negociado no card do CRM para fallback em gatilhos/IA.
+func (r *CRMRepo) GetLeadValueByTrackedUser(ctx context.Context, accountID, trackedUserID int64) float64 {
+	if accountID <= 0 || trackedUserID <= 0 {
+		return 0
+	}
+	var val float64
+	_ = r.pool.QueryRow(ctx, `
+		SELECT COALESCE(l.value, 0)
+		FROM crm_leads l
+		WHERE l.account_id = $1
+		  AND (
+		    l.tracked_user_id = $2
+		    OR (l.group_id IS NOT NULL AND l.group_id = (SELECT group_id FROM tracked_users WHERE id = $2 AND account_id = $1))
+		  )
+		ORDER BY l.updated_at DESC LIMIT 1
+	`, accountID, trackedUserID).Scan(&val)
+	return val
 }
 
 

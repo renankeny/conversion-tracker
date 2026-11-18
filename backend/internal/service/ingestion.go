@@ -7,8 +7,8 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
-// EnrichSendInput preenche campos vazios de PII, GeoIP e identificadores de clique/cookie
-// (incluindo unificação cross-device pelo group_id restrito ao accountID).
+// EnrichSendInput preenche campos vazios de PII, GeoIP, URL/UA e identificadores de clique/cookie
+// consolidando todas as sessões unificadas pelo group_id restrito ao accountID.
 func EnrichSendInput(ctx context.Context, users *repo.UserRepo, accountID int64, in *domain.SendEventInput) {
 	if users == nil || in == nil || in.ExternalID == "" {
 		return
@@ -18,6 +18,7 @@ func EnrichSendInput(ctx context.Context, users *repo.UserRepo, accountID int64,
 		if accountID == 0 {
 			accountID = u.AccountID
 		}
+		users.EnrichGroupFields(ctx, u)
 		fillStr(&in.Email, u.Email)
 		fillStr(&in.Phone, u.Phone)
 		fillStr(&in.FirstName, u.FirstName)
@@ -29,7 +30,11 @@ func EnrichSendInput(ctx context.Context, users *repo.UserRepo, accountID int64,
 		fillStr(&in.State, u.State)
 		fillStr(&in.City, u.City)
 		fillStr(&in.PostalCode, u.PostalCode)
-		fillStr(&in.SourceURL, u.URL)
+		if in.ActionSource != "business_messaging" {
+			fillStr(&in.SourceURL, u.URL)
+			fillStr(&in.SourceURL, u.FirstURL)
+		}
+		fillStr(&in.CtwaClid, u.CtwaClid)
 		fillStr(&in.FBP, u.FBP)
 		fillStr(&in.FBC, u.FBC)
 		fillStr(&in.GCLID, u.GCLID)
@@ -59,4 +64,3 @@ func fillStr(dst *string, val string) {
 		*dst = val
 	}
 }
-

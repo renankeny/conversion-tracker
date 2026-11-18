@@ -58,7 +58,7 @@ const CHANNELS: Array<{ id: Channel; label: string }> = [
   { id: 'google_ads', label: 'Google Ads' },
 ]
 
-type ChannelState = 'ok' | 'pending' | 'error' | 'absent'
+type ChannelState = 'ok' | 'pending' | 'contested' | 'error' | 'absent'
 
 const isInternalOnly = (ev: GroupedEvent): boolean =>
   ev.channels.length === 1 && ev.channels[0]?.channel === 'internal'
@@ -66,6 +66,7 @@ const isInternalOnly = (ev: GroupedEvent): boolean =>
 const channelState = (ev: GroupedEvent, id: Channel): ChannelState => {
   const c = ev.channels.find((x) => x.channel === id)
   if (!c) return 'absent'
+  if (c.status === 'contested') return 'contested'
   if (c.has_error || c.status === 'failed') return 'error'
   if (c.status === 'queued') return 'pending'
   if (c.status === 'sent' && c.response_code >= 200 && c.response_code < 300) return 'ok'
@@ -75,6 +76,7 @@ const channelState = (ev: GroupedEvent, id: Channel): ChannelState => {
 const channelTooltip = (ev: GroupedEvent, id: Channel, label: string): string => {
   const c = ev.channels.find((x) => x.channel === id)
   if (!c) return `${label}: não enviado`
+  if (c.status === 'contested') return `${label}: contestado (IA)`
   if (c.has_error || c.status === 'failed') return `${label}: falhou (HTTP ${c.response_code || '-'})`
   if (c.status === 'queued') return `${label}: na fila`
   return `${label}: HTTP ${c.response_code || 200}`
@@ -166,7 +168,8 @@ const eventClass = (name: string): string =>
   border-color: var(--success);
 }
 
-.channel-chip[data-state="pending"] {
+.channel-chip[data-state="pending"],
+.channel-chip[data-state="contested"] {
   background: var(--warning-soft);
   color: var(--warning);
   border-color: var(--warning);

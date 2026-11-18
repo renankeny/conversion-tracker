@@ -18,7 +18,8 @@ func IsPlausibleMetaToken(raw string) bool {
 	return !strings.ContainsAny(s, " \t\r\n")
 }
 
-// IsMetaAuthFailure identifica respostas 401 ou OAuthException 190 de token inválido/expirado na CAPI.
+// IsMetaAuthFailure identifica respostas 401 ou erros OAuth/permissão (190, 10, 200, 100/33)
+// na Graph API para acionar automaticamente o fallback de credencial OAuth.
 func IsMetaAuthFailure(statusCode int, body string) bool {
 	if statusCode == 401 {
 		return true
@@ -27,7 +28,13 @@ func IsMetaAuthFailure(statusCode int, body string) bool {
 		return false
 	}
 	low := strings.ToLower(body)
-	return strings.Contains(low, "invalid oauth access token") ||
-		strings.Contains(low, `"code":190`) ||
-		strings.Contains(low, `"code": 190`)
+	if strings.Contains(low, "invalid oauth access token") ||
+		strings.Contains(low, `"code":190`) || strings.Contains(low, `"code": 190`) ||
+		strings.Contains(low, `"code":10,`) || strings.Contains(low, `"code": 10,`) ||
+		strings.Contains(low, `"code":200`) || strings.Contains(low, `"code": 200`) {
+		return true
+	}
+	hasCode100 := strings.Contains(low, `"code":100`) || strings.Contains(low, `"code": 100`)
+	hasSubcode33 := strings.Contains(low, `"error_subcode":33`) || strings.Contains(low, `"error_subcode": 33`)
+	return hasCode100 && hasSubcode33
 }

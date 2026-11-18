@@ -27,11 +27,16 @@
         </div>
 
         <div class="stage-item-actions">
-          <span v-if="st.trigger_event" class="stage-trigger-tag" title="Disparo Web">
+          <span v-if="st.trigger_event && st.trigger_event !== 'none'" class="stage-trigger-tag" title="Disparo Web">
             Web: {{ st.trigger_event }}
           </span>
-          <span v-if="st.trigger_event_ctwa" class="stage-trigger-ctwa-tag" title="Disparo WhatsApp / CTWA">
-            WPP: {{ st.trigger_event_ctwa }}
+          <span
+            v-if="resolveStageCtwaBadge(st)"
+            class="stage-trigger-ctwa-tag"
+            :class="{ 'is-disabled': resolveStageCtwaBadge(st)?.disabled }"
+            title="Disparo WhatsApp / CTWA"
+          >
+            {{ resolveStageCtwaBadge(st)?.label }}
           </span>
           <button
             type="button"
@@ -78,6 +83,7 @@
 <script setup lang="ts">
 import { Plus, Settings, ChevronUp, ChevronDown } from 'lucide-vue-next'
 import type { CrmLead, CrmStage } from '#shared/types'
+import { resolveStageCtwaBadge } from '~/utils/crmEffectiveEvent'
 
 defineProps<{
   modelValue: boolean
@@ -185,6 +191,7 @@ const emit = defineEmits<{
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
 }
+.stage-trigger-ctwa-tag.is-disabled { color: var(--text-3); opacity: 0.75; }
 
 .stage-arrow-btn {
   background: var(--surface-soft);

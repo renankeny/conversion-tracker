@@ -121,7 +121,7 @@ const snippet = computed(() =>
     ? buildPixelSnippet(config.public.apiUrl as string, props.pixel.name, props.pixel.public_token || undefined, brandName.value)
     : '',
 )
-const manualSnippet = `// Lead no clique do WhatsApp\ntf('send', { eventType: 'Lead' });\n\n// Compra com valor\ntf('send', { eventType: 'Purchase', value: 99.90, currency: 'BRL' });`
+const manualSnippet = `// Lead manual (ex: botão ou formulário customizado)\ntf('send', 'Lead');\n\n// Compra com valor\ntf('send', 'Purchase', { value: 99.90, currency: 'BRL' });`
 
 const miniCopied = ref('')
 const showRegenConfirm = ref(false)

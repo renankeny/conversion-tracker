@@ -79,6 +79,34 @@ func TestPurchaseAggregatorSessionAndDeduplication(t *testing.T) {
 	}
 }
 
+func TestPurchaseAggregatorPreservesCtwaAttribution(t *testing.T) {
+	mainInput := domain.SendEventInput{
+		PixelName:        "ctwa-pixel",
+		EventName:        domain.EventPurchase,
+		EventID:          "evt-ctwa-1",
+		OrderID:          "ORD-CTWA-1",
+		EventTime:        1700000000,
+		Phone:            "5511999998888",
+		ActionSource:     "business_messaging",
+		MessagingChannel: "whatsapp",
+		CtwaClid:         "ctwa_clid_abc",
+		PageID:           "page_123",
+		Gateway:          "hotmart",
+	}
+	session := newAggregatedSession("ctwa-pixel", mainInput, 297.0, buildAggregatedItem(mainInput, 297.0))
+	if session.ActionSource != "business_messaging" || session.MessagingChannel != "whatsapp" ||
+		session.CtwaClid != "ctwa_clid_abc" || session.PageID != "page_123" || session.Gateway != "hotmart" {
+		t.Fatalf("CTWA attribution lost in newAggregatedSession: %+v", session)
+	}
+
+	// Mesmo se o 1º item viesse sem PageID e o Order Bump trouxesse, o merge preserva/enriquece
+	session2 := newAggregatedSession("ctwa-pixel", domain.SendEventInput{EventID: "e2", OrderID: "O2"}, 97.0, domain.AggregatedItem{Value: 97})
+	appendSubsequentSessionItem(&session2, mainInput, 47.0, buildAggregatedItem(mainInput, 47.0))
+	if session2.CtwaClid != "ctwa_clid_abc" || session2.PageID != "page_123" || session2.ActionSource != "business_messaging" {
+		t.Fatalf("expected subsequent item to enrich CTWA attribution: %+v", session2)
+	}
+}
+
 func TestEvalAggregatePurchaseLuaGracefulErrorOnClosedRedis(t *testing.T) {
 	if aggregatePurchaseScript == nil || aggregatePurchaseScript.Hash() == "" {
 		t.Fatalf("expected non-empty SHA1 hash for aggregatePurchaseScript")

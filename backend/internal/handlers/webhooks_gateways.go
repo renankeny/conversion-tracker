@@ -10,16 +10,12 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
+	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
 
-// enqueueGenericPurchase é o fluxo único compartilhado pelos checkouts:
-//  1. Encontra o tracked user (telefone com variantes -> external_id -> email).
-//  2. Atualiza PII e cookies auxiliares recebidos do gateway em tracked_users.
-//  3. Resolve o pixel alvo (respeitando ?pixel= explícito da URL quando informado).
-//  4. Enfileira o evento (Purchase ou AddPaymentInfo) para CAPI/Google/TikTok/GA4.
 func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput, rawInput *domain.WebhookPurchaseInput) (map[string]any, int) {
 	in.EventName = orDefaultEvent(in.EventName)
-	in.Currency = orDefaultCurrency(in.Currency)
+	in.Currency = domain.NormalizeWhatsAppCurrency(orDefaultCurrency(in.Currency))
 	in.Phone = util.NormalizePhone(in.Phone)
 	in.Email = util.NormalizeEmail(in.Email)
 
@@ -33,54 +29,28 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 	if err != nil {
 		fallbackPixel := h.selectFallbackPixel(ctx, resolvedQueryPixel, in.AccountID)
 		if fallbackPixel == nil {
-			slog.Warn("webhook user not found",
-				"gateway", in.GatewayName,
-				"external_id", in.ExternalID,
-				"phone", in.Phone,
-				"email", in.Email,
-				"account_id", in.AccountID,
-			)
+			slog.Warn("webhook user not found", "gateway", in.GatewayName, "external_id", in.ExternalID, "phone", in.Phone, "email", in.Email, "account_id", in.AccountID)
 			h.logWebhook(ctx, in, rawInput, in.AccountID, "", in.ExternalID, "", "failed", "no tracked user")
-			return map[string]any{
-				"received":     true,
-				"matched_user": false,
-				"reason":       "no tracked user",
-			}, http.StatusOK
+			return map[string]any{"received": true, "matched_user": false, "reason": "no tracked user"}, http.StatusOK
 		}
-
 		targetAccountID := fallbackPixel.AccountID
 		if !h.verifyDeferredWebhookAuth(ctx, targetAccountID) {
 			return map[string]any{"reason": "invalid platform token"}, http.StatusUnauthorized
 		}
-
-		syntheticExternalID := in.ExternalID
-		if syntheticExternalID == "" {
-			syntheticExternalID = util.GenerateID10()
-		}
+		syntheticExternalID := util.FirstNonEmpty(in.ExternalID, util.GenerateID10())
 		newUser := &domain.TrackedUser{
-			ExternalID: syntheticExternalID,
-			IDWpp:      util.GenerateID10(),
-			PixelName:  fallbackPixel.Name,
-			AccountID:  targetAccountID,
-			FirstName:  in.FirstName,
-			LastName:   in.LastName,
-			Email:      in.Email,
-			Phone:      in.Phone,
-			FBC:        in.FBC,
-			FBP:        in.FBP,
-			URL:        "",
+			ExternalID: syntheticExternalID, IDWpp: util.GenerateID10(), PixelName: fallbackPixel.Name,
+			AccountID: targetAccountID, FirstName: in.FirstName, LastName: in.LastName,
+			Email: in.Email, Phone: in.Phone, FBC: in.FBC, FBP: in.FBP,
 		}
 		if cerr := h.users.Create(ctx, newUser); cerr != nil {
 			slog.Error("create fallback user from webhook", "err", cerr, "gateway", in.GatewayName)
 		}
 		user = newUser
-	} else {
-		if !h.verifyDeferredWebhookAuth(ctx, user.AccountID) {
-			return map[string]any{"reason": "invalid platform token"}, http.StatusUnauthorized
-		}
+	} else if !h.verifyDeferredWebhookAuth(ctx, user.AccountID) {
+		return map[string]any{"reason": "invalid platform token"}, http.StatusUnauthorized
 	}
 
-	// Atualiza dados PII e cookies auxiliares recebidos do gateway no usuário rastreado.
 	user.FirstName = util.FirstNonEmpty(in.FirstName, user.FirstName)
 	user.LastName = util.FirstNonEmpty(in.LastName, user.LastName)
 	user.Email = util.FirstNonEmpty(in.Email, user.Email)
@@ -93,11 +63,10 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 	if err := h.users.Upsert(ctx, user); err != nil {
 		slog.Error("update user from webhook", "err", err, "gateway", in.GatewayName)
 	}
-
-	// Unifica identidade (stitch cross-device) ligando a sessão do checkout com sessões anteriores
 	if linked, lerr := h.users.ResolveAndLink(ctx, user.AccountID, user.ExternalID, user.Phone, user.Email); lerr == nil && linked != nil {
 		user = linked
 	}
+	h.users.EnrichGroupFields(ctx, user)
 
 	var pixel *domain.Pixel
 	if resolvedQueryPixel != nil {
@@ -110,27 +79,25 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 		}
 	}
 	if !pixel.Enabled || pixel.AccountID != user.AccountID {
-		return map[string]any{
-			"received":     true,
-			"matched_user": true,
-			"queued":       false,
-			"reason":       "pixel disabled",
-		}, http.StatusOK
+		return map[string]any{"received": true, "matched_user": true, "queued": false, "reason": "pixel disabled"}, http.StatusOK
 	}
-
-	linked, err := h.users.LinkedFieldsByAccount(ctx, pixel.AccountID, user.ExternalID)
-	if err != nil {
-		slog.Warn("linked fields lookup failed", "err", err, "gateway", in.GatewayName, "external_id", user.ExternalID)
-		linked = domain.LinkedTrackingFields{
-			FBP: user.FBP, FBC: user.FBC, GCLID: user.GCLID, WBraid: user.WBraid, GBraid: user.GBraid,
-			TTClid: user.TTClid, TTP: user.TTP, GA4ClientID: user.GA4ClientID, GA4SessionID: user.GA4SessionID,
-		}
-	}
-	linked.FBC = util.FirstNonEmpty(linked.FBC, in.FBC)
-	linked.FBP = util.FirstNonEmpty(linked.FBP, in.FBP)
 
 	val := in.Value
-	sourceURL := h.urlMapper.ApplyForAccount(pixel.AccountID, user.URL)
+	if in.EventName == domain.EventPurchase && val <= 0 && len(pixel.TrackerConfig.ProductValue) > 0 && pixel.TrackerConfig.ProductValue[0] > 0 {
+		val = pixel.TrackerConfig.ProductValue[0]
+	}
+	if in.EventName == domain.EventPurchase && val <= 0 {
+		h.logWebhook(ctx, in, rawInput, pixel.AccountID, pixel.Name, user.ExternalID, "", "failed", "valor da venda zero ou ausente")
+		return map[string]any{"received": true, "matched_user": true, "queued": false, "reason": "invalid purchase value"}, http.StatusOK
+	}
+
+	fbc := util.FirstNonEmpty(user.FBC, in.FBC)
+	fbp := util.FirstNonEmpty(user.FBP, in.FBP)
+	rawURL := util.FirstNonEmpty(user.URL, user.FirstURL)
+	sourceURL := ""
+	if rawURL != "" {
+		sourceURL = h.urlMapper.ApplyForAccount(pixel.AccountID, rawURL)
+	}
 
 	itemType := in.OfferType
 	if itemType == "" {
@@ -140,7 +107,10 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 			itemType = "upsell"
 		}
 	}
-	eventID := webhookEventID(in.OrderID, itemType, in.ProductID)
+	eventID := in.ReplayEventID
+	if eventID == "" {
+		eventID = webhookEventID(in.OrderID, itemType, in.ProductID)
+	}
 	dedupItemKey := util.FirstNonEmpty(itemType, "main") + ":" + in.ProductID
 	if !in.IsReplay && in.OrderID != "" {
 		if claimed, ok := cache.ClaimWebhookDedup(ctx, h.rdb, pixel.AccountID, in.GatewayName, in.OrderID, in.EventName, dedupItemKey); ok && !claimed {
@@ -148,50 +118,42 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 		}
 	}
 
-	actionSource, msgChannel, ctwaClid, pageID := h.ctwaAttribution(ctx, pixel.AccountID, user, linked.FBC, sourceURL)
+	if !in.IsReplay && in.EventName == domain.EventPurchase && itemType != "order_bump" && itemType != "upsell" && h.sentEvents != nil {
+		if dup, _ := h.sentEvents.HasDuplicateExternalPurchase(ctx, pixel.AccountID, user.ID, user.ExternalID, pixel.Name, in.OrderID, val, time.Now()); dup {
+			if h.crmRepo != nil && user.ID > 0 {
+				if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, pixel.AccountID, user.ID, val, false); synced && h.rdb != nil {
+					wshub.PublishCustom(ctx, h.rdb, pixel.AccountID, "crm_updated", map[string]any{"action": "webhook_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
+				}
+			}
+			h.logWebhook(ctx, in, rawInput, pixel.AccountID, pixel.Name, user.ExternalID, eventID, "deduplicated", "venda já enviada anteriormente por outro canal/CRM")
+			return map[string]any{"received": true, "matched_user": true, "deduplicated": true, "event_id": eventID}, http.StatusOK
+		}
+	}
+
+	actionSource, msgChannel, ctwaClid, pageID := h.ctwaAttribution(ctx, pixel.AccountID, pixel, user, fbc, sourceURL)
+	if actionSource == "business_messaging" {
+		sourceURL = ""
+	}
+	evTime := time.Now().Unix()
+	if in.IsReplay && in.ReplayEventTime > 0 {
+		evTime = util.ClampEventTime(in.ReplayEventTime, time.Now())
+	}
 
 	send := domain.SendEventInput{
-		PixelName:        pixel.Name,
-		EventName:        in.EventName,
-		EventID:          eventID,
-		EventTime:        time.Now().Unix(),
-		SourceURL:        sourceURL,
-		ContentID:        util.FirstNonEmpty(in.ProductID, pixel.Name),
-		ContentName:      in.ProductName,
-		ContentType:      "product",
-		Value:            &val,
-		Currency:         in.Currency,
-		OrderID:          in.OrderID,
-		ItemType:         itemType,
-		Gateway:          in.GatewayName,
-		ActionSource:     actionSource,
-		MessagingChannel: msgChannel,
-		CtwaClid:         ctwaClid,
-		PageID:           pageID,
-		ExternalID:       user.ExternalID,
-		ClientIP:         user.ClientIP,
-		ClientUserAgent:  user.ClientUserAgent,
-		FBP:              linked.FBP,
-		FBC:              linked.FBC,
-		Email:            user.Email,
-		Phone:            user.Phone,
-		FirstName:        user.FirstName,
-		LastName:         user.LastName,
-		Country:          user.Country,
-		State:            user.State,
-		City:             user.City,
-		PostalCode:       user.PostalCode,
-		TTClid:           linked.TTClid,
-		TTP:              linked.TTP,
-		GCLID:            linked.GCLID,
-		WBraid:           linked.WBraid,
-		GBraid:           linked.GBraid,
-		GA4ClientID:      linked.GA4ClientID,
-		GA4SessionID:     linked.GA4SessionID,
+		PixelName: pixel.Name, EventName: in.EventName, EventID: eventID, EventTime: evTime,
+		SourceURL: sourceURL, ContentID: util.FirstNonEmpty(in.ProductID, pixel.Name), ContentName: in.ProductName,
+		ContentType: "product", Value: &val, Currency: in.Currency, OrderID: in.OrderID,
+		ItemType: itemType, Gateway: in.GatewayName, ActionSource: actionSource, MessagingChannel: msgChannel,
+		CtwaClid: ctwaClid, PageID: pageID, ExternalID: user.ExternalID, ClientIP: user.ClientIP,
+		ClientUserAgent: user.ClientUserAgent, FBP: fbp, FBC: fbc, Email: user.Email, Phone: user.Phone,
+		FirstName: user.FirstName, LastName: user.LastName, Country: user.Country, State: user.State,
+		City: user.City, PostalCode: user.PostalCode, TTClid: user.TTClid, TTP: user.TTP,
+		GCLID: user.GCLID, WBraid: user.WBraid, GBraid: user.GBraid, GA4ClientID: user.GA4ClientID,
+		GA4SessionID: user.GA4SessionID, IsReplay: in.IsReplay, CRMSynced: true,
 	}
 
 	aggregated := false
-	if pixel.AggregationEnabled && in.EventName == domain.EventPurchase && h.rdb != nil {
+	if !in.IsReplay && pixel.AggregationEnabled && in.EventName == domain.EventPurchase && h.rdb != nil {
 		var aggErr error
 		aggregated, aggErr = h.queue.AggregateOrEnqueue(ctx, pixel, send, h.rdb)
 		if aggErr != nil {
@@ -209,17 +171,16 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 		}
 	}
 
+	if h.crmRepo != nil && user.ID > 0 && in.EventName == domain.EventPurchase {
+		if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, pixel.AccountID, user.ID, val, !in.IsReplay); synced && h.rdb != nil {
+			wshub.PublishCustom(ctx, h.rdb, pixel.AccountID, "crm_updated", map[string]any{"action": "webhook_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
+		}
+	}
+
 	if aggregated {
 		h.logWebhook(ctx, in, rawInput, pixel.AccountID, pixel.Name, user.ExternalID, eventID, "buffered", "compra em buffer na janela de "+strconv.Itoa(pixel.AggregationWindowMinutes)+"min")
 	} else {
 		h.logWebhook(ctx, in, rawInput, pixel.AccountID, pixel.Name, user.ExternalID, eventID, "queued", "")
 	}
-
-	return map[string]any{
-		"received":     true,
-		"matched_user": true,
-		"event_id":     eventID,
-		"event_name":   in.EventName,
-		"aggregated":   aggregated,
-	}, http.StatusAccepted
+	return map[string]any{"received": true, "matched_user": true, "event_id": eventID, "event_name": in.EventName, "aggregated": aggregated}, http.StatusAccepted
 }

@@ -32,7 +32,8 @@
           v-model="test.test_event_code"
           label="Test Event Code (Gerenciador de Eventos)"
           placeholder="Ex: TEST12345"
-          hint="Copie na aba Eventos de Teste da Meta para não registrar conversão real."
+          hint="Obrigatório para disparar evento de teste CAPI sem registrar conversão real."
+          required
         />
         <BaseInput
           v-model.number="test.value"
@@ -126,9 +127,7 @@ watch(
   () => props.remotePixels,
   (list) => {
     if (test.pixel_id && !list.some((p) => p.id === test.pixel_id)) {
-      test.pixel_id = list[0]?.id || ''
-    } else if (!test.pixel_id && list.length) {
-      test.pixel_id = list[0]!.id
+      test.pixel_id = ''
     }
   },
   { immediate: true },
@@ -141,15 +140,22 @@ const isResultOk = computed(() => {
 
 const onSendTest = async () => {
   if (!props.account) return
+  if (test.pixel_id && !test.test_event_code.trim()) {
+    toast.warning(
+      'Test Event Code obrigatório',
+      'Informe o código da aba Eventos de Teste da Meta para não registrar conversão real no Pixel.',
+    )
+    return
+  }
   testLoading.value = true
   testResult.value = null
   try {
     const res = await metaApi.testEvent(props.account.id, {
       ad_account_id: props.adAccountId || undefined,
       pixel_id: test.pixel_id || undefined,
-      event_name: test.event_name,
-      test_event_code: test.test_event_code.trim() || undefined,
-      value: test.value > 0 ? test.value : undefined,
+      event_name: test.pixel_id ? test.event_name : undefined,
+      test_event_code: test.pixel_id ? test.test_event_code.trim() : undefined,
+      value: test.pixel_id && test.value > 0 ? test.value : undefined,
       currency: 'BRL',
     })
     testResult.value = res

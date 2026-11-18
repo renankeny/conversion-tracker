@@ -48,15 +48,8 @@ func (h *AdminCRM) MoveLead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isCTWALead := false
-	if lead.TrackedUser != nil {
-		tu := lead.TrackedUser
-		isCTWALead = tu.CtwaClid != "" || tu.WaAdID != "" || (tu.IDWpp != "" && strings.HasPrefix(tu.ExternalID, "wpp:"))
-	}
-	targetEvent := stage.TriggerEvent
-	if isCTWALead && stage.TriggerEventCTWA != "" {
-		targetEvent = stage.TriggerEventCTWA
-	}
+	isCTWALead := domain.IsWhatsAppOrCTWAUser(lead.TrackedUser)
+	targetEvent := domain.EffectiveStageTrigger(stage, isCTWALead)
 
 	if targetEvent == domain.EventPurchase && req.Value <= 0 {
 		writeError(w, http.StatusBadRequest, "value required for purchase event")
@@ -68,9 +61,8 @@ func (h *AdminCRM) MoveLead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasTrigger := stage.TriggerEvent != "" || stage.TriggerEventCTWA != ""
-	if hasTrigger && (lead.StageID == nil || *lead.StageID != req.StageID) {
-		h.dispatchCRMStageTrigger(ctx, accountID, stage, lead.TrackedUser, req.Value)
+	if targetEvent != "" && (lead.StageID == nil || *lead.StageID != req.StageID) {
+		h.dispatchCRMStageTrigger(ctx, accountID, leadID, stage, lead.TrackedUser, req.Value)
 	}
 
 	h.notifyCRMUpdated(ctx, accountID, "lead_moved")

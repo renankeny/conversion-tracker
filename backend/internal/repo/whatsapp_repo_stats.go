@@ -67,7 +67,8 @@ func (r *WhatsAppRepo) Overview(ctx context.Context, f WhatsAppStatsFilter) (*Wh
 		conds := []string{
 			"e.account_id = $1",
 			"e.status <> 'contested'",
-			"(e.input_json->>'gateway' = 'whatsapp' OR e.payload->'data'->0->>'action_source' = 'business_messaging' OR e.payload->'data'->0->>'messaging_channel' = 'whatsapp' OR e.event_id LIKE 'ctwa:%' OR e.event_id LIKE 'wa_trig:%' OR e.event_id LIKE 'wpp_manual_%' OR e.event_id LIKE 'ai_%')",
+			"e.channel <> 'internal'",
+			"(e.input_json->>'gateway' IN ('whatsapp', 'whatsapp_trigger', 'whatsapp_manual', 'whatsapp_ai', 'whatsapp_crm') OR e.payload->'data'->0->>'action_source' = 'business_messaging' OR e.payload->'data'->0->>'messaging_channel' = 'whatsapp' OR e.event_id LIKE 'ctwa:%' OR e.event_id LIKE 'wa_trig:%' OR e.event_id LIKE 'wpp_manual_%' OR e.event_id LIKE 'ai_%')",
 		}
 		idx := 1
 		if f.PixelName != "" {

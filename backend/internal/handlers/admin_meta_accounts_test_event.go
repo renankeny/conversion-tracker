@@ -54,14 +54,32 @@ func (h *AdminMetaAccounts) SendTestEvent(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 
+	// Segurança crítica: quando pixel_id está vazio ("Apenas verificar conexão OAuth"),
+	// NUNCA seleciona automaticamente um Pixel real nem dispara evento CAPI em produção.
 	pixelID := strings.TrimSpace(in.PixelID)
-	if pixelID == "" && accCopy.AdAccountID != "" {
-		if pxRes, err := h.client.ListPixels(ctx, &accCopy, accCopy.AdAccountID); err == nil {
-			pixelID = extractFirstPixelID(pxRes["pixels"])
-		}
-	}
-
 	if pixelID == "" {
+		if accCopy.AdAccountID != "" {
+			pxRes, err := h.client.ListPixels(ctx, &accCopy, accCopy.AdAccountID)
+			if err != nil {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"mode":        "connection_check",
+					"status_code": 502,
+					"error":       err.Error(),
+				})
+				return
+			}
+			pxCount := 0
+			if arr, ok := pxRes["pixels"].([]any); ok {
+				pxCount = len(arr)
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"mode":        "connection_check",
+				"status_code": 200,
+				"response":    fmt.Sprintf(`{"ok":true,"ad_account_id":%q,"datasets_accessible":%d,"note":"Conexão OAuth e Conta de Anúncios validadas com sucesso na Graph API (somente leitura, nenhum evento disparado)."}`, accCopy.AdAccountID, pxCount),
+			})
+			return
+		}
+
 		adRes, err := h.client.ListAdAccounts(ctx, &accCopy)
 		if err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{
@@ -78,8 +96,14 @@ func (h *AdminMetaAccounts) SendTestEvent(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusOK, map[string]any{
 			"mode":        "connection_check",
 			"status_code": 200,
-			"response":    fmt.Sprintf(`{"ok":true,"ad_accounts_accessible":%d,"note":"Conexão OAuth validada com sucesso na Graph API (nenhum Dataset/Pixel encontrado nesta conta para disparo CAPI)."}`, count),
+			"response":    fmt.Sprintf(`{"ok":true,"ad_accounts_accessible":%d,"note":"Conexão OAuth validada com sucesso na Graph API (somente leitura)."}`, count),
 		})
+		return
+	}
+
+	testCode := strings.TrimSpace(in.TestEventCode)
+	if testCode == "" {
+		writeError(w, http.StatusBadRequest, "informe o Test Event Code (ex: TEST12345) para enviar evento de teste sem afetar os dados reais do Pixel")
 		return
 	}
 
@@ -87,10 +111,7 @@ func (h *AdminMetaAccounts) SendTestEvent(w http.ResponseWriter, r *http.Request
 	if evName == "" {
 		evName = domain.EventLead
 	}
-	currency := strings.TrimSpace(in.Currency)
-	if currency == "" {
-		currency = "BRL"
-	}
+	currency := domain.NormalizeWhatsAppCurrency(in.Currency)
 	var valPtr *float64
 	if in.Value > 0 {
 		v := in.Value
@@ -123,7 +144,7 @@ func (h *AdminMetaAccounts) SendTestEvent(w http.ResponseWriter, r *http.Request
 		Phone:           phone,
 	}
 
-	rawPayload, err := meta.BuildCAPIPayload(sendIn, strings.TrimSpace(in.TestEventCode), h.metaPartner)
+	rawPayload, err := meta.BuildCAPIPayload(sendIn, testCode, h.metaPartner)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao montar payload CAPI: "+err.Error())
 		return
@@ -137,27 +158,16 @@ func (h *AdminMetaAccounts) SendTestEvent(w http.ResponseWriter, r *http.Request
 		errStr = fmt.Sprintf("Meta CAPI retornou status %d", code)
 	}
 
+	effName, _, _ := meta.ResolveEffectiveEvent(sendIn)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mode":         "capi_event",
-		"event_name":   evName,
+		"event_name":   effName,
 		"pixel_id":     pixelID,
 		"status_code":  code,
 		"response":     util.RedactSecrets(body),
 		"request_body": string(rawPayload),
 		"error":        errStr,
 	})
-}
-
-func extractFirstPixelID(raw any) string {
-	items, ok := raw.([]any)
-	if !ok || len(items) == 0 {
-		return ""
-	}
-	if m, ok := items[0].(map[string]any); ok {
-		id, _ := m["id"].(string)
-		return strings.TrimSpace(id)
-	}
-	return ""
 }
 
 func orTestUA(ua string) string {

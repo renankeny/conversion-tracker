@@ -13,17 +13,12 @@ type EventEnqueuer interface {
 	EnqueueSendEvent(ctx context.Context, in domain.SendEventInput) error
 }
 
+// resolveMetaDefaultPageID respeita estritamente o pixel.MetaAccountID explícito.
 func resolveMetaDefaultPageID(ctx context.Context, metaRepo *repo.MetaAccountRepo, pixel *domain.Pixel) string {
-	if metaRepo == nil || pixel == nil {
+	if metaRepo == nil || pixel == nil || pixel.MetaAccountID == nil || *pixel.MetaAccountID <= 0 {
 		return ""
 	}
-	if pixel.MetaAccountID != nil && *pixel.MetaAccountID > 0 {
-		if acc, err := metaRepo.FindByID(ctx, *pixel.MetaAccountID); err == nil && acc != nil && acc.AccountID == pixel.AccountID && acc.Enabled && acc.IsConnected() {
-			return acc.DefaultPageID
-		}
-		return ""
-	}
-	if acc, err := metaRepo.FindFirstConnectedByAccount(ctx, pixel.AccountID); err == nil && acc != nil && acc.Enabled && acc.IsConnected() {
+	if acc, err := metaRepo.FindByID(ctx, *pixel.MetaAccountID); err == nil && acc != nil && acc.AccountID == pixel.AccountID && acc.Enabled && acc.IsConnected() {
 		return acc.DefaultPageID
 	}
 	return ""
@@ -38,25 +33,32 @@ func buildAISendEventInput(
 	cand repo.AIChatCandidate,
 	eventName string,
 	eventID string,
+	evTime time.Time,
 	value *float64,
+	currency string,
 ) domain.SendEventInput {
+	if usersRepo != nil && u != nil {
+		usersRepo.EnrichGroupFields(ctx, u)
+	}
 	ctwaClid := util.FirstNonEmpty(cand.CtwaClid, u.CtwaClid)
 	pageID := cand.PageID
 	if ctwaClid != "" && pageID == "" {
 		pageID = resolveMetaDefaultPageID(ctx, metaRepo, pixel)
 	}
 
+	sourceURL := util.FirstNonEmpty(u.URL, u.FirstURL)
 	actionSource := "website"
 	msgChannel := ""
 	if ctwaClid != "" {
 		if pageID != "" {
 			actionSource = "business_messaging"
 			msgChannel = "whatsapp"
+			sourceURL = ""
 		} else {
 			actionSource = "system_generated"
 			ctwaClid = ""
 		}
-	} else if u.URL == "" && u.FirstURL == "" && u.FBP == "" && u.FBC == "" && u.GCLID == "" && u.TTClid == "" {
+	} else if sourceURL == "" {
 		actionSource = "system_generated"
 	}
 
@@ -64,21 +66,16 @@ func buildAISendEventInput(
 		eventName = domain.EventLeadSubmitted
 	}
 
-	var linked domain.LinkedTrackingFields
-	if usersRepo != nil {
-		linked, _ = usersRepo.LinkedFieldsByAccount(ctx, cand.AccountID, u.ExternalID)
-	}
-
-	sourceURL := util.FirstNonEmpty(u.URL, u.FirstURL)
-	if actionSource == "business_messaging" {
-		sourceURL = ""
+	ts := time.Now().Unix()
+	if !evTime.IsZero() {
+		ts = util.ClampEventTime(evTime.Unix(), time.Now())
 	}
 
 	return domain.SendEventInput{
 		PixelName:        pixel.Name,
 		EventName:        eventName,
 		EventID:          eventID,
-		EventTime:        time.Now().Unix(),
+		EventTime:        ts,
 		SourceURL:        sourceURL,
 		Gateway:          "whatsapp_ai",
 		ActionSource:     actionSource,
@@ -97,17 +94,17 @@ func buildAISendEventInput(
 		State:            u.State,
 		City:             u.City,
 		PostalCode:       u.PostalCode,
-		FBP:              util.FirstNonEmpty(u.FBP, linked.FBP),
-		FBC:              util.FirstNonEmpty(u.FBC, linked.FBC),
-		GCLID:            util.FirstNonEmpty(u.GCLID, linked.GCLID),
-		WBraid:           util.FirstNonEmpty(u.WBraid, linked.WBraid),
-		GBraid:           util.FirstNonEmpty(u.GBraid, linked.GBraid),
-		TTClid:           util.FirstNonEmpty(u.TTClid, linked.TTClid),
-		TTP:              util.FirstNonEmpty(u.TTP, linked.TTP),
-		GA4ClientID:      util.FirstNonEmpty(u.GA4ClientID, linked.GA4ClientID),
-		GA4SessionID:     util.FirstNonEmpty(u.GA4SessionID, linked.GA4SessionID),
+		FBP:              u.FBP,
+		FBC:              u.FBC,
+		GCLID:            u.GCLID,
+		WBraid:           u.WBraid,
+		GBraid:           u.GBraid,
+		TTClid:           u.TTClid,
+		TTP:              u.TTP,
+		GA4ClientID:      u.GA4ClientID,
+		GA4SessionID:     u.GA4SessionID,
 		Value:            value,
-		Currency:         domain.NormalizeWhatsAppCurrency(cand.Currency),
+		Currency:         domain.NormalizeWhatsAppCurrency(util.FirstNonEmpty(currency, cand.Currency)),
+		CRMSynced:        true,
 	}
 }
-

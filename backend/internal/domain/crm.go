@@ -1,6 +1,11 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+const CRMTriggerNone = "none"
 
 type CRMStage struct {
 	ID           int64     `json:"id"`
@@ -44,4 +49,39 @@ type CRMNote struct {
 	CRMLeadID int64     `json:"crm_lead_id"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// IsWhatsAppOrCTWAUser indica se o lead entrou por WhatsApp/CTWA para seleção da coluna de gatilho no CRM.
+func IsWhatsAppOrCTWAUser(tu *TrackedUser) bool {
+	if tu == nil {
+		return false
+	}
+	return tu.CtwaClid != "" || tu.WaAdID != "" || strings.HasPrefix(tu.ExternalID, "wpp:")
+}
+
+// EffectiveStageTrigger resolve o evento efetivo da etapa do CRM para leads Web ou WhatsApp/CTWA,
+// respeitando o valor sentinela "none" (desativado explicitamente).
+func EffectiveStageTrigger(stage *CRMStage, isCTWA bool) string {
+	if stage == nil {
+		return ""
+	}
+	webEv := strings.TrimSpace(stage.TriggerEvent)
+	if strings.EqualFold(webEv, CRMTriggerNone) {
+		webEv = ""
+	}
+	if !isCTWA {
+		return webEv
+	}
+	ctwaRaw := strings.TrimSpace(stage.TriggerEventCTWA)
+	if strings.EqualFold(ctwaRaw, CRMTriggerNone) {
+		return ""
+	}
+	ev := ctwaRaw
+	if ev == "" {
+		ev = webEv
+	}
+	if ev == EventLead {
+		return EventLeadSubmitted
+	}
+	return ev
 }

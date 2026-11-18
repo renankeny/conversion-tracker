@@ -24,8 +24,9 @@ func evaluateAttendantTriggers(
 	u *domain.TrackedUser,
 	chatID int64,
 	phone, waMessageID, content string,
+	isFromMe bool,
 ) error {
-	if strings.TrimSpace(content) == "" || deps.Enqueuer == nil || u == nil {
+	if !isFromMe || strings.TrimSpace(content) == "" || deps.Enqueuer == nil || u == nil {
 		return nil
 	}
 
@@ -43,6 +44,9 @@ func evaluateAttendantTriggers(
 	if err != nil || pixel == nil || !pixel.Enabled {
 		return nil
 	}
+	if deps.Users != nil {
+		deps.Users.EnrichGroupFields(ctx, u)
+	}
 
 	chat, _ := deps.WhatsApp.GetChatByID(ctx, inst.AccountID, chatID)
 	ctwaClid := u.CtwaClid
@@ -51,22 +55,32 @@ func evaluateAttendantTriggers(
 		ctwaClid = util.FirstNonEmpty(chat.CtwaClid, ctwaClid)
 		pageID = chat.PageID
 	}
+	if ctwaClid != "" && pageID == "" && deps.WhatsApp != nil {
+		pageID = deps.WhatsApp.FindPageIDByCtwaClid(ctx, inst.AccountID, ctwaClid)
+		if pageID == "" && u.ID > 0 {
+			pageID = deps.WhatsApp.FindPageIDByTrackedUserID(ctx, inst.AccountID, u.ID)
+		}
+	}
 	if ctwaClid != "" && pageID == "" {
 		if oauthAcc, _ := resolvePixelMetaOAuth(ctx, deps, pixel); oauthAcc != nil && oauthAcc.DefaultPageID != "" {
 			pageID = oauthAcc.DefaultPageID
 		}
 	}
 
+	sourceURL := util.FirstNonEmpty(u.URL, u.FirstURL)
 	actionSource := "website"
 	msgChannel := ""
 	if ctwaClid != "" {
 		if pageID != "" {
 			actionSource = "business_messaging"
 			msgChannel = "whatsapp"
+			sourceURL = ""
 		} else {
 			actionSource = "system_generated"
 			ctwaClid = ""
 		}
+	} else if sourceURL == "" {
+		actionSource = "system_generated"
 	}
 
 	type triggerMatch struct {
@@ -89,72 +103,72 @@ func evaluateAttendantTriggers(
 		matches = append(matches, triggerMatch{eventName: strings.TrimSpace(inst.CustomEventName), phrase: matchedCustom, allowBare: true})
 	}
 
-	var linked domain.LinkedTrackingFields
-	if deps.Users != nil {
-		linked, _ = deps.Users.LinkedFieldsByAccount(ctx, inst.AccountID, u.ExternalID)
-	}
-
 	var firstErr error
 	for _, tm := range matches {
 		eventID := waMessageID + ":" + tm.eventName
-		if exists, _ := deps.SentEvents.ExistsSent(ctx, pixel.AccountID, eventID, pixel.Name, ""); exists {
-			continue
+		if deps.SentEvents != nil {
+			if exists, _ := deps.SentEvents.ExistsSent(ctx, pixel.AccountID, eventID, pixel.Name, ""); exists {
+				continue
+			}
+			if tm.eventName == domain.EventLead || tm.eventName == domain.EventLeadSubmitted || tm.eventName == domain.EventQualifiedLead {
+				if already, _ := deps.SentEvents.HasLeadConversionSent(ctx, pixel.AccountID, u.ID, u.ExternalID, pixel.Name); already {
+					continue
+				}
+			}
 		}
 
 		var valPtr *float64
 		if v, ok := util.ExtractMoneyFromMessage(content, tm.phrase, tm.allowBare); ok && v > 0 {
 			valPtr = &v
 		}
-
-		if deps.CRM != nil && u.ID > 0 {
-			if leadID, synced := deps.CRM.SyncLeadFromEventTrigger(ctx, inst.AccountID, u.ID, tm.eventName, valPtr); synced && deps.Redis != nil {
-				wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{
-					"action":  "whatsapp_trigger_synced",
-					"lead_id": leadID,
-					"event":   tm.eventName,
-				})
+		if tm.eventName == domain.EventPurchase && valPtr == nil {
+			if deps.CRM != nil && u.ID > 0 {
+				if crmVal := deps.CRM.GetLeadValueByTrackedUser(ctx, inst.AccountID, u.ID); crmVal > 0 {
+					valPtr = &crmVal
+				}
+			}
+			if valPtr == nil && len(pixel.TrackerConfig.ProductValue) > 0 && pixel.TrackerConfig.ProductValue[0] > 0 {
+				pv := pixel.TrackerConfig.ProductValue[0]
+				valPtr = &pv
 			}
 		}
 
-		sourceURL := util.FirstNonEmpty(u.URL, u.FirstURL)
-		if actionSource == "business_messaging" {
-			sourceURL = ""
+		if tm.eventName == domain.EventPurchase {
+			if valPtr == nil || *valPtr <= 0 {
+				slog.Warn("skipping whatsapp trigger Purchase without positive value", "pixel_name", pixel.Name, "chat_id", chatID)
+				continue
+			}
+			if deps.SentEvents != nil {
+				if dup, _ := deps.SentEvents.HasMatchingPurchaseSent(ctx, pixel.AccountID, u.ID, u.ExternalID, pixel.Name, *valPtr, time.Now()); dup {
+					if deps.CRM != nil && u.ID > 0 {
+						if leadID, synced := deps.CRM.SyncOrCreateLeadOnPurchase(ctx, inst.AccountID, u.ID, *valPtr, false); synced && deps.Redis != nil {
+							wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{"action": "whatsapp_trigger_synced", "lead_id": leadID, "event": tm.eventName})
+						}
+					}
+					continue
+				}
+			}
+			if deps.CRM != nil && u.ID > 0 {
+				if leadID, synced := deps.CRM.SyncOrCreateLeadOnPurchase(ctx, inst.AccountID, u.ID, *valPtr, true); synced && deps.Redis != nil {
+					wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{"action": "whatsapp_trigger_synced", "lead_id": leadID, "event": tm.eventName})
+				}
+			}
+		} else if deps.CRM != nil && u.ID > 0 {
+			if leadID, synced := deps.CRM.SyncLeadFromEventTrigger(ctx, inst.AccountID, u.ID, tm.eventName, valPtr); synced && deps.Redis != nil {
+				wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{"action": "whatsapp_trigger_synced", "lead_id": leadID, "event": tm.eventName})
+			}
 		}
 
 		if err := deps.Enqueuer.EnqueueSendEvent(ctx, domain.SendEventInput{
-			PixelName:        pixel.Name,
-			EventName:        tm.eventName,
-			EventID:          eventID,
-			EventTime:        time.Now().Unix(),
-			SourceURL:        sourceURL,
-			Gateway:          "whatsapp",
-			ActionSource:     actionSource,
-			MessagingChannel: msgChannel,
-			CtwaClid:         ctwaClid,
-			PageID:           pageID,
-			ExternalID:       u.ExternalID,
-			IDWpp:            u.IDWpp,
-			ClientIP:         u.ClientIP,
-			ClientUserAgent:  u.ClientUserAgent,
-			Email:            u.Email,
-			Phone:            util.FirstNonEmpty(phone, u.Phone),
-			FirstName:        u.FirstName,
-			LastName:         u.LastName,
-			Country:          u.Country,
-			State:            u.State,
-			City:             u.City,
-			PostalCode:       u.PostalCode,
-			FBP:              util.FirstNonEmpty(u.FBP, linked.FBP),
-			FBC:              util.FirstNonEmpty(u.FBC, linked.FBC),
-			GCLID:            util.FirstNonEmpty(u.GCLID, linked.GCLID),
-			WBraid:           util.FirstNonEmpty(u.WBraid, linked.WBraid),
-			GBraid:           util.FirstNonEmpty(u.GBraid, linked.GBraid),
-			TTClid:           util.FirstNonEmpty(u.TTClid, linked.TTClid),
-			TTP:              util.FirstNonEmpty(u.TTP, linked.TTP),
-			GA4ClientID:      util.FirstNonEmpty(u.GA4ClientID, linked.GA4ClientID),
-			GA4SessionID:     util.FirstNonEmpty(u.GA4SessionID, linked.GA4SessionID),
-			Value:            valPtr,
-			Currency:         domain.NormalizeWhatsAppCurrency(inst.Currency),
+			PixelName: pixel.Name, EventName: tm.eventName, EventID: eventID, EventTime: time.Now().Unix(),
+			SourceURL: sourceURL, Gateway: "whatsapp_trigger", ActionSource: actionSource, MessagingChannel: msgChannel,
+			CtwaClid: ctwaClid, PageID: pageID, ExternalID: u.ExternalID, IDWpp: u.IDWpp,
+			ClientIP: u.ClientIP, ClientUserAgent: u.ClientUserAgent, Email: u.Email,
+			Phone: util.FirstNonEmpty(phone, u.Phone), FirstName: u.FirstName, LastName: u.LastName,
+			Country: u.Country, State: u.State, City: u.City, PostalCode: u.PostalCode,
+			FBP: u.FBP, FBC: u.FBC, GCLID: u.GCLID, WBraid: u.WBraid, GBraid: u.GBraid,
+			TTClid: u.TTClid, TTP: u.TTP, GA4ClientID: u.GA4ClientID, GA4SessionID: u.GA4SessionID,
+			Value: valPtr, Currency: domain.NormalizeWhatsAppCurrency(inst.Currency), CRMSynced: true,
 		}); err != nil {
 			slog.Error("enqueue whatsapp trigger event failed", "pixel_name", pixel.Name, "event_id", eventID, "error", err)
 			if firstErr == nil {
@@ -166,7 +180,7 @@ func evaluateAttendantTriggers(
 }
 
 // matchPhraseTriggerWithTerm suporta múltiplos termos separados por vírgula ou ponto-e-vírgula,
-// ignorando maiúsculas/minúsculas e acentuação (ex: "pagamento confirmado, pix recebido").
+// ignorando maiúsculas/minúsculas e acentuação e escapando metacaracteres de regex.
 func matchPhraseTriggerWithTerm(trigger, text string) (string, bool) {
 	trigger = strings.TrimSpace(trigger)
 	text = strings.TrimSpace(text)
@@ -175,10 +189,7 @@ func matchPhraseTriggerWithTerm(trigger, text string) (string, bool) {
 	}
 
 	normText := foldAccentsLower(text)
-	parts := strings.FieldsFunc(trigger, func(r rune) bool { return r == ',' || r == ';' })
-	if len(parts) == 0 {
-		parts = []string{trigger}
-	}
+	parts := splitTriggerTerms(trigger)
 
 	for _, rawPart := range parts {
 		part := strings.TrimSpace(rawPart)
@@ -189,11 +200,30 @@ func matchPhraseTriggerWithTerm(trigger, text string) (string, bool) {
 		if normPart != "" && strings.Contains(normText, normPart) {
 			return part, true
 		}
-		if rx, err := regexp.Compile("(?i)" + part); err == nil && rx.MatchString(text) {
+		if rx, err := regexp.Compile("(?i)" + regexp.QuoteMeta(part)); err == nil && rx.MatchString(text) {
 			return part, true
 		}
 	}
 	return "", false
+}
+
+func splitTriggerTerms(s string) []string {
+	rs := []rune(s)
+	var parts []string
+	start := 0
+	for i, r := range rs {
+		isSep := r == ';'
+		if r == ',' {
+			decimalComma := i > 0 && i+1 < len(rs) && unicode.IsDigit(rs[i-1]) && unicode.IsDigit(rs[i+1])
+			isSep = !decimalComma
+		}
+		if isSep {
+			parts = append(parts, string(rs[start:i]))
+			start = i + 1
+		}
+	}
+	parts = append(parts, string(rs[start:]))
+	return parts
 }
 
 func foldAccentsLower(s string) string {

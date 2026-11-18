@@ -43,10 +43,11 @@ interface Props {
 const props = defineProps<Props>()
 defineEmits<{ toggle: [] }>()
 
-type State = 'ok' | 'pending' | 'error' | 'absent'
+type State = 'ok' | 'pending' | 'contested' | 'error' | 'absent'
 
 const state = computed<State>(() => {
   if (!props.data) return 'absent'
+  if (props.data.status === 'contested') return 'contested'
   if (props.data.error || props.data.status === 'failed') return 'error'
   if (props.data.status === 'queued') return 'pending'
   if (props.data.status === 'sent' && props.data.response_code >= 200 && props.data.response_code < 300) {
@@ -57,6 +58,7 @@ const state = computed<State>(() => {
 
 const statusCode = computed(() => {
   if (!props.data) return '-'
+  if (props.data.status === 'contested') return 'IA'
   if (props.data.status === 'queued' && !props.data.response_code) return 'FILA'
   return props.data.response_code || '-'
 })
@@ -64,6 +66,7 @@ const statusCode = computed(() => {
 const statusText = computed(() => {
   if (!props.data) return 'Não enviado'
   if (state.value === 'ok') return 'Sucesso'
+  if (state.value === 'contested') return 'Contestado (IA)'
   if (state.value === 'error') return 'Falhou'
   return 'Pendente'
 })
@@ -79,7 +82,8 @@ const statusText = computed(() => {
 }
 
 .channel-card[data-state="ok"] { border-color: var(--brand-border); }
-.channel-card[data-state="pending"] { border-color: var(--warning-border); }
+.channel-card[data-state="pending"],
+.channel-card[data-state="contested"] { border-color: var(--warning-border); }
 .channel-card[data-state="error"] { border-color: var(--danger-border); }
 .channel-card[data-state="absent"] { opacity: 0.65; }
 .channel-card[data-expanded="true"] { grid-column: 1 / -1; }
@@ -160,7 +164,8 @@ const statusText = computed(() => {
   border: 1px solid var(--brand-border);
 }
 
-.card-code[data-state="pending"] {
+.card-code[data-state="pending"],
+.card-code[data-state="contested"] {
   background: var(--warning-soft);
   color: var(--warning);
   border: 1px solid var(--warning-border);

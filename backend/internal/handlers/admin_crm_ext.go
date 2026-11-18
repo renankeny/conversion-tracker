@@ -170,10 +170,6 @@ func (h *AdminCRM) APICreateLead(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid stage_id for this account")
 		return
 	}
-	if stage.TriggerEvent == domain.EventPurchase && req.Value <= 0 {
-		writeError(w, http.StatusBadRequest, "value required for purchase stage")
-		return
-	}
 	if req.PixelName != "" && req.PixelName != "api_import" && h.pixels != nil {
 		if _, err := RequireAccountPixel(ctx, h.pixels, accountID, req.PixelName); err != nil {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -201,6 +197,12 @@ func (h *AdminCRM) APICreateLead(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("resolve identity link on crm create failed", "err", lerr, "external_id", trackedUser.ExternalID)
 		}
 	}
+	h.users.EnrichGroupFields(ctx, trackedUser)
+	effEvent := domain.EffectiveStageTrigger(stage, domain.IsWhatsAppOrCTWAUser(trackedUser))
+	if effEvent == domain.EventPurchase && req.Value <= 0 {
+		writeError(w, http.StatusBadRequest, "value required for purchase stage")
+		return
+	}
 
 	leadID, prevStageID, err := h.crmRepo.CreateOrUpdateLeadAPI(ctx, accountID, trackedUser.ID, req.StageID, req.Value)
 	if err != nil {
@@ -208,11 +210,11 @@ func (h *AdminCRM) APICreateLead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if stage.TriggerEvent != "" && (prevStageID == nil || *prevStageID != req.StageID) {
+	if effEvent != "" && (prevStageID == nil || *prevStageID != req.StageID) {
 		if fullLead, gerr := h.crmRepo.GetLeadByID(ctx, leadID, accountID); gerr == nil && fullLead.TrackedUser != nil {
-			h.dispatchCRMStageTrigger(ctx, accountID, stage, fullLead.TrackedUser, req.Value)
+			h.dispatchCRMStageTrigger(ctx, accountID, leadID, stage, fullLead.TrackedUser, req.Value)
 		} else {
-			h.dispatchCRMStageTrigger(ctx, accountID, stage, trackedUser, req.Value)
+			h.dispatchCRMStageTrigger(ctx, accountID, leadID, stage, trackedUser, req.Value)
 		}
 	}
 

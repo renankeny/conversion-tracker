@@ -101,11 +101,9 @@ export const useEventsFilters = () => {
     if (eventsFilterLoaded && nextEvent !== lastEventCSV) {
       lastEventCSV = nextEvent
       const arr = nextEvent.split(',').map((s) => s.trim()).filter(Boolean)
-      if (nextPixel !== '') {
-        eventsFilterMap.value = { ...eventsFilterMap.value, [nextPixel]: arr }
-        if (canManageUsers.value) {
-          accountsApi.updateEventsFilter(nextPixel, arr).catch(() => {})
-        }
+      eventsFilterMap.value = { ...eventsFilterMap.value, [nextPixel]: arr }
+      if (canManageUsers.value) {
+        accountsApi.updateEventsFilter(nextPixel, arr).catch(() => {})
       }
     }
 

@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"context"
 	"testing"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
@@ -48,3 +49,49 @@ func TestNormalizeCtwaMinMessages_FallbackToDefault(t *testing.T) {
 	}
 }
 
+func TestEffectiveStageTrigger_DefaultFunnelAndNone(t *testing.T) {
+	stage0 := &domain.CRMStage{Name: "Novo Lead", OrderIndex: 0, TriggerEvent: "", TriggerEventCTWA: domain.EventLeadSubmitted}
+	if got := domain.EffectiveStageTrigger(stage0, false); got != "" {
+		t.Fatalf("Stage 0 Web trigger must be empty, got %q", got)
+	}
+	if got := domain.EffectiveStageTrigger(stage0, true); got != domain.EventLeadSubmitted {
+		t.Fatalf("Stage 0 CTWA trigger must be LeadSubmitted, got %q", got)
+	}
+
+	stageDisabled := &domain.CRMStage{Name: "Novo Lead", OrderIndex: 0, TriggerEvent: domain.EventLead, TriggerEventCTWA: domain.CRMTriggerNone}
+	if got := domain.EffectiveStageTrigger(stageDisabled, true); got != "" {
+		t.Fatalf("Stage with trigger_event_ctwa='none' must return empty for CTWA, got %q", got)
+	}
+	if got := domain.EffectiveStageTrigger(stageDisabled, false); got != domain.EventLead {
+		t.Fatalf("Stage with trigger_event_ctwa='none' must still fire Web trigger, got %q", got)
+	}
+
+	stageWon := &domain.CRMStage{Name: "Venda Fechada", OrderIndex: 4, TriggerEvent: domain.EventPurchase, TriggerEventCTWA: domain.EventPurchase}
+	if domain.EffectiveStageTrigger(stageWon, false) != domain.EventPurchase || domain.EffectiveStageTrigger(stageWon, true) != domain.EventPurchase {
+		t.Fatalf("Venda Fechada must fire Purchase for both Web and CTWA")
+	}
+}
+
+func TestEvaluateAttendantTriggers_IgnoresInboundAndEscapesRegex(t *testing.T) {
+	called := false
+	enq := &Enqueuer{
+		sendHook: func(_ context.Context, _ domain.SendEventInput) error {
+			called = true
+			return nil
+		},
+	}
+	inst := &domain.WhatsAppInstance{PurchaseTrigger: "pix confirmado, R$ 197,00 (bônus+vip)"}
+	u := &domain.TrackedUser{ID: 1, ExternalID: "wpp:5511999998888"}
+
+	if err := evaluateAttendantTriggers(context.Background(), Deps{Enqueuer: enq}, inst, u, 10, "5511999998888", "m1", "pix confirmado!", false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called {
+		t.Fatal("inbound client message (isFromMe=false) must NEVER trigger attendant phrase triggers")
+	}
+
+	term, ok := matchPhraseTriggerWithTerm(inst.PurchaseTrigger, "Seu pagamento R$ 197,00 (BÔNUS+VIP) está liberado")
+	if !ok || term != "R$ 197,00 (bônus+vip)" {
+		t.Fatalf("expected regex metacharacters to match safely, got ok=%v term=%q", ok, term)
+	}
+}

@@ -31,6 +31,9 @@ type Webhooks struct {
 	tokens      *repo.PlatformTokenRepo
 	webhookLogs *repo.WebhookLogRepo // opcional: nil = sem logging
 	whatsapp    *repo.WhatsAppRepo   // opcional: resolve page_id em vendas CTWA
+	metaAcc     *repo.MetaAccountRepo
+	crmRepo     *repo.CRMRepo
+	sentEvents  *repo.SentEventRepo
 	rdb         *redis.Client
 }
 
@@ -61,6 +64,12 @@ func (h *Webhooks) SetRedis(r *redis.Client) { h.rdb = r }
 // SetWhatsAppRepo permite enriquecer conversões de vendas fechadas após anúncio CTWA.
 func (h *Webhooks) SetWhatsAppRepo(wa *repo.WhatsAppRepo) { h.whatsapp = wa }
 
+func (h *Webhooks) SetMetaAndCRMDeps(m *repo.MetaAccountRepo, crm *repo.CRMRepo, se *repo.SentEventRepo) {
+	h.metaAcc = m
+	h.crmRepo = crm
+	h.sentEvents = se
+}
+
 // ReplayWebhook reprocessa um webhook_log pelo ID.
 // Chamado pelo painel admin no endpoint POST /admin/webhook-logs/:id/replay.
 func (h *Webhooks) ReplayWebhook(ctx context.Context, id int64, accountID int64) (map[string]any, error) {
@@ -76,6 +85,10 @@ func (h *Webhooks) ReplayWebhook(ctx context.Context, id int64, accountID int64)
 	}
 	in := toPurchaseInput(wpi)
 	in.IsReplay = true
+	in.ReplayEventID = log.EventID
+	if !log.ReceivedAt.IsZero() {
+		in.ReplayEventTime = log.ReceivedAt.Unix()
+	}
 	result, _ := h.enqueueGenericPurchase(ctx, in, nil)
 	// Marca como replayed
 	status := "replayed"
@@ -128,6 +141,8 @@ type purchaseInput struct {
 	RawPayload      []byte
 	CustomWebhookID string
 	IsReplay        bool
+	ReplayEventID   string
+	ReplayEventTime int64
 }
 
 // processGenericPurchase é o fluxo single-item: processa UM purchaseInput,

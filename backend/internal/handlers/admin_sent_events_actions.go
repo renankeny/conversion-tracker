@@ -5,10 +5,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
 
@@ -131,6 +133,7 @@ func (h *AdminSentEvents) Retry(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		in.IsReplay = true
+		in.EventTime = util.ClampEventTime(in.EventTime, time.Now())
 		if err := h.enqueuer.EnqueueSendEvent(ctx, in); err != nil {
 			slog.Warn("retry: enqueue failed", "event_id", in.EventID, "err", err)
 			continue

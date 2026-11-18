@@ -17,16 +17,20 @@ export const CRM_WEB_TRIGGER_EVENTS = [
 ]
 
 export const CRM_CTWA_TRIGGER_EVENTS = [
-  { value: '', label: 'Nenhum (ou seguir evento Web)' },
+  { value: '', label: 'Automático (Seguir evento Web)' },
+  { value: 'none', label: 'Não disparar evento em CTWA (Desativado)' },
   { value: 'LeadSubmitted', label: 'LeadSubmitted (Lead WhatsApp / CAPI)' },
-  { value: 'AddToCart', label: 'AddToCart (Adicionar ao Carrinho no WhatsApp)' },
+  { value: 'QualifiedLead', label: 'QualifiedLead (Lead Qualificado)' },
   { value: 'Purchase', label: 'Purchase (Venda Fechada no WhatsApp)' },
   { value: 'InitiateCheckout', label: 'InitiateCheckout (Início de Checkout/Negociação)' },
+  { value: 'AddToCart', label: 'AddToCart (Adicionar ao Carrinho no WhatsApp)' },
   { value: 'Contact', label: 'Contact (Conversa Iniciada)' },
   { value: 'Schedule', label: 'Schedule (Agendamento/Reunião Marcada)' },
   { value: 'ViewContent', label: 'ViewContent (Visualização de Catálogo/Produto)' },
   { value: 'AddPaymentInfo', label: 'AddPaymentInfo (Info de Pagamento no WhatsApp)' },
   { value: 'CompleteRegistration', label: 'CompleteRegistration (Cadastro Completo via Chat)' },
+  { value: 'Subscribe', label: 'Subscribe (Assinatura no WhatsApp)' },
+  { value: 'StartTrial', label: 'StartTrial (Período Gratuito no WhatsApp)' },
   { value: 'Search', label: 'Search (Pesquisa no Catálogo/Chat)' },
   { value: 'AddToWishlist', label: 'AddToWishlist (Lista de Desejos)' },
 ]

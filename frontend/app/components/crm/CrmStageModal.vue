@@ -45,9 +45,9 @@
       <BaseDropdown
         v-model="stage.trigger_event_ctwa"
         label="Evento WhatsApp / CTWA (Business Messaging)"
-        placeholder="Nenhum"
+        placeholder="Automático (Seguir evento Web)"
         :options="CRM_CTWA_TRIGGER_EVENTS"
-        hint="Disparado via Meta Business Messaging CAPI para leads de anúncios de WhatsApp."
+        hint="Na 1ª etapa, respeita o filtro de 1ª ou 3ª mensagem da conexão WhatsApp. Escolha 'Não disparar' para desativar."
       />
     </div>
 

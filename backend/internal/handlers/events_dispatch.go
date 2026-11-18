@@ -12,6 +12,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/service"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
+	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
 
 func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest) {
@@ -93,6 +94,9 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 	}
 
 	eventID := req.EventID
+	if eventID == "" && req.EventType == domain.EventPurchase {
+		eventID = strings.TrimSpace(util.FirstNonEmpty(req.OrderID, req.OrderIDAlt))
+	}
 	if eventID == "" {
 		eventID = util.GenerateID10()
 	}
@@ -141,6 +145,40 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 	if contentID == "" {
 		contentID = pixel.Name
 	}
+	contentType := util.FirstNonEmpty(req.ContentType, req.ContentTypeAlt, "product")
+	valPtr := req.Price
+	if req.EventType == domain.EventPurchase {
+		if (valPtr == nil || *valPtr <= 0) && len(pixel.TrackerConfig.ProductValue) > 0 && pixel.TrackerConfig.ProductValue[0] > 0 {
+			pv := pixel.TrackerConfig.ProductValue[0]
+			valPtr = &pv
+		}
+		if valPtr == nil || *valPtr <= 0 {
+			cache.ReleaseEventDedup(ctx, h.rdb, pixel.AccountID, pixel.Name, eventID)
+			writeError(w, http.StatusBadRequest, "price (> 0) required for Purchase")
+			return
+		}
+		orderID := strings.TrimSpace(util.FirstNonEmpty(req.OrderID, req.OrderIDAlt))
+		var tuID int64
+		if tu, err := h.users.FindByExternalIDByAccount(ctx, req.UserID, pixel.AccountID); err == nil && tu != nil {
+			tuID = tu.ID
+		}
+		if h.sentEvents != nil {
+			if dup, _ := h.sentEvents.HasDuplicateExternalPurchase(ctx, pixel.AccountID, tuID, req.UserID, pixel.Name, orderID, *valPtr, time.Now()); dup {
+				if h.crmRepo != nil && tuID > 0 {
+					if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, pixel.AccountID, tuID, *valPtr, false); synced && h.rdb != nil {
+						wshub.PublishCustom(ctx, h.rdb, pixel.AccountID, "crm_updated", map[string]any{"action": "web_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
+					}
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true, "event_id": eventID})
+				return
+			}
+		}
+		if h.crmRepo != nil && tuID > 0 {
+			if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, pixel.AccountID, tuID, *valPtr, true); synced && h.rdb != nil {
+				wshub.PublishCustom(ctx, h.rdb, pixel.AccountID, "crm_updated", map[string]any{"action": "web_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
+			}
+		}
+	}
 
 	in := domain.SendEventInput{
 		PixelName:       pixel.Name,
@@ -150,10 +188,10 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 		SourceURL:       mappedURL,
 		ContentID:       contentID,
 		ContentName:     req.ContentName,
-		ContentType:     "product",
+		ContentType:     contentType,
 		OrderID:         util.FirstNonEmpty(req.OrderID, req.OrderIDAlt),
-		Value:           req.Price,
-		Currency:        req.Currency,
+		Value:           valPtr,
+		Currency:        domain.NormalizeWhatsAppCurrency(req.Currency),
 		ExternalID:      req.UserID,
 		IDWpp:           req.IDWpp,
 		ClientIP:        ip,
@@ -176,6 +214,7 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 		GBraid:          req.GBraid,
 		GA4ClientID:     req.GA4ClientID,
 		GA4SessionID:    req.GA4SessionID,
+		CRMSynced:       req.EventType == domain.EventPurchase,
 	}
 	service.EnrichSendInput(ctx, h.users, pixel.AccountID, &in)
 

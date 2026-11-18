@@ -568,7 +568,10 @@
     ViewVideo_25: true, ViewVideo_50: true, ViewVideo_75: true, ViewVideo_90: true
   };
 
-  var valueEvents = { Lead: true, InitiateCheckout: true, Purchase: true };
+  var valueEvents = {
+    Lead: true, InitiateCheckout: true, Purchase: true,
+    AddToCart: true, ViewContent: true, Schedule: true, Subscribe: true, StartTrial: true
+  };
 
   // === sendEvent ========================================================
 
@@ -580,7 +583,14 @@
       sentOnce[eventType] = true;
     }
 
-    var eventId = generateCustomId();
+    var resolvedOrderId = data.order_id || data.orderId || data.orderID || "";
+    var eventId = String(
+      data.event_id || data.eventId || (eventType === "Purchase" && resolvedOrderId ? resolvedOrderId : "") || generateCustomId()
+    );
+    var resolvedValue = typeof data.value === "number" && data.value > 0 ? data.value : null;
+    if (!resolvedValue && eventType === "Purchase" && TF_CONFIG.product_value && TF_CONFIG.product_value.length > 0 && TF_CONFIG.product_value[0] > 0) {
+      resolvedValue = TF_CONFIG.product_value[0];
+    }
 
     if (TF_CONFIG.auto_form_scraping && (eventType === "Lead" || eventType === "Contact" || eventType === "InitiateCheckout" || eventType === "Purchase")) {
       scrapeFormsToCookie();
@@ -596,12 +606,12 @@
     if (contentId) {
       fbqCustomData.content_ids = [contentId];
     }
-    if (valueEvents[eventType] && typeof data.value === "number" && data.value > 0) {
-      fbqCustomData.value = data.value;
+    if (resolvedValue && (valueEvents[eventType] || typeof data.value === "number")) {
+      fbqCustomData.value = resolvedValue;
       fbqCustomData.currency = data.currency || TF_CONFIG.product_currency || "BRL";
     }
-    if (data.order_id || data.orderId || data.orderID) {
-      fbqCustomData.order_id = data.order_id || data.orderId || data.orderID;
+    if (resolvedOrderId) {
+      fbqCustomData.order_id = resolvedOrderId;
     }
 
     if (window.fbq && eventType !== "Init" && eventType !== "UpdateUserData") {
@@ -671,12 +681,12 @@
       contentId: contentId,
       content_name: data.content_name || data.contentName || null,
       content_type: data.content_type || data.contentType || "product",
-      order_id: data.order_id || data.orderId || data.orderID || null,
+      order_id: resolvedOrderId || null,
       eventId: eventId,
       URL: URLnow,
       referrer: document.referrer || null,
       webdriver: !!navigator.webdriver,
-      price: typeof data.value === "number" && data.value > 0 ? data.value : null,
+      price: resolvedValue,
       currency: data.currency || TF_CONFIG.product_currency || "BRL",
       fbc: data.fbc || clientUserData.fbc || metaCookies.fbc || null,
       fbp: data.fbp || clientUserData.fbp || metaCookies.fbp || null,
@@ -1175,7 +1185,10 @@
     if (fresh.first_name) ud.fn = fresh.first_name;
     if (fresh.last_name) ud.ln = fresh.last_name;
     if (fresh.email) ud.em = fresh.email;
-    if (fresh.phone) ud.ph = fresh.phone;
+    if (fresh.phone) {
+      var e164 = formatPhoneE164(fresh.phone);
+      ud.ph = e164 ? e164.replace(/^\+/, "") : fresh.phone;
+    }
     return ud;
   }
 
@@ -1543,7 +1556,16 @@
     var args = Array.prototype.slice.call(arguments);
     var cmd = args.shift();
     if (cmd === "send" || cmd === "event") {
-      sendEvent(args[0], args[1] || {});
+      var evArg = args[0];
+      var extraArg = args[1] || {};
+      if (evArg && typeof evArg === "object") {
+        var extracted = evArg.eventType || evArg.event_name || evArg.event || "";
+        extraArg = evArg;
+        evArg = extracted;
+      }
+      if (typeof evArg === "string" && evArg) {
+        sendEvent(evArg, extraArg);
+      }
     } else if (cmd === "updateUser") {
       var patch = args[0] || {};
       var current = getUserDataCookie();

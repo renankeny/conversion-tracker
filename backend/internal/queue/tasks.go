@@ -42,7 +42,8 @@ type WhatsAppMediaPayload struct {
 }
 
 type Enqueuer struct {
-	client *asynq.Client
+	client   *asynq.Client
+	sendHook func(context.Context, domain.SendEventInput) error
 }
 
 func NewEnqueuer(opt asynq.RedisClientOpt) *Enqueuer {
@@ -54,6 +55,9 @@ func (e *Enqueuer) Close() error { return e.client.Close() }
 
 // EnqueueSendEvent agenda envio assíncrono de conversões com prioridade alta.
 func (e *Enqueuer) EnqueueSendEvent(ctx context.Context, in domain.SendEventInput) error {
+	if e.sendHook != nil {
+		return e.sendHook(ctx, in)
+	}
 	payload, err := json.Marshal(in)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)

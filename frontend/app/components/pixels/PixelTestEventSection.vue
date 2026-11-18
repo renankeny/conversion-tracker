@@ -122,7 +122,10 @@ const autoEvents = computed(() => {
 
 const hasMeta = computed(() => (props.pixel?.pixel_count ?? 0) > 0)
 const hasTikTok = computed(() => (props.pixel?.tiktok_pixel_count ?? 0) > 0)
-const testEventOptions = ['Lead', 'PageView', 'ViewContent', 'AddToCart', 'InitiateCheckout', 'Purchase', 'CompleteRegistration'].map((v) => ({ value: v, label: v }))
+const testEventOptions = [
+  'Lead', 'PageView', 'ViewContent', 'AddToCart', 'InitiateCheckout',
+  'Purchase', 'CompleteRegistration', 'Contact', 'Schedule', 'Search', 'Subscribe', 'StartTrial',
+].map((v) => ({ value: v, label: v }))
 
 const testForm = reactive({
   event_name: 'Lead',
@@ -156,6 +159,8 @@ const onSendTestEvent = async () => {
     if (rawVal) {
       const v = parseFloat(rawVal)
       if (!Number.isNaN(v) && v > 0) input.value = v
+    } else if (testForm.event_name === 'Purchase') {
+      input.value = 97
     }
     const res = await pixelsApi.sendTestEvent(props.pixel.id, input)
     testResults.value = res.results

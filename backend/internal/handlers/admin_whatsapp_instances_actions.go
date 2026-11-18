@@ -57,7 +57,9 @@ func (h *AdminWhatsAppInstances) Update(w http.ResponseWriter, r *http.Request) 
 		if in.Provider == domain.WhatsAppProviderAPIPremium || in.Provider == domain.WhatsAppProviderUazapi {
 			inst.Provider = in.Provider
 		}
-		inst.ExternalAPIURL = strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/")
+		if extURL := strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/"); extURL != "" {
+			inst.ExternalAPIURL = extURL
+		}
 		if strings.TrimSpace(in.InstanceToken) != "" {
 			inst.InstanceToken = strings.TrimSpace(in.InstanceToken)
 		}

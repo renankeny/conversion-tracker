@@ -94,7 +94,7 @@
           </button>
         </div>
       </div>
-      <button type="button" class="row-remove" aria-label="Remover pixel Meta" @click="removePixelRow(idx)">×</button>
+      <button type="button" class="row-remove" aria-label="Remover pixel Meta" @click="onRemovePixelRow(idx)">×</button>
     </div>
   </div>
 </template>
@@ -102,6 +102,7 @@
 <script setup lang="ts">
 import BrandIcon from '~/components/events/BrandIcon.vue'
 import { usePixelMetaTab, type MetaTabFormState } from '~/composables/usePixelMetaTab'
+import { shiftIndexedFlags } from '~/utils/pixelMetaHelpers'
 
 const props = defineProps<{
   form: MetaTabFormState
@@ -136,6 +137,11 @@ const enableManualTokenRow = (idx: number) => {
 const resetRowToOAuth = (idx: number) => {
   manualTokenRows[idx] = false
   emit('clearManualMetaToken', idx)
+}
+
+const onRemovePixelRow = (idx: number) => {
+  removePixelRow(idx)
+  shiftIndexedFlags(manualTokenRows, idx, props.form.pixel_ids.length)
 }
 
 const tokenPlaceholder = (idx: number): string => {

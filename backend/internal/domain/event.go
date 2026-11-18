@@ -24,12 +24,22 @@ const (
 	EventAddToWishlist        = "AddToWishlist"
 	EventCompleteRegistration = "CompleteRegistration"
 	EventPurchase             = "Purchase"
+	EventSearch               = "Search"
+	EventSubscribe            = "Subscribe"
+	EventStartTrial           = "StartTrial"
 
 	// Business Messaging (action_source=business_messaging — CTWA/WhatsApp).
 	// "Lead" não é um evento suportado nessa superfície; o nome correto
 	// documentado pela Meta é "LeadSubmitted".
-	EventLeadSubmitted = "LeadSubmitted"
-	EventSchedule      = "Schedule"
+	EventLeadSubmitted  = "LeadSubmitted"
+	EventSchedule       = "Schedule"
+	EventOrderCreated   = "OrderCreated"
+	EventOrderShipped   = "OrderShipped"
+	EventOrderDelivered = "OrderDelivered"
+	EventOrderCanceled  = "OrderCanceled"
+	EventOrderReturned  = "OrderReturned"
+	EventCartAbandoned  = "CartAbandoned"
+	EventQualifiedLead  = "QualifiedLead"
 
 	// Custom (Meta CAPI trackCustom)
 	EventScroll25    = "Scroll_25"
@@ -52,7 +62,10 @@ func IsValidEventType(name string) bool {
 		EventPageView, EventViewContent, EventLead, EventContact,
 		EventInitiateCheckout, EventAddPaymentInfo, EventAddShippingInfo, EventAddToCart,
 		EventAddToWishlist, EventCompleteRegistration, EventPurchase,
+		EventSearch, EventSubscribe, EventStartTrial,
 		EventLeadSubmitted, EventSchedule,
+		EventOrderCreated, EventOrderShipped, EventOrderDelivered,
+		EventOrderCanceled, EventOrderReturned, EventCartAbandoned, EventQualifiedLead,
 		EventScroll25, EventScroll50, EventScroll75, EventScroll90,
 		EventTimer1Min, EventPlayVideo,
 		EventViewVideo25, EventViewVideo50, EventViewVideo75, EventViewVideo90:
@@ -138,7 +151,8 @@ type SendEventInput struct {
 	AggregatedItems []AggregatedItem `json:"aggregated_items,omitempty"`
 
 	// IsReplay marca reenvio manual pelo painel (não soma count_total novamente).
-	IsReplay bool `json:"is_replay,omitempty"`
+	IsReplay  bool `json:"is_replay,omitempty"`
+	CRMSynced bool `json:"crm_synced,omitempty"`
 }
 
 // AggregatedItem representa um item ou venda individual agrupado dentro de uma janela de tempo.

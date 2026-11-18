@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
@@ -17,6 +18,10 @@ type AdminWhatsAppChats struct {
 	repo         *repo.WhatsAppRepo
 	aiRepo       *repo.WhatsAppAIRepo
 	usersRepo    *repo.UserRepo
+	pixelsRepo   *repo.PixelRepo
+	metaAccRepo  *repo.MetaAccountRepo
+	crmRepo      *repo.CRMRepo
+	rdb          *redis.Client
 	enqueuer     *queue.Enqueuer
 	publicAPIURL string
 	jwtSecret    string
@@ -35,8 +40,10 @@ func (h *AdminWhatsAppChats) SetAIRepo(ai *repo.WhatsAppAIRepo) {
 	h.aiRepo = ai
 }
 
-func (h *AdminWhatsAppChats) SetUsersRepo(u *repo.UserRepo) {
-	h.usersRepo = u
+func (h *AdminWhatsAppChats) SetUsersRepo(u *repo.UserRepo) { h.usersRepo = u }
+
+func (h *AdminWhatsAppChats) SetMetaAndCRMDeps(px *repo.PixelRepo, m *repo.MetaAccountRepo, crm *repo.CRMRepo, rdb *redis.Client) {
+	h.pixelsRepo, h.metaAccRepo, h.crmRepo, h.rdb = px, m, crm, rdb
 }
 
 func (h *AdminWhatsAppChats) listAIEvents(r *http.Request, chatID int64) []*domain.WhatsAppAIEvent {

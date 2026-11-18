@@ -79,3 +79,43 @@ func TestBuildPayload_ValidCtwaDefaultsWhatsAppChannel(t *testing.T) {
 	}
 }
 
+func TestBuildPayload_WebsiteWithoutSourceURLFallsBackToSystemGenerated(t *testing.T) {
+	p := buildParsed(t, domain.SendEventInput{
+		EventName: domain.EventLeadSubmitted, EventID: "e4", EventTime: 1700000000,
+		ActionSource: "website", SourceURL: "", IDWpp: "rnd1234567",
+		Email: "user@example.com", Phone: "(00) 00000-0000",
+		FBP: "undefined", FBC: "IwAR123456789abcdef",
+		ExternalID: "  ext_123  ",
+	})
+	d := p.Data[0]
+	if d.ActionSource != "system_generated" {
+		t.Fatalf("expected system_generated without SourceURL, got %q", d.ActionSource)
+	}
+	if d.EventName != domain.EventLead {
+		t.Fatalf("expected LeadSubmitted outside business_messaging to map to Lead, got %q", d.EventName)
+	}
+	if _, ok := d.UserData["ph"]; ok {
+		t.Fatal("dummy phone (00) 00000-0000 must not be hashed into user_data.ph")
+	}
+	if _, ok := d.UserData["fbp"]; ok {
+		t.Fatal("literal 'undefined' fbp must be discarded")
+	}
+	if fbc, _ := d.UserData["fbc"].(string); fbc != "fb.1.1700000000000.IwAR123456789abcdef" {
+		t.Fatalf("expected raw fbclid formatted to fb.1.<ms>.<clid>, got %q", fbc)
+	}
+	if _, ok := d.UserData["subscription_id"]; ok {
+		t.Fatal("random web id_wpp must not be sent as subscription_id")
+	}
+}
+
+func TestBuildPayload_LeadMapsToLeadSubmittedOnBusinessMessaging(t *testing.T) {
+	p := buildParsed(t, domain.SendEventInput{
+		EventName: domain.EventLead, EventID: "e5", EventTime: 1700000000,
+		ActionSource: "business_messaging", CtwaClid: "clid_ok", PageID: "987654",
+	})
+	d := p.Data[0]
+	if d.ActionSource != "business_messaging" || d.EventName != domain.EventLeadSubmitted {
+		t.Fatalf("expected business_messaging + LeadSubmitted, got %q + %q", d.ActionSource, d.EventName)
+	}
+}
+

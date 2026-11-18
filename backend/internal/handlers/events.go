@@ -57,9 +57,11 @@ type sendRequest struct {
 	UserID       string   `json:"userId"`
 	IDWpp        string   `json:"id_wpp"`
 	PixelName    string   `json:"pixelName"`
-	ContentID    string   `json:"contentId"`
-	ContentName  string   `json:"content_name"`
-	OrderID      string   `json:"order_id"`
+	ContentID      string   `json:"contentId"`
+	ContentName    string   `json:"content_name"`
+	ContentType    string   `json:"content_type"`
+	ContentTypeAlt string   `json:"contentType"`
+	OrderID        string   `json:"order_id"`
 	OrderIDAlt   string   `json:"orderId"`
 	EventID      string   `json:"eventId"`
 	Price        *float64 `json:"price"`
