@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
@@ -47,7 +49,27 @@ func (e *ProxyError) Error() string {
 	return fmt.Sprintf("gateway meta ads status %d", e.StatusCode)
 }
 
-func (c *Client) callProxy(ctx context.Context, action, vaultToken, adAccountID, targetID, timeRange string, payload any, out any) error {
+func (c *Client) syncTokenExpiry(ctx context.Context, acc *domain.MetaAccount, newExp time.Time, force bool) {
+	if acc == nil || acc.ID <= 0 || c.cfg.Pool == nil {
+		return
+	}
+	if !force && acc.TokenExpiresAt != nil && !acc.TokenExpiresAt.IsZero() {
+		diff := newExp.Sub(*acc.TokenExpiresAt)
+		if diff > -time.Hour && diff < time.Hour {
+			return
+		}
+	}
+	acc.TokenExpiresAt = &newExp
+	_, _ = c.cfg.Pool.Exec(ctx, `
+		UPDATE meta_accounts SET token_expires_at = $2, updated_at = NOW() WHERE id = $1
+	`, acc.ID, newExp)
+}
+
+func (c *Client) callProxy(ctx context.Context, acc *domain.MetaAccount, action, adAccountID, targetID, timeRange string, payload any, out any) error {
+	vaultToken := ""
+	if acc != nil {
+		vaultToken = strings.TrimSpace(acc.VaultTokenEncrypted)
+	}
 	if vaultToken == "" {
 		return &ProxyError{StatusCode: http.StatusUnauthorized, Message: "conta Meta Ads sem conexão OAuth ativa"}
 	}
@@ -86,8 +108,18 @@ func (c *Client) callProxy(ctx context.Context, action, vaultToken, adAccountID,
 		return err
 	}
 	defer resp.Body.Close()
+
+	if expHdr := strings.TrimSpace(resp.Header.Get("X-Meta-Token-Expires-At")); expHdr != "" {
+		if expUnix, pErr := strconv.ParseInt(expHdr, 10, 64); pErr == nil && expUnix > 0 {
+			c.syncTokenExpiry(ctx, acc, time.Unix(expUnix, 0), false)
+		}
+	}
+
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
+		if resp.StatusCode == http.StatusUnauthorized {
+			c.syncTokenExpiry(ctx, acc, time.Now().Add(-time.Second), true)
+		}
 		var errEnv struct {
 			Error string `json:"error"`
 		}
@@ -109,13 +141,13 @@ func (c *Client) callProxy(ctx context.Context, action, vaultToken, adAccountID,
 
 func (c *Client) ListAdAccounts(ctx context.Context, acc *domain.MetaAccount) (map[string]any, error) {
 	var out map[string]any
-	err := c.callProxy(ctx, "list_ad_accounts", acc.VaultTokenEncrypted, "", "", "", nil, &out)
+	err := c.callProxy(ctx, acc, "list_ad_accounts", "", "", "", nil, &out)
 	return out, err
 }
 
 func (c *Client) ListPages(ctx context.Context, acc *domain.MetaAccount) (map[string]any, error) {
 	var out map[string]any
-	err := c.callProxy(ctx, "list_pages", acc.VaultTokenEncrypted, "", "", "", nil, &out)
+	err := c.callProxy(ctx, acc, "list_pages", "", "", "", nil, &out)
 	return out, err
 }
 
@@ -124,13 +156,13 @@ func (c *Client) ListPixels(ctx context.Context, acc *domain.MetaAccount, adAcco
 		adAccountID = acc.AdAccountID
 	}
 	var out map[string]any
-	err := c.callProxy(ctx, "list_pixels", acc.VaultTokenEncrypted, adAccountID, "", "", nil, &out)
+	err := c.callProxy(ctx, acc, "list_pixels", adAccountID, "", "", nil, &out)
 	return out, err
 }
 
 func (c *Client) GetAdMetadata(ctx context.Context, acc *domain.MetaAccount, adID string) (AdMetadata, error) {
 	var out AdMetadata
-	err := c.callProxy(ctx, "get_ad_metadata", acc.VaultTokenEncrypted, acc.AdAccountID, adID, "", nil, &out)
+	err := c.callProxy(ctx, acc, "get_ad_metadata", acc.AdAccountID, adID, "", nil, &out)
 	return out, err
 }
 
@@ -144,7 +176,7 @@ func (c *Client) FetchLiveInsights(ctx context.Context, acc *domain.MetaAccount,
 		adAccountID = acc.AdAccountID
 	}
 	var out meta.LiveInsightsSummary
-	err := c.callProxy(ctx, "live_spend", acc.VaultTokenEncrypted, adAccountID, "", timeRange, nil, &out)
+	err := c.callProxy(ctx, acc, "live_spend", adAccountID, "", timeRange, nil, &out)
 	out.Connected = err == nil
 	return out, err
 }
@@ -156,7 +188,7 @@ func (c *Client) FetchCreativeRanking(ctx context.Context, acc *domain.MetaAccou
 	var out struct {
 		Creatives []meta.CreativeInsight `json:"creatives"`
 	}
-	err := c.callProxy(ctx, "creative_ranking", acc.VaultTokenEncrypted, adAccountID, "", timeRange, nil, &out)
+	err := c.callProxy(ctx, acc, "creative_ranking", adAccountID, "", timeRange, nil, &out)
 	return out.Creatives, err
 }
 
@@ -165,7 +197,7 @@ func (c *Client) SendCAPIEvent(ctx context.Context, acc *domain.MetaAccount, pix
 		StatusCode int    `json:"status_code"`
 		Body       string `json:"body"`
 	}
-	err := c.callProxy(ctx, "send_capi_event", acc.VaultTokenEncrypted, acc.AdAccountID, pixelID, "", rawPayload, &out)
+	err := c.callProxy(ctx, acc, "send_capi_event", acc.AdAccountID, pixelID, "", rawPayload, &out)
 	if err != nil {
 		var pErr *ProxyError
 		if errors.As(err, &pErr) && out.StatusCode == 0 {
