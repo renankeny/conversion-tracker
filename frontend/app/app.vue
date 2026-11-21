@@ -26,6 +26,7 @@
 
     <NuxtLayout v-else>
       <NuxtPage />
+      <SystemEasyPanelGateModal />
     </NuxtLayout>
 
     <!-- Toast Container -->

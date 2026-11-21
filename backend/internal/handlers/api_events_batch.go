@@ -172,11 +172,12 @@ func (h *APIEvents) processEvent(
 		}
 	}
 	if h.crmRepo != nil && tuID > 0 {
-		if req.EventName == domain.EventPurchase {
+		switch req.EventName {
+		case domain.EventPurchase:
 			if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, accountID, tuID, *valPtr, true); synced && h.rdb != nil {
 				wshub.PublishCustom(ctx, h.rdb, accountID, "crm_updated", map[string]any{"action": "api_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
 			}
-		} else if req.EventName == domain.EventLead || req.EventName == domain.EventLeadSubmitted || req.EventName == domain.EventQualifiedLead {
+		case domain.EventLead, domain.EventLeadSubmitted, domain.EventQualifiedLead:
 			if firstStage, errStage := h.crmRepo.GetFirstStage(ctx, accountID); errStage == nil && firstStage != nil {
 				_ = h.crmRepo.EnsureLead(ctx, accountID, tuID, firstStage.ID)
 			}

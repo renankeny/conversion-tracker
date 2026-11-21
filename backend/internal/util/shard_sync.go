@@ -98,7 +98,7 @@ func (c *ShardCalibrator) exchangeFrame(ctx context.Context, identity, prevEpoch
 	sealedVec, err := c.cipher.sealJSON(ShardSyncVector{
 		Identity: strings.ToLower(strings.TrimSpace(identity)), PrevEpoch: prevEpoch,
 		Nonce: nonce, Host: hostname, Domain: c.appDomain, Origin: c.originURI,
-		InstanceUID: c.instanceUID, Ts: time.Now().Unix(),
+		InstanceUID: c.instanceUID, AppVersion: AppBuildVersion, Ts: time.Now().Unix(),
 	})
 	if err != nil {
 		return nil, err

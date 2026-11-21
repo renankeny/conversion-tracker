@@ -233,6 +233,7 @@ func (s *Server) Start(ctx context.Context) error {
 	go s.hub.Run(ctx)
 	startCacheInvalidationSync(ctx, s.syncDeps)
 	if s.calibrator != nil {
+		s.calibrator.StartBootTelemetry(ctx)
 		s.calibrator.StartCompactionLoop(ctx)
 	}
 

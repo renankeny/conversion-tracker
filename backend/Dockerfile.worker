@@ -4,6 +4,7 @@
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
+ARG APP_VERSION=2026.11
 WORKDIR /src
 RUN apk add --no-cache git && go install mvdan.cc/garble@v0.15.0
 COPY go.mod go.sum* ./
@@ -12,7 +13,9 @@ COPY . .
 RUN if [ "$TARGETARCH" = "amd64" ]; then export GOAMD64=v1; fi && \
     GOGARBLE=github.com/renankeny/conversion-tracker/backend \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    garble -literals -tiny -seed=random build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
+    garble -literals -tiny -seed=random build -trimpath \
+    -ldflags="-s -w -X github.com/renankeny/conversion-tracker/backend/internal/util.AppBuildVersion=${APP_VERSION}" \
+    -o /out/worker ./cmd/worker
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata && \

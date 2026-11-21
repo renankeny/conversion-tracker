@@ -30,6 +30,7 @@ jobs:
       - name: Lowercase image prefix
         run: |
           echo "IMAGE_PREFIX=$(echo ${{ env.IMAGE_PREFIX }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -58,6 +59,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           provenance: false
           push: true
+          build-args: |
+            APP_VERSION=${{ env.SHORT_SHA }}
           tags: |
             ${{ env.IMAGE_PREFIX }}/trackeado-api:latest
           cache-from: type=gha,scope=api
@@ -71,6 +74,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           provenance: false
           push: true
+          build-args: |
+            APP_VERSION=${{ env.SHORT_SHA }}
           tags: |
             ${{ env.IMAGE_PREFIX }}/trackeado-worker:latest
           cache-from: type=gha,scope=worker

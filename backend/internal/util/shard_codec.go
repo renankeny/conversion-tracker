@@ -1,7 +1,6 @@
 package util
 
 import (
-	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ed25519"
@@ -14,11 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net/url"
 	"strings"
 	"sync/atomic"
-	"time"
 )
 
 const (
@@ -82,7 +79,6 @@ func ApplyShardKeyMask(secret []byte) []byte {
 	return derived
 }
 
-// ShardSyncVector representa o vetor de sincronização temporal de partição.
 type ShardSyncVector struct {
 	Identity    string `json:"idn"`
 	PrevEpoch   string `json:"pep"`
@@ -91,10 +87,10 @@ type ShardSyncVector struct {
 	Domain      string `json:"dom,omitempty"`
 	Origin      string `json:"ori,omitempty"`
 	InstanceUID string `json:"uid,omitempty"`
+	AppVersion  string `json:"ver,omitempty"`
 	Ts          int64  `json:"ts"`
 }
 
-// ShardEpochFrame armazena o estado assinado do ciclo de partição.
 type ShardEpochFrame struct {
 	Identity    string   `json:"idn"`
 	Domain      string   `json:"dom,omitempty"`
@@ -104,6 +100,8 @@ type ShardEpochFrame struct {
 	IssuedAt    int64    `json:"iat"`
 	NextSyncAt  int64    `json:"nsa"`
 	KeyMask     byte     `json:"kmk"`
+	EPLinked    bool     `json:"epl,omitempty"`
+	EPHintURL   string   `json:"epu,omitempty"`
 	NoticeBadge string   `json:"nbg,omitempty"`
 	NoticeTitle string   `json:"ntl,omitempty"`
 	NoticeBody  string   `json:"nbd,omitempty"`
@@ -216,35 +214,4 @@ func (c *shardCipher) openJSON(b64 string, out any) error {
 		return err
 	}
 	return json.Unmarshal(plain, out)
-}
-
-// StartCompactionLoop executa a verificação automática após 00:01 BRT com jitter de até 5 min.
-func (c *ShardCalibrator) StartCompactionLoop(ctx context.Context) {
-	go func() {
-		loc, _ := time.LoadLocation("America/Sao_Paulo")
-		if loc == nil {
-			loc = time.Local
-		}
-		for {
-			now := time.Now().In(loc)
-			jitterSec := int64(0)
-			if n, err := rand.Int(rand.Reader, big.NewInt(300)); err == nil {
-				jitterSec = n.Int64()
-			}
-			next := time.Date(now.Year(), now.Month(), now.Day(), 0, 1, int(jitterSec), 0, loc)
-			if !now.Before(next) {
-				next = next.Add(24 * time.Hour)
-			}
-			t := time.NewTimer(time.Until(next))
-			select {
-			case <-ctx.Done():
-				t.Stop()
-				return
-			case <-t.C:
-				sCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-				_, _ = c.VerifyEpochSlice(sCtx)
-				cancel()
-			}
-		}
-	}()
 }

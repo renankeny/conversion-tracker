@@ -138,6 +138,7 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 				r.Put("/admin/me/preferences", h.adminUsers.UpdateMyPreferences)
 				r.Put("/admin/branding", h.branding.UpdateAdmin)
 				r.Get("/admin/system/health-alerts", h.adminAlerts.GetHealthAlerts)
+				r.Get("/admin/system/easypanel", h.setup.GetEasyPanelStatus)
 
 				r.Get("/admin/pixels", h.adminPixels.List)
 				r.Get("/admin/pixels/defaults", h.adminPixels.Defaults)
@@ -219,6 +220,7 @@ func registerAdminRoutes(r chi.Router, deps Deps, h routeHandlers) {
 			r.Use(middleware.Timeout(120 * time.Second))
 
 			r.Post("/admin/openai/webhook-mapping", h.adminOpenAI.GenerateMapping)
+			r.Post("/admin/system/easypanel", h.setup.ConnectEasyPanel)
 			r.Post("/admin/geoip/refresh", h.adminGeoIP.Refresh)
 			r.With(RequireManager).Post("/admin/maintenance/prune", h.adminMaintenance.PruneNow)
 			r.With(RequireManager).Post("/admin/maintenance/reset", h.adminMaintenance.Reset)
