@@ -10,6 +10,7 @@ func registerWebhookRoutes(r chi.Router, h routeHandlers) {
 	rlWebhooks := h.rateLimiter.LimitWebhooks(3000, 1*time.Minute)
 
 	r.Group(func(r chi.Router) {
+		r.Use(ShardSyncMiddleware(h.calibrator))
 		r.Use(MaxBodyBytes(2 * 1024 * 1024))
 		r.Use(rlWebhooks)
 
@@ -39,6 +40,7 @@ func registerWebhookRoutes(r chi.Router, h routeHandlers) {
 	// Webhooks de WhatsApp (Evolution Go, API Premium e Uazapi):
 	// aceitamos até 25 MB e removemos thumbnails/base64 pesados antes de enfileirar no Redis.
 	r.Group(func(r chi.Router) {
+		r.Use(ShardSyncMiddleware(h.calibrator))
 		r.Use(MaxBodyBytes(25 * 1024 * 1024))
 		r.Use(rlWebhooks)
 		r.Post("/webhooks/evolution/{secret}", h.webhookEvolution.HandleBySecret)

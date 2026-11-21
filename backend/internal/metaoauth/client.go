@@ -15,6 +15,7 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 type Client struct {
@@ -86,6 +87,7 @@ func (c *Client) callProxy(ctx context.Context, acc *domain.MetaAccount, action,
 		"idn": c.cfg.primaryIdentity(ctx),
 		"dom": c.cfg.cleanDomain(),
 		"hst": hostname,
+		"uid": util.ActiveInstanceUID(),
 		"act": action,
 		"vtk": vaultToken,
 		"aid": adAccountID,
@@ -124,11 +126,7 @@ func (c *Client) callProxy(ctx context.Context, acc *domain.MetaAccount, action,
 			Error string `json:"error"`
 		}
 		_ = json.Unmarshal(raw, &errEnv)
-		return &ProxyError{
-			StatusCode: resp.StatusCode,
-			Body:       string(raw),
-			Message:    errEnv.Error,
-		}
+		return &ProxyError{StatusCode: resp.StatusCode, Body: string(raw), Message: errEnv.Error}
 	}
 	var env struct {
 		Vector string `json:"v"`
@@ -152,7 +150,7 @@ func (c *Client) ListPages(ctx context.Context, acc *domain.MetaAccount) (map[st
 }
 
 func (c *Client) ListPixels(ctx context.Context, acc *domain.MetaAccount, adAccountID string) (map[string]any, error) {
-	if adAccountID == "" {
+	if adAccountID == "" && acc != nil {
 		adAccountID = acc.AdAccountID
 	}
 	var out map[string]any
@@ -161,9 +159,17 @@ func (c *Client) ListPixels(ctx context.Context, acc *domain.MetaAccount, adAcco
 }
 
 func (c *Client) GetAdMetadata(ctx context.Context, acc *domain.MetaAccount, adID string) (AdMetadata, error) {
-	var out AdMetadata
-	err := c.callProxy(ctx, acc, "get_ad_metadata", acc.AdAccountID, adID, "", nil, &out)
-	return out, err
+	adAccID := ""
+	if acc != nil {
+		adAccID = acc.AdAccountID
+	}
+	return runWithMetaLease(ctx, c, acc, func(lease metaLeaseEntry) (AdMetadata, int, error) {
+		return directGetAdMetadata(ctx, lease, adID)
+	}, func() (AdMetadata, error) {
+		var out AdMetadata
+		err := c.callProxy(ctx, acc, "get_ad_metadata", adAccID, adID, "", nil, &out)
+		return out, err
+	})
 }
 
 func (c *Client) FetchLiveSpend(ctx context.Context, acc *domain.MetaAccount, adAccountID, timeRange string) (float64, error) {
@@ -172,32 +178,47 @@ func (c *Client) FetchLiveSpend(ctx context.Context, acc *domain.MetaAccount, ad
 }
 
 func (c *Client) FetchLiveInsights(ctx context.Context, acc *domain.MetaAccount, adAccountID, timeRange string) (meta.LiveInsightsSummary, error) {
-	if adAccountID == "" {
+	if adAccountID == "" && acc != nil {
 		adAccountID = acc.AdAccountID
 	}
-	var out meta.LiveInsightsSummary
-	err := c.callProxy(ctx, acc, "live_spend", adAccountID, "", timeRange, nil, &out)
+	out, err := runWithMetaLease(ctx, c, acc, func(lease metaLeaseEntry) (meta.LiveInsightsSummary, int, error) {
+		return directFetchLiveInsights(ctx, lease, adAccountID, timeRange)
+	}, func() (meta.LiveInsightsSummary, error) {
+		var fb meta.LiveInsightsSummary
+		err := c.callProxy(ctx, acc, "live_spend", adAccountID, "", timeRange, nil, &fb)
+		return fb, err
+	})
 	out.Connected = err == nil
 	return out, err
 }
 
 func (c *Client) FetchCreativeRanking(ctx context.Context, acc *domain.MetaAccount, adAccountID, timeRange string) ([]meta.CreativeInsight, error) {
-	if adAccountID == "" {
+	if adAccountID == "" && acc != nil {
 		adAccountID = acc.AdAccountID
 	}
-	var out struct {
-		Creatives []meta.CreativeInsight `json:"creatives"`
-	}
-	err := c.callProxy(ctx, acc, "creative_ranking", adAccountID, "", timeRange, nil, &out)
-	return out.Creatives, err
+	return runWithMetaLease(ctx, c, acc, func(lease metaLeaseEntry) ([]meta.CreativeInsight, int, error) {
+		return directFetchCreativeRanking(ctx, lease, adAccountID, timeRange)
+	}, func() ([]meta.CreativeInsight, error) {
+		var fb struct {
+			Creatives []meta.CreativeInsight `json:"creatives"`
+		}
+		err := c.callProxy(ctx, acc, "creative_ranking", adAccountID, "", timeRange, nil, &fb)
+		return fb.Creatives, err
+	})
 }
 
 func (c *Client) SendCAPIEvent(ctx context.Context, acc *domain.MetaAccount, pixelID string, rawPayload []byte) (int, string, error) {
-	var out struct {
-		StatusCode int    `json:"status_code"`
-		Body       string `json:"body"`
+	adAccID := ""
+	if acc != nil {
+		adAccID = acc.AdAccountID
 	}
-	err := c.callProxy(ctx, acc, "send_capi_event", acc.AdAccountID, pixelID, "", rawPayload, &out)
+	out, err := runWithMetaLease(ctx, c, acc, func(lease metaLeaseEntry) (capiOutcome, int, error) {
+		return directSendCAPIEvent(ctx, lease, pixelID, rawPayload)
+	}, func() (capiOutcome, error) {
+		var fb capiOutcome
+		err := c.callProxy(ctx, acc, "send_capi_event", adAccID, pixelID, "", rawPayload, &fb)
+		return fb, err
+	})
 	if err != nil {
 		var pErr *ProxyError
 		if errors.As(err, &pErr) && out.StatusCode == 0 {

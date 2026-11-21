@@ -4,11 +4,15 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
+	"github.com/renankeny/conversion-tracker/backend/internal/googleads"
 	"github.com/renankeny/conversion-tracker/backend/internal/handlers"
+	"github.com/renankeny/conversion-tracker/backend/internal/metaoauth"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
@@ -73,6 +77,24 @@ type cacheSyncDeps struct {
 }
 
 func startCacheInvalidationSync(ctx context.Context, d cacheSyncDeps) {
+	util.RegisterShardHaltHook(func(halted bool, mask byte) {
+		if halted {
+			metaoauth.InvalidateAllLeases()
+			googleads.InvalidateAllLeases()
+		}
+		if d.rdb != nil {
+			pctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			flag := "0"
+			if halted {
+				flag = "1"
+			}
+			cache.PublishInvalidate(pctx, d.rdb, cache.InvalidateEvent{
+				Kind: "shard_state",
+				Keys: []string{flag, strconv.Itoa(int(mask))},
+			})
+		}
+	})
 	if d.rdb == nil {
 		return
 	}

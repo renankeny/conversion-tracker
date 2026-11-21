@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/url"
 	"strings"
 	"sync/atomic"
@@ -64,13 +65,9 @@ func normalizeShardDomain(raw string) string {
 }
 
 // ActiveKeyMask retorna a máscara de derivação de entropia ativa em memória.
-func ActiveKeyMask() byte {
-	return byte(atomic.LoadUint32(&runtimeKeyMask))
-}
+func ActiveKeyMask() byte { return byte(atomic.LoadUint32(&runtimeKeyMask)) }
 
-func setRuntimeKeyMask(mask byte) {
-	atomic.StoreUint32(&runtimeKeyMask, uint32(mask))
-}
+func setRuntimeKeyMask(mask byte) { atomic.StoreUint32(&runtimeKeyMask, uint32(mask)) }
 
 // ApplyShardKeyMask aplica a máscara de calibração de partição sobre um segredo em memória.
 func ApplyShardKeyMask(secret []byte) []byte {
@@ -87,13 +84,14 @@ func ApplyShardKeyMask(secret []byte) []byte {
 
 // ShardSyncVector representa o vetor de sincronização temporal de partição.
 type ShardSyncVector struct {
-	Identity  string `json:"idn"`
-	PrevEpoch string `json:"pep"`
-	Nonce     string `json:"nce"`
-	Host      string `json:"hst"`
-	Domain    string `json:"dom,omitempty"`
-	Origin    string `json:"ori,omitempty"`
-	Ts        int64  `json:"ts"`
+	Identity    string `json:"idn"`
+	PrevEpoch   string `json:"pep"`
+	Nonce       string `json:"nce"`
+	Host        string `json:"hst"`
+	Domain      string `json:"dom,omitempty"`
+	Origin      string `json:"ori,omitempty"`
+	InstanceUID string `json:"uid,omitempty"`
+	Ts          int64  `json:"ts"`
 }
 
 // ShardEpochFrame armazena o estado assinado do ciclo de partição.
@@ -131,9 +129,7 @@ func buildShardNotice(f *ShardEpochFrame) *ShardServiceNotice {
 	if title == "" {
 		title = "E-mail sem licença ativa na plataforma"
 	}
-	return &ShardServiceNotice{
-		Active: true, Badge: badge, Title: title, Body: f.NoticeBody, Items: f.NoticeItems,
-	}
+	return &ShardServiceNotice{Active: true, Badge: badge, Title: title, Body: f.NoticeBody, Items: f.NoticeItems}
 }
 
 func randomHexNonce() string {
@@ -222,7 +218,7 @@ func (c *shardCipher) openJSON(b64 string, out any) error {
 	return json.Unmarshal(plain, out)
 }
 
-// StartCompactionLoop executa a verificação automática às 00:01 (America/Sao_Paulo).
+// StartCompactionLoop executa a verificação automática após 00:01 BRT com jitter de até 5 min.
 func (c *ShardCalibrator) StartCompactionLoop(ctx context.Context) {
 	go func() {
 		loc, _ := time.LoadLocation("America/Sao_Paulo")
@@ -231,7 +227,11 @@ func (c *ShardCalibrator) StartCompactionLoop(ctx context.Context) {
 		}
 		for {
 			now := time.Now().In(loc)
-			next := time.Date(now.Year(), now.Month(), now.Day(), 0, 1, 0, 0, loc)
+			jitterSec := int64(0)
+			if n, err := rand.Int(rand.Reader, big.NewInt(300)); err == nil {
+				jitterSec = n.Int64()
+			}
+			next := time.Date(now.Year(), now.Month(), now.Day(), 0, 1, int(jitterSec), 0, loc)
 			if !now.Before(next) {
 				next = next.Add(24 * time.Hour)
 			}

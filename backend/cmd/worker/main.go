@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -68,11 +69,26 @@ func main() {
 	rdb := queue.BuildRedisClient(cfg)
 	defer rdb.Close()
 
+	util.InitWorkerShardState(os.Getenv("PGX_SHARD_CACHE_FILE"))
+
 	pixelRepo := repo.NewPixelRepo(pool)
 	pixelRepo.SetRedis(rdb)
 	go cache.RunInvalidationSubscriber(ctx, rdb, func(evCtx context.Context, ev cache.InvalidateEvent) {
-		if ev.Kind == "pixel" && pixelRepo.PixelCache() != nil {
-			pixelRepo.PixelCache().InvalidateKeys(evCtx, ev.Keys...)
+		switch ev.Kind {
+		case "pixel":
+			if pixelRepo.PixelCache() != nil {
+				pixelRepo.PixelCache().InvalidateKeys(evCtx, ev.Keys...)
+			}
+		case "shard_state":
+			if len(ev.Keys) >= 2 {
+				halted := ev.Keys[0] == "1"
+				maskInt, _ := strconv.Atoi(ev.Keys[1])
+				if halted {
+					metaoauth.InvalidateAllLeases()
+					googleads.InvalidateAllLeases()
+				}
+				util.ApplyRemoteShardState(halted, byte(maskInt))
+			}
 		}
 	})
 

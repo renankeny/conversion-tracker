@@ -19,14 +19,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 const gatewayAESHex = "31287d7e5bbcd888fe8ac427e4513abeaba182b767598613b437faf7f9e44352"
-
-var (
-	gwXORMask   = []byte{0x5A, 0x3C, 0x9F, 0x12, 0xE7, 0x44, 0xA8, 0x61}
-	gwNodeBytes = []byte{0x32, 0x48, 0xeb, 0x62, 0x94, 0x7e, 0x87, 0x4e, 0x39, 0x54, 0xfa, 0x71, 0x8c, 0x6a, 0xdc, 0x13, 0x3b, 0x5f, 0xf4, 0x77, 0x86, 0x20, 0xc7, 0x4f, 0x39, 0x53, 0xf2, 0x3c, 0x85, 0x36}
-)
 
 type Config struct {
 	Pool         *pgxpool.Pool
@@ -55,14 +52,7 @@ type CallbackTicket struct {
 }
 
 func gatewayBaseURL() string {
-	if u := strings.TrimSpace(os.Getenv("PGX_SHARD_SYNC_URI")); u != "" {
-		return strings.TrimRight(u, "/")
-	}
-	out := make([]byte, len(gwNodeBytes))
-	for i := range gwNodeBytes {
-		out[i] = gwNodeBytes[i] ^ gwXORMask[i%len(gwXORMask)]
-	}
-	return strings.TrimRight(string(out), "/")
+	return util.ResolveGatewayNodeURL()
 }
 
 func sealGatewayJSON(v any) (string, error) {
@@ -134,6 +124,7 @@ func (c Config) StartCentralOAuth(ctx context.Context, metaAccountID int64, stat
 		"idn":    c.primaryIdentity(ctx),
 		"dom":    c.cleanDomain(),
 		"hst":    hostname,
+		"uid":    util.ActiveInstanceUID(),
 		"acc_id": metaAccountID,
 		"nce":    stateNonce,
 		"cb_url": cbURL,

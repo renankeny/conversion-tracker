@@ -95,18 +95,14 @@ func (c *Client) SendWithOptions(ctx context.Context, account *domain.GoogleAdsA
 	}
 	res.RequestBody = string(raw)
 
-	var proxyOut struct {
-		CustomerID string `json:"customer_id"`
-		StatusCode int    `json:"status_code"`
-		Body       string `json:"body"`
-	}
-	if err := c.oauth.CallCentralProxy(ctx, "send_conversion", account.RefreshToken, account.CustomerID, account.LoginCustomerID, raw, &proxyOut); err != nil {
+	code, respBody, err := c.sendConversionWithLease(ctx, account, raw)
+	if err != nil {
 		res.Err = err
 		return []SendResult{res}
 	}
 
-	res.StatusCode = proxyOut.StatusCode
-	res.Body = proxyOut.Body
+	res.StatusCode = code
+	res.Body = respBody
 	if res.StatusCode >= 300 {
 		res.Err = fmt.Errorf("google ads api returned %d: %s", res.StatusCode, res.Body)
 	} else if res.StatusCode >= 200 && res.StatusCode < 300 {

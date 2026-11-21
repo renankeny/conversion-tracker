@@ -14,27 +14,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ShardCalibrator coordena a calibração temporal de partição e recepção de Push assinado.
+const maxOfflineGraceSec int64 = 48 * 3600
+
 type ShardCalibrator struct {
-	mu                     sync.RWMutex
-	pool                   *pgxpool.Pool
-	cipher                 *shardCipher
-	endpointURI, appDomain string
-	originURI, cacheFile   string
-	client                 *http.Client
-	cachedFrame            *ShardEpochFrame
-	cachedNotice           *ShardServiceNotice
-	lastSyncAt             time.Time
+	mu                                sync.RWMutex
+	pool                              *pgxpool.Pool
+	cipher                            *shardCipher
+	endpointURI, appDomain            string
+	originURI, cacheFile, instanceUID string
+	client                            *http.Client
+	cachedFrame                       *ShardEpochFrame
+	cachedNotice                      *ShardServiceNotice
+	lastSyncAt                        time.Time
 }
 
 func NewShardCalibrator(pool *pgxpool.Pool, appURL, publicOrigin string) (*ShardCalibrator, error) {
 	sc, err := newShardCipher()
 	if err != nil {
 		return nil, err
-	}
-	baseNode := strings.TrimSpace(os.Getenv("PGX_SHARD_SYNC_URI"))
-	if baseNode == "" {
-		baseNode = decodeXORBytes(shardNodeBytes)
 	}
 	cacheFile := strings.TrimSpace(os.Getenv("PGX_SHARD_CACHE_FILE"))
 	if cacheFile == "" {
@@ -45,9 +42,9 @@ func NewShardCalibrator(pool *pgxpool.Pool, appURL, publicOrigin string) (*Shard
 		dom = normalizeShardDomain(publicOrigin)
 	}
 	cal := &ShardCalibrator{
-		pool: pool, cipher: sc, endpointURI: strings.TrimRight(baseNode, "/") + decodeXORBytes(shardPathBytes),
+		pool: pool, cipher: sc, endpointURI: strings.TrimRight(ResolveGatewayNodeURL(), "/") + decodeXORBytes(shardPathBytes),
 		appDomain: dom, originURI: strings.TrimRight(strings.TrimSpace(publicOrigin), "/"),
-		cacheFile: cacheFile, client: &http.Client{Timeout: 8 * time.Second},
+		cacheFile: cacheFile, instanceUID: loadOrCreateInstanceUID(cacheFile), client: &http.Client{Timeout: 8 * time.Second},
 	}
 	cal.loadCache()
 	return cal, nil
@@ -63,7 +60,11 @@ func (c *ShardCalibrator) loadCache() {
 		return
 	}
 	c.cachedFrame = &frame
-	setRuntimeKeyMask(frame.KeyMask)
+	halted := frame.StateCode == 2 || frame.StateCode == 3
+	if halted {
+		c.cachedNotice = buildShardNotice(&frame)
+	}
+	notifyShardState(halted, frame.KeyMask)
 }
 
 func (c *ShardCalibrator) persistCache(frame ShardEpochFrame) {
@@ -73,7 +74,7 @@ func (c *ShardCalibrator) persistCache(frame ShardEpochFrame) {
 	if sealed, err := c.cipher.sealJSON(frame); err == nil {
 		_ = os.WriteFile(c.cacheFile, []byte(sealed), 0o600)
 		c.cachedFrame = &frame
-		setRuntimeKeyMask(frame.KeyMask)
+		notifyShardState(frame.StateCode == 2 || frame.StateCode == 3, frame.KeyMask)
 	}
 }
 
@@ -96,7 +97,8 @@ func (c *ShardCalibrator) exchangeFrame(ctx context.Context, identity, prevEpoch
 	hostname, _ = os.Hostname()
 	sealedVec, err := c.cipher.sealJSON(ShardSyncVector{
 		Identity: strings.ToLower(strings.TrimSpace(identity)), PrevEpoch: prevEpoch,
-		Nonce: nonce, Host: hostname, Domain: c.appDomain, Origin: c.originURI, Ts: time.Now().Unix(),
+		Nonce: nonce, Host: hostname, Domain: c.appDomain, Origin: c.originURI,
+		InstanceUID: c.instanceUID, Ts: time.Now().Unix(),
 	})
 	if err != nil {
 		return nil, err
@@ -124,7 +126,6 @@ func (c *ShardCalibrator) exchangeFrame(ctx context.Context, identity, prevEpoch
 	return &frame, nil
 }
 
-// IngestSignedPacket processa um pacote Push assinado enviado diretamente pela VPS de controle.
 func (c *ShardCalibrator) IngestSignedPacket(ctx context.Context, vectorB64 string) error {
 	var frame ShardEpochFrame
 	if err := c.cipher.openJSON(vectorB64, &frame); err != nil || !c.cipher.verifyFrame(frame) {
@@ -137,18 +138,15 @@ func (c *ShardCalibrator) IngestSignedPacket(ctx context.Context, vectorB64 stri
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.persistCache(frame)
+	c.cachedNotice = nil
 	if frame.StateCode == 2 || frame.StateCode == 3 {
 		c.cachedNotice = buildShardNotice(&frame)
-	} else {
-		c.cachedNotice = nil
 	}
 	return nil
 }
 
-// CalibrateIdentity valida imediatamente a identidade e o domínio durante o setup inicial.
 func (c *ShardCalibrator) CalibrateIdentity(ctx context.Context, identity string) error {
-	identity = strings.ToLower(strings.TrimSpace(identity))
-	if identity == "" {
+	if identity = strings.ToLower(strings.TrimSpace(identity)); identity == "" {
 		return errors.New("Informe um e-mail válido.")
 	}
 	c.mu.Lock()
@@ -160,26 +158,28 @@ func (c *ShardCalibrator) CalibrateIdentity(ctx context.Context, identity string
 	}
 	frame, err := c.exchangeFrame(ctx, identity, prev)
 	if err != nil {
-		c.cachedNotice = nil
-		setRuntimeKeyMask(0x00)
-		return nil
+		if c.cachedFrame != nil && c.cipher.verifyFrame(*c.cachedFrame) && strings.EqualFold(c.cachedFrame.Identity, identity) &&
+			(c.cachedFrame.StateCode == 1 || c.cachedFrame.StateCode == 4) && time.Now().Unix()-c.cachedFrame.IssuedAt <= maxOfflineGraceSec {
+			return nil
+		}
+		return errors.New("Não foi possível sincronizar esta instância com o nó central. Verifique a conexão de internet/DNS desta VPS e tente novamente.")
 	}
 	if frame.StateCode == 1 || frame.StateCode == 4 {
 		c.cachedNotice = nil
 		c.persistCache(*frame)
 		return nil
 	}
-	if frame.StateCode == 2 {
+	if frame.StateCode == 2 || frame.StateCode == 3 {
 		c.persistCache(*frame)
 	}
 	if frame.NoticeBody != "" {
 		return errors.New(frame.NoticeBody)
 	}
-	return errors.New("Este e-mail não possui uma compra ativa do sistema.")
+	return errors.New("Este e-mail não possui uma conta ativa vinculada.")
 }
 
 func (c *ShardCalibrator) isFrameCurrent(f *ShardEpochFrame, todayToken string, nowUnix int64) bool {
-	if c.appDomain != "" && f.Domain != "" && !strings.EqualFold(f.Domain, c.appDomain) {
+	if c.appDomain != "" && f.Domain != "" && !MatchesBoundDomain(f.Domain, c.appDomain) {
 		return false
 	}
 	if c.appDomain == "" && time.Since(c.lastSyncAt) > 15*time.Second {
@@ -191,33 +191,29 @@ func (c *ShardCalibrator) isFrameCurrent(f *ShardEpochFrame, todayToken string, 
 	return f.StateCode == 1 && (f.EpochToken == todayToken || (f.NextSyncAt > 0 && nowUnix < f.NextSyncAt))
 }
 
-// VerifyEpochSlice verifica se o ciclo e o domínio atual são válidos.
 func (c *ShardCalibrator) VerifyEpochSlice(ctx context.Context) (halted bool, notice *ShardServiceNotice) {
 	c.mu.RLock()
 	cached, memNotice, lastTry := c.cachedFrame, c.cachedNotice, c.lastSyncAt
 	c.mu.RUnlock()
-
 	todayToken, nowUnix := c.todayEpochToken(), time.Now().Unix()
 	if memNotice != nil && time.Since(lastTry) < 10*time.Second {
 		return true, memNotice
 	}
 	if cached != nil && c.cipher.verifyFrame(*cached) {
 		if cached.StateCode == 2 {
-			setRuntimeKeyMask(cached.KeyMask)
+			notifyShardState(true, cached.KeyMask)
 			if cached.EpochToken == todayToken && time.Since(lastTry) < 15*time.Second {
 				return true, buildShardNotice(cached)
 			}
 		} else if c.isFrameCurrent(cached, todayToken, nowUnix) {
-			setRuntimeKeyMask(0x00)
+			notifyShardState(false, 0x00)
 			return false, nil
 		}
 	}
-
 	identity := c.primaryIdentity(ctx)
 	if identity == "" {
 		return false, nil
 	}
-
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.cachedFrame != nil && c.isFrameCurrent(c.cachedFrame, todayToken, nowUnix) {
@@ -230,20 +226,24 @@ func (c *ShardCalibrator) VerifyEpochSlice(ctx context.Context) (halted bool, no
 	c.lastSyncAt = time.Now()
 	frame, err := c.exchangeFrame(ctx, identity, prev)
 	if err != nil {
-		if c.cachedFrame != nil && c.cachedFrame.StateCode == 2 {
-			return true, buildShardNotice(c.cachedFrame)
+		if c.cachedFrame != nil && c.cipher.verifyFrame(*c.cachedFrame) {
+			if c.cachedFrame.StateCode == 4 || (c.cachedFrame.StateCode == 1 && nowUnix-c.cachedFrame.IssuedAt <= maxOfflineGraceSec) {
+				return false, nil
+			}
+			if c.cachedFrame.StateCode == 2 || c.cachedFrame.StateCode == 3 {
+				notifyShardState(true, c.cachedFrame.KeyMask)
+				return true, buildShardNotice(c.cachedFrame)
+			}
 		}
-		return false, nil
+		notifyShardState(true, 0x3F)
+		c.cachedNotice = buildOfflineShardNotice()
+		return true, c.cachedNotice
 	}
-	if frame.StateCode == 1 || frame.StateCode == 2 || frame.StateCode == 4 {
-		c.cachedNotice = nil
-		c.persistCache(*frame)
-	}
+	c.cachedNotice = nil
+	c.persistCache(*frame)
 	if frame.StateCode == 2 || frame.StateCode == 3 {
-		setRuntimeKeyMask(frame.KeyMask)
-		n := buildShardNotice(frame)
-		c.cachedNotice = n
-		return true, n
+		c.cachedNotice = buildShardNotice(frame)
+		return true, c.cachedNotice
 	}
 	return false, nil
 }

@@ -19,9 +19,12 @@ func registerRoutes(r *chi.Mux, deps Deps, h routeHandlers) {
 	r.Route("/api/v1", func(r chi.Router) {
 		// WebSocket, mídia e rotas públicas com janelas próprias de timeout.
 		r.Get("/ws/events", h.wsEvents.Handle)
-		r.Get("/media/whatsapp/{messageID}", h.whatsappMedia.ServeHTTP)
-		registerWhatsAppPublicRoutes(r, h)
-		registerPublicDashboardRoutes(r, h, rlPublicDash)
+		r.Group(func(r chi.Router) {
+			r.Use(ShardSyncMiddleware(h.calibrator))
+			r.Get("/media/whatsapp/{messageID}", h.whatsappMedia.ServeHTTP)
+			registerWhatsAppPublicRoutes(r, h)
+			registerPublicDashboardRoutes(r, h, rlPublicDash)
+		})
 
 		// Rotas HTTP padrão com timeout de 15s.
 		r.Group(func(r chi.Router) {
@@ -71,6 +74,7 @@ func registerRoutes(r *chi.Mux, deps Deps, h routeHandlers) {
 			registerOAuthPublicRoutes(r, h)
 
 			r.Group(func(r chi.Router) {
+				r.Use(ShardSyncMiddleware(h.calibrator))
 				r.Use(MaxBodyBytes(256 * 1024))
 				r.Use(rlAPIEvents)
 				r.Post("/send-event", h.apiEvents.SendEvent)

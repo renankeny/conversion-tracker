@@ -21,6 +21,9 @@ import (
 )
 
 func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventInput) error {
+	if util.IsShardHalted() {
+		return fmt.Errorf("instance halted: %w", asynq.SkipRetry)
+	}
 	pixel, err := deps.Pixels.FindByName(ctx, in.PixelName)
 	if err != nil {
 		return fmt.Errorf("pixel %q: %w", in.PixelName, err)

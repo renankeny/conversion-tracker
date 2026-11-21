@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 func (c OAuthConfig) CallCentralProxy(ctx context.Context, action, vaultToken, customerID, loginCustomerID string, payload any, out any) error {
@@ -26,6 +28,7 @@ func (c OAuthConfig) CallCentralProxy(ctx context.Context, action, vaultToken, c
 		"idn":  c.primaryIdentity(ctx),
 		"dom":  c.cleanDomain(),
 		"hst":  hostname,
+		"uid":  util.ActiveInstanceUID(),
 		"act":  action,
 		"vtk":  vaultToken,
 		"cid":  customerID,
