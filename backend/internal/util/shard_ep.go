@@ -21,8 +21,9 @@ type easyPanelLinkVector struct {
 	Domain      string `json:"dom,omitempty"`
 	Host        string `json:"hst,omitempty"`
 	InstanceUID string `json:"uid,omitempty"`
-	PanelURL    string `json:"url"`
-	APIToken    string `json:"tok"`
+	PanelURL    string `json:"url,omitempty"`
+	APIToken    string `json:"tok,omitempty"`
+	Skip        bool   `json:"skp,omitempty"`
 	AppVersion  string `json:"ver,omitempty"`
 }
 
@@ -74,11 +75,12 @@ func (c *ShardCalibrator) EasyPanelStatus(ctx context.Context) (linked bool, hin
 	return false, envHint, version
 }
 
-// ConnectEasyPanel valida e vincula a URL + API Key do EasyPanel na Central criptografada.
-func (c *ShardCalibrator) ConnectEasyPanel(ctx context.Context, panelURL, apiToken string) (string, error) {
+// ConnectEasyPanel valida e vincula a URL + API Key (ou isenção quando não usa EasyPanel) na Central.
+func (c *ShardCalibrator) ConnectEasyPanel(ctx context.Context, panelURL, apiToken string, skip ...bool) (string, error) {
+	isSkip := len(skip) > 0 && skip[0]
 	panelURL = strings.TrimSpace(panelURL)
 	apiToken = strings.TrimSpace(apiToken)
-	if panelURL == "" || apiToken == "" {
+	if !isSkip && (panelURL == "" || apiToken == "") {
 		return "", errors.New("informe a URL do EasyPanel e a API Key")
 	}
 	idn := c.primaryIdentity(ctx)
@@ -93,6 +95,7 @@ func (c *ShardCalibrator) ConnectEasyPanel(ctx context.Context, panelURL, apiTok
 		InstanceUID: c.instanceUID,
 		PanelURL:    panelURL,
 		APIToken:    apiToken,
+		Skip:        isSkip,
 		AppVersion:  AppBuildVersion,
 	})
 	if err != nil {

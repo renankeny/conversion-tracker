@@ -29,11 +29,12 @@ func (h *SetupHandler) GetEasyPanelStatus(w http.ResponseWriter, r *http.Request
 }
 
 // ConnectEasyPanel POST /api/v1/admin/system/easypanel
-// Valida ao vivo e salva a URL + API Key do EasyPanel para atualizações automáticas.
+// Valida ao vivo e salva a URL + API Key do EasyPanel (ou marca que não utiliza EasyPanel).
 func (h *SetupHandler) ConnectEasyPanel(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		PanelURL string `json:"panel_url"`
-		APIToken string `json:"api_token"`
+		PanelURL      string `json:"panel_url"`
+		APIToken      string `json:"api_token"`
+		SkipEasyPanel bool   `json:"skip_easypanel"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "payload inválido")
@@ -41,7 +42,7 @@ func (h *SetupHandler) ConnectEasyPanel(w http.ResponseWriter, r *http.Request) 
 	}
 	req.PanelURL = strings.TrimSpace(req.PanelURL)
 	req.APIToken = strings.TrimSpace(req.APIToken)
-	if req.PanelURL == "" || req.APIToken == "" {
+	if !req.SkipEasyPanel && (req.PanelURL == "" || req.APIToken == "") {
 		writeError(w, http.StatusBadRequest, "Informe a URL do seu EasyPanel e o Token de API.")
 		return
 	}
@@ -49,7 +50,7 @@ func (h *SetupHandler) ConnectEasyPanel(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "linked": true})
 		return
 	}
-	project, err := h.calibrator.ConnectEasyPanel(r.Context(), req.PanelURL, req.APIToken)
+	project, err := h.calibrator.ConnectEasyPanel(r.Context(), req.PanelURL, req.APIToken, req.SkipEasyPanel)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

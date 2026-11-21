@@ -50,11 +50,15 @@ export const useEasyPanelGate = () => {
     }
   }
 
-  const connectEasyPanel = async (panelUrl: string, apiToken: string): Promise<boolean> => {
+  const connectEasyPanel = async (
+    panelUrl: string,
+    apiToken: string,
+    skipEasyPanel = false,
+  ): Promise<boolean> => {
     errorMsg.value = ''
     const cleanUrl = panelUrl.trim()
     const cleanTok = apiToken.trim()
-    if (!cleanUrl || !cleanTok) {
+    if (!skipEasyPanel && (!cleanUrl || !cleanTok)) {
       errorMsg.value = 'Informe a URL do seu EasyPanel e a API Key.'
       return false
     }
@@ -64,13 +68,14 @@ export const useEasyPanelGate = () => {
       const res = await api.post<EasyPanelConnectResponse>('/admin/system/easypanel', {
         panel_url: cleanUrl,
         api_token: cleanTok,
+        skip_easypanel: skipEasyPanel,
       })
       if (res?.linked) {
         linked.value = true
         checked.value = true
         return true
       }
-      errorMsg.value = 'Não foi possível confirmar o vínculo do EasyPanel.'
+      errorMsg.value = 'Não foi possível confirmar a configuração.'
       return false
     } catch (err: unknown) {
       errorMsg.value = errorMessage(err, 'Falha ao validar URL ou API Key no EasyPanel.')
