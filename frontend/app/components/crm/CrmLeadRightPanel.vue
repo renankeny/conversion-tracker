@@ -27,6 +27,7 @@
       v-show="activeTab === 'whatsapp'"
       :crm-lead-id="leadId"
       :tracked-user-id="trackedUserId"
+      :public-token="publicToken"
     />
 
     <CrmLeadNotesTab
@@ -34,6 +35,7 @@
       :notes="notes"
       :new-note-content="newNoteContent"
       :is-adding-note="isAddingNote"
+      :read-only="readOnly"
       @update:new-note-content="emit('update:newNoteContent', $event)"
       @add-note="emit('add-note')"
       @delete-note="emit('delete-note', $event)"
@@ -50,6 +52,8 @@ import CrmLeadNotesTab from '~/components/crm/CrmLeadNotesTab.vue'
 defineProps<{
   leadId: number | null
   trackedUserId?: number | null
+  publicToken?: string | null
+  readOnly?: boolean
   notes: CrmNote[]
   newNoteContent: string
   isAddingNote: boolean

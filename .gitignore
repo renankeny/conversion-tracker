@@ -61,6 +61,8 @@ backend/bin/
 backend/data/
 backend/.pgx_shard_cal.bin
 **/.pgx_shard_cal.bin
+backend/.pgx_shard_uid.bin
+**/.pgx_shard_uid.bin
 backend/check_evolution_webhook.sh
 backend/test_webhook_protocol.sh
 backend/internal/test_pixels/

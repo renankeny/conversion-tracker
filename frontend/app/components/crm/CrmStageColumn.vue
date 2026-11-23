@@ -24,13 +24,14 @@
             <span class="stage-metric-sub">
               {{ visibleStageLeads.length }} {{ visibleStageLeads.length === 1 ? 'lead' : 'leads' }}
               <span class="metric-separator">•</span>
-              {{ formatCurrency(stageTotalValue) }}
+              <span :class="{ 'blurred-val': blurred }">{{ formatCurrency(stageTotalValue) }}</span>
             </span>
           </div>
         </div>
 
         <div class="column-header-actions">
           <button
+            v-if="canEditLeads"
             type="button"
             class="icon-btn"
             title="Adicionar Lead nesta Etapa"
@@ -64,6 +65,7 @@
         group="leads"
         item-key="id"
         :animation="200"
+        :disabled="!canEditLeads"
         ghost-class="ghost-card"
         :fallback-tolerance="6"
         :data-stage-id="stage.id"
@@ -76,6 +78,8 @@
             :lead="element"
             :is-dragging="isDraggingLead"
             :is-terminal="isTerminalStage"
+            :read-only="!canEditLeads"
+            :blurred="blurred"
             @select="emit('select-lead', $event)"
           />
         </template>
@@ -97,9 +101,13 @@ const props = withDefaults(defineProps<{
   modelValue?: CrmLead[]
   isCollapsed: boolean
   canManageStages?: boolean
+  canEditLeads?: boolean
+  blurred?: boolean
   matchesFilter: (lead: CrmLead) => boolean
 }>(), {
   canManageStages: true,
+  canEditLeads: true,
+  blurred: false,
 })
 
 const emit = defineEmits<{
@@ -168,6 +176,7 @@ const onLeadDragEnd = (evt: any) => {
 .title-and-metrics h3 { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text-strong); margin: 0; line-height: 1.2; }
 .stage-metric-sub { font-size: var(--fs-xs); color: var(--text-2); font-weight: var(--fw-medium); }
 .metric-separator { margin: 0 3px; opacity: 0.5; }
+.blurred-val { filter: blur(5px); user-select: none; }
 .column-header-actions { display: flex; align-items: center; gap: 0.25rem; }
 .icon-btn {
   background: none; border: none; color: var(--text-2); cursor: pointer;

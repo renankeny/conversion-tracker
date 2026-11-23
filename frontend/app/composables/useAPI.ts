@@ -26,6 +26,12 @@ export const useAPI = () => {
       request<T>(endpoint, { ...options, method: 'GET' }),
     publicGet: <T>(endpoint: string, options?: ApiRequestOptions) =>
       publicRequest<T>(endpoint, { ...options, method: 'GET' }),
+    publicPost: <T>(endpoint: string, body?: Record<string, unknown> | FormData | unknown, options?: ApiRequestOptions) =>
+      publicRequest<T>(endpoint, { ...options, method: 'POST', body: body as ApiRequestOptions['body'] }),
+    publicPut: <T>(endpoint: string, body?: Record<string, unknown> | FormData | unknown, options?: ApiRequestOptions) =>
+      publicRequest<T>(endpoint, { ...options, method: 'PUT', body: body as ApiRequestOptions['body'] }),
+    publicDelete: <T>(endpoint: string, options?: ApiRequestOptions) =>
+      publicRequest<T>(endpoint, { ...options, method: 'DELETE' }),
     post: <T>(endpoint: string, body?: Record<string, unknown> | FormData | unknown, options?: ApiRequestOptions) =>
       request<T>(endpoint, { ...options, method: 'POST', body: body as ApiRequestOptions['body'] }),
     put: <T>(endpoint: string, body?: Record<string, unknown> | FormData | unknown, options?: ApiRequestOptions) =>

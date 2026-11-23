@@ -150,6 +150,10 @@ type SendEventInput struct {
 	AggregatedCount int              `json:"aggregated_count,omitempty"`
 	AggregatedItems []AggregatedItem `json:"aggregated_items,omitempty"`
 
+	// AllowedChannels restringe o envio estritamente aos canais listados (ex: Links Rastreáveis).
+	// Vazio/nil mantém o comportamento padrão (envia para todos os canais ativos no Pixel).
+	AllowedChannels []string `json:"allowed_channels,omitempty"`
+
 	// IsReplay marca reenvio manual pelo painel (não soma count_total novamente).
 	IsReplay  bool `json:"is_replay,omitempty"`
 	CRMSynced bool `json:"crm_synced,omitempty"`

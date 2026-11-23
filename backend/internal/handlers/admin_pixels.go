@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
@@ -23,6 +25,7 @@ type AdminPixels struct {
 	pool      *pgxpool.Pool
 	gads      *repo.GoogleAdsAccountRepo
 	metaAccs  *repo.MetaAccountRepo
+	notify    *notify.Service
 	domains   *util.DomainSet // cache CORS invalidado em mutações
 	dnsTarget string          // host alvo esperado em CNAMEs dos clientes
 }
@@ -39,6 +42,8 @@ func (h *AdminPixels) SetSecurityDeps(pool *pgxpool.Pool, gads *repo.GoogleAdsAc
 func (h *AdminPixels) SetMetaAccountsRepo(metaAccs *repo.MetaAccountRepo) {
 	h.metaAccs = metaAccs
 }
+
+func (h *AdminPixels) SetNotify(n *notify.Service) { h.notify = n }
 
 func (h *AdminPixels) SetDomainSet(d *util.DomainSet) {
 	h.domains = d
@@ -96,6 +101,12 @@ type pixelInput struct {
 	// Agrupamento de Conversões (Order Bump & Upsell)
 	AggregationEnabled       *bool `json:"aggregation_enabled"`
 	AggregationWindowMinutes *int  `json:"aggregation_window_minutes"`
+
+	// Meta de Vendas por Pixel + visibilidade no Portal do Cliente
+	SalesGoalEnabled    *bool    `json:"sales_goal_enabled"`
+	SalesGoalType       *string  `json:"sales_goal_type"`
+	SalesGoalTarget     *float64 `json:"sales_goal_target"`
+	PublicShowSalesGoal *bool    `json:"public_show_sales_goal"`
 }
 
 func (h *AdminPixels) List(w http.ResponseWriter, r *http.Request) {
@@ -218,5 +229,6 @@ func (h *AdminPixels) Create(w http.ResponseWriter, r *http.Request) {
 	h.refreshDomains(r.Context())
 	h.repo.InvalidateCache(r.Context(), p.Name, p.PublicToken)
 	h.repo.BumpDashboardCache(r.Context(), p.AccountID)
+	emitResourceLifecycleNotification(h.notify, p.AccountID, domain.NotifPixelLifecycle, "Novo Pixel Criado", fmt.Sprintf("O pixel \"%s\" foi criado e ativado.", firstNonEmpty(p.Label, p.Name)), "/integracoes/pixels")
 	writeJSON(w, http.StatusCreated, p.PublicView())
 }

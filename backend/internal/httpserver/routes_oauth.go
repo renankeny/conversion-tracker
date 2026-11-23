@@ -7,8 +7,12 @@ func registerOAuthPublicRoutes(r chi.Router, h routeHandlers) {
 	r.Get("/admin/meta-ads/oauth/callback", h.adminMetaAds.OAuthCallback)
 }
 
-func registerOAuthAdminRoutes(r chi.Router, h routeHandlers) {
+func registerOAuthReadRoutes(r chi.Router, h routeHandlers) {
 	r.Get("/admin/google-ads-accounts", h.adminGoogleAds.List)
+	r.Get("/admin/meta-accounts", h.adminMetaAds.List)
+}
+
+func registerOAuthAdminRoutes(r chi.Router, h routeHandlers) {
 	r.Post("/admin/google-ads-accounts", h.adminGoogleAds.Create)
 	r.Get("/admin/google-ads-accounts/{id}", h.adminGoogleAds.Get)
 	r.Put("/admin/google-ads-accounts/{id}", h.adminGoogleAds.Update)
@@ -17,7 +21,6 @@ func registerOAuthAdminRoutes(r chi.Router, h routeHandlers) {
 	r.Post("/admin/google-ads-accounts/{id}/reuse-oauth", h.adminGoogleAds.ReuseOAuth)
 	r.Post("/admin/google-ads-accounts/{id}/disconnect", h.adminGoogleAds.Disconnect)
 
-	r.Get("/admin/meta-accounts", h.adminMetaAds.List)
 	r.Post("/admin/meta-accounts", h.adminMetaAds.Create)
 	r.Get("/admin/meta-accounts/{id}", h.adminMetaAds.Get)
 	r.Put("/admin/meta-accounts/{id}", h.adminMetaAds.Update)

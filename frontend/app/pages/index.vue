@@ -9,6 +9,16 @@
 
     <HealthAlertsBanner />
 
+    <SalesGoalProgressCard
+      v-if="salesGoal"
+      :goal-type="salesGoal.type"
+      :target="salesGoal.target"
+      :current="salesGoal.current"
+      :currency="activeCurrency"
+      :period-label="periodLabel"
+      :blurred="dashboardStore.privacyMode"
+    />
+
     <!-- Cards Executivos & Auditoria (Meta / Google × Painel + Enviados / Não enviados) -->
     <div class="section-header">
       <h3 class="section-title">Visão Executiva & Auditoria de Envios</h3>
@@ -71,6 +81,13 @@
         :currency="activeCurrency"
       />
     </div>
+
+    <!-- Links Rastreáveis de WhatsApp -->
+    <TrackableLinksCard
+      :overview="trackableLinks"
+      :currency="activeCurrency"
+      :blurred="dashboardStore.privacyMode"
+    />
 
     <!-- Mapa de Calor Dia × Hora (Mensagens, Leads e Vendas) -->
     <DashboardHeatmapCard :heatmap="heatmap" />
@@ -140,11 +157,13 @@ import KpiCard from '~/components/dashboard/KpiCard.vue'
 import MetaCreativeRankingCard from '~/components/dashboard/MetaCreativeRankingCard.vue'
 import GoogleKeywordRankingCard from '~/components/dashboard/GoogleKeywordRankingCard.vue'
 import DashboardHeatmapCard from '~/components/dashboard/DashboardHeatmapCard.vue'
+import TrackableLinksCard from '~/components/dashboard/TrackableLinksCard.vue'
 import EventsChart from '~/components/dashboard/EventsChart.vue'
 import ConversionFunnel from '~/components/dashboard/ConversionFunnel.vue'
 import GeoGlobe from '~/components/dashboard/GeoGlobe.vue'
 import RecentPurchases from '~/components/dashboard/RecentPurchases.vue'
 import HealthAlertsBanner from '~/components/dashboard/HealthAlertsBanner.vue'
+import SalesGoalProgressCard from '~/components/dashboard/SalesGoalProgressCard.vue'
 import TrafficQualityCard from '~/components/dashboard/TrafficQualityCard.vue'
 import EventDetailsModal from '~/components/events/EventDetailsModal.vue'
 import EventPickerModal from '~/components/dashboard/EventPickerModal.vue'
@@ -159,9 +178,9 @@ const { formatTitle } = useBranding()
 useHead({ title: computed(() => formatTitle('Dashboard')) })
 
 const {
-  dashboardStore, loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, heatmap, filteredSeriesPoints,
+  dashboardStore, loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, heatmap, trackableLinks, filteredSeriesPoints,
   metaCreatives, googleKeywords, recentPurchases, geoData, purchaseModalOpen, purchaseSelected, onPurchaseSelect,
-  headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, selectedPixelObj, activeCurrency, panelLeadsTotal,
+  headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, periodLabel, selectedPixelObj, activeCurrency, panelLeadsTotal, salesGoal,
   hasCustomCardPrefs, cardsEditorOpen, savingCardsPrefs, enabledCardIds, cardOrder, cardPickerOptions, visibleCards,
   onSaveCards, onResetCardsDefault, funnelEditorOpen, savingFunnelPrefs, enabledFunnelEvents, funnelOrder,
   funnelPickerOptions, funnelSteps, onSaveFunnelEvents, eventLabelOverrides, refresh,

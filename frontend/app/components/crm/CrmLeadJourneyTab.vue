@@ -39,7 +39,7 @@
     <div class="info-card-box">
       <div class="tags-header">
         <h4 class="box-subtitle no-margin">Tags do Lead</h4>
-        <button type="button" class="new-tag-link" @click="emit('create-tag')">+ Nova Tag</button>
+        <button v-if="!readOnly" type="button" class="new-tag-link" @click="emit('create-tag')">+ Nova Tag</button>
       </div>
 
       <div class="tags-list">
@@ -50,14 +50,14 @@
           :style="{ backgroundColor: tag.color + '18', color: tag.color, borderColor: tag.color + '40' }"
         >
           {{ tag.name }}
-          <button type="button" class="remove-tag-btn" title="Desvincular tag do lead" @click="emit('remove-tag', tag.id)">
+          <button v-if="!readOnly" type="button" class="remove-tag-btn" title="Desvincular tag do lead" @click="emit('remove-tag', tag.id)">
             &times;
           </button>
         </span>
         <span v-if="!tags?.length" class="empty-tags-hint">Nenhuma tag vinculada</span>
       </div>
 
-      <div class="add-tag-row">
+      <div v-if="!readOnly" class="add-tag-row">
         <div class="tag-select-wrap">
           <BaseDropdown
             :model-value="selectedTagToAdd"
@@ -100,8 +100,10 @@ const props = withDefaults(defineProps<{
   allTags: CrmTag[]
   selectedTagToAdd: string
   canManageTags?: boolean
+  readOnly?: boolean
 }>(), {
   canManageTags: true,
+  readOnly: false,
 })
 
 const emit = defineEmits<{

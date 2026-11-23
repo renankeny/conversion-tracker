@@ -5,9 +5,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/geoip"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
@@ -122,11 +124,17 @@ type apiBatchRequest struct {
 	Events []apiEventRequest `json:"events"`
 }
 
+var errAPIKeyScopeForbidden = errors.New("API key sem permissão de escrita no módulo de eventos")
+
 // SendEvent recebe um único evento via API autenticada.
 // POST /api/v1/send-event
 func (h *APIEvents) SendEvent(w http.ResponseWriter, r *http.Request) {
 	accountID, err := h.authenticate(r)
 	if err != nil {
+		if errors.Is(err, errAPIKeyScopeForbidden) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "invalid or missing API key")
 		return
 	}
@@ -151,6 +159,10 @@ func (h *APIEvents) SendEvent(w http.ResponseWriter, r *http.Request) {
 func (h *APIEvents) SendEventsBatch(w http.ResponseWriter, r *http.Request) {
 	accountID, err := h.authenticate(r)
 	if err != nil {
+		if errors.Is(err, errAPIKeyScopeForbidden) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "invalid or missing API key")
 		return
 	}
@@ -201,9 +213,15 @@ func (h *APIEvents) SendEventsBatch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// authenticate valida a API Key e retorna accountID.
+// authenticate valida a API Key (`X-API-Key` ou `Authorization: Bearer trk_...`) e retorna accountID.
 func (h *APIEvents) authenticate(r *http.Request) (accountID int64, err error) {
-	apiKey := r.Header.Get("X-API-Key")
+	apiKey := strings.TrimSpace(r.Header.Get("X-API-Key"))
+	if apiKey == "" {
+		authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+		if len(authHeader) >= 7 && strings.EqualFold(authHeader[:7], "Bearer ") {
+			apiKey = strings.TrimSpace(authHeader[7:])
+		}
+	}
 	if apiKey == "" {
 		return 0, errors.New("missing X-API-Key header")
 	}
@@ -219,6 +237,9 @@ func (h *APIEvents) authenticate(r *http.Request) (accountID int64, err error) {
 
 	if !key.IsActive() {
 		return 0, errors.New("API key revoked")
+	}
+	if key.ReadOnly || !key.HasScope(domain.APIScopeEvents) {
+		return 0, errAPIKeyScopeForbidden
 	}
 
 	_ = h.apiKeys.TouchLastUsed(r.Context(), key.ID)

@@ -6,7 +6,7 @@
       </div>
       <div class="kpi-info">
         <span class="kpi-label">Em Negociação</span>
-        <span class="kpi-value text-success-val">{{ formatCurrency(totalPipelineValue) }}</span>
+        <span class="kpi-value text-success-val" :class="{ blurred }">{{ formatCurrency(totalPipelineValue) }}</span>
       </div>
     </div>
 
@@ -26,7 +26,7 @@
       </div>
       <div class="kpi-info">
         <span class="kpi-label">Vendas Ganhas</span>
-        <span class="kpi-value text-brand-val">{{ formatCurrency(totalWonValue) }}</span>
+        <span class="kpi-value text-brand-val" :class="{ blurred }">{{ formatCurrency(totalWonValue) }}</span>
       </div>
     </div>
 
@@ -36,7 +36,7 @@
       </div>
       <div class="kpi-info">
         <span class="kpi-label">Ticket Médio</span>
-        <span class="kpi-value">{{ formatCurrency(averageTicket) }}</span>
+        <span class="kpi-value" :class="{ blurred }">{{ formatCurrency(averageTicket) }}</span>
       </div>
     </div>
   </div>
@@ -51,6 +51,7 @@ defineProps<{
   totalLeadsCount: number
   totalWonValue: number
   averageTicket: number
+  blurred?: boolean
 }>()
 
 const { formatCurrency } = useCrmHelpers()
@@ -121,6 +122,7 @@ const { formatCurrency } = useCrmHelpers()
   font-weight: var(--fw-bold);
   color: var(--text-strong);
 }
+.kpi-value.blurred { filter: blur(6px); user-select: none; }
 
 .text-success-val {
   color: var(--success);

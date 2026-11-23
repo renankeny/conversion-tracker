@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
@@ -105,6 +106,24 @@ func (a *Analyzer) applyQualification(
 		return false
 	}
 	a.publishUpdates(ctx, cand.AccountID, evRec, newStagePtr != nil)
+	if a.Notify != nil {
+		who := strings.TrimSpace(u.FirstName + " " + u.LastName)
+		if who == "" {
+			who = strings.TrimSpace(u.Phone)
+		}
+		if who == "" {
+			who = "Lead #" + fmt.Sprint(u.ID)
+		}
+		reason := strings.TrimSpace(q.Reason)
+		body := fmt.Sprintf("A IA qualificou %s na conversa de WhatsApp.", who)
+		if reason != "" {
+			body += " Motivo: " + reason
+		}
+		a.Notify.DispatchAsync(notify.Event{
+			AccountID: cand.AccountID, Category: domain.NotifAILeadQualified,
+			Title: "Lead Qualificado pela IA", Body: body, ActionURL: "/crm",
+		})
+	}
 	return true
 }
 

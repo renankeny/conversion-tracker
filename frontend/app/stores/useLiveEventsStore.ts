@@ -147,6 +147,13 @@ export const useLiveEventsStore = defineStore('liveEvents', () => {
     socket.onmessage = (e: MessageEvent) => {
       try {
         const msg = JSON.parse(e.data as string) as { type: string; data?: Record<string, unknown> }
+        if (msg.type === 'notification_created') {
+          const notifHandlers = customListeners.get(msg.type)
+          if (notifHandlers?.size) {
+            for (const cb of notifHandlers) cb(msg.data as never)
+          }
+          return
+        }
         const msgAccId = Number(msg.data?.account_id || 0)
         if (activeAccountId.value > 0 && msgAccId > 0 && msgAccId !== activeAccountId.value) return
         if (msg.type === 'new_event' && msg.data) {

@@ -10,6 +10,7 @@ import type {
   PanelAudit,
   PreviousPeriodMetrics,
   SourceBreakdown,
+  TrackableLinksOverview,
   TrafficQualityStats,
 } from '#shared/types'
 
@@ -66,6 +67,10 @@ export const useDashboard = () => {
     return api.get<GoogleKeywordInsight[]>('/admin/dashboard/google/keyword-ranking' + buildQuery(filters), { signal })
   }
 
+  const trackableLinksStats = (filters: { pixel_name?: string; from?: string; to?: string }, signal?: AbortSignal) => {
+    return api.get<TrackableLinksOverview>('/admin/trackable-links/stats' + buildQuery(filters), { signal })
+  }
+
   return {
     summary,
     series,
@@ -77,6 +82,7 @@ export const useDashboard = () => {
     metaCreativeRanking,
     googleLiveInsights,
     googleKeywordRanking,
+    trackableLinksStats,
   }
 }
 

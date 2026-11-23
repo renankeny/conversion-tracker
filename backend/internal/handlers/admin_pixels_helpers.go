@@ -99,6 +99,23 @@ func applyOptionalPixelFields(p *domain.Pixel, in pixelInput) {
 	if in.AggregationWindowMinutes != nil {
 		p.AggregationWindowMinutes = *in.AggregationWindowMinutes
 	}
+	if in.SalesGoalEnabled != nil {
+		p.SalesGoalEnabled = *in.SalesGoalEnabled
+	}
+	if in.SalesGoalType != nil {
+		p.SalesGoalType = domain.NormalizeSalesGoalType(strings.TrimSpace(*in.SalesGoalType))
+	}
+	if in.SalesGoalTarget != nil {
+		val := *in.SalesGoalTarget
+		if val < 0 {
+			val = 0
+		}
+		p.SalesGoalTarget = val
+	}
+	if in.PublicShowSalesGoal != nil {
+		v := *in.PublicShowSalesGoal
+		p.DashboardConfig.PublicShowSalesGoal = &v
+	}
 }
 
 func syncPixelGoogleAdsDefaults(ctx context.Context, gads *repo.GoogleAdsAccountRepo, p *domain.Pixel) {

@@ -9,7 +9,7 @@
         <BaseDropdown
           v-model="selectedAccountId"
           :options="accountOptions"
-          @update:modelValue="(val) => val && switchAccount(val)"
+          @update:modelValue="(val) => (typeof val === 'string' || typeof val === 'number') && switchAccount(val)"
         />
       </div>
     </div>
@@ -23,7 +23,8 @@
         :class="{ active: item.to === '/' ? route.path === '/' : isActive(item.to) }"
       >
         <component :is="item.icon" :size="18" class="link-icon" />
-        <span class="link-label">{{ item.label }}</span>
+        <span class="link-label flex-1">{{ item.label }}</span>
+        <span v-if="item.badge && item.badge > 0" class="unread-pill">{{ item.badge }}</span>
       </NuxtLink>
 
       <SidebarGroup label="Integrações" :icon="Plug" base-path="/integracoes">
@@ -39,11 +40,7 @@
         </NuxtLink>
       </SidebarGroup>
 
-      <SidebarGroup
-        label="Configurações"
-        :icon="Settings"
-        base-path="/settings"
-      >
+      <SidebarGroup label="Configurações" :icon="Settings" base-path="/settings">
         <NuxtLink to="/settings" class="sidebar-link sidebar-sublink" :class="{ active: route.path === '/settings' }">
           <span class="link-label">Geral</span>
         </NuxtLink>
@@ -82,8 +79,10 @@
 <script setup lang="ts">
 import {
   LayoutDashboard, Plug, Zap, Users, Settings,
-  Sun, Moon, LogOut, Kanban, Building2,
+  Sun, Moon, LogOut, Kanban, Building2, Bell, MessageSquare,
 } from 'lucide-vue-next'
+import type { Component } from 'vue'
+import { useNotificationsStore } from '~/stores/useNotificationsStore'
 import { MetaAdsIcon, GoogleAdsIcon, WhatsAppIcon, PixelBrainIcon } from '~/utils/adIcons'
 
 const {
@@ -92,14 +91,24 @@ const {
   canManageAccounts, loadAccounts, switchAccount, isActive, userInitials,
 } = useAccountNavigation()
 
+const notifStore = useNotificationsStore()
 onMounted(() => loadAccounts())
 
-const primaryLinks = computed(() => {
-  const links = [
+interface PrimaryNavLink {
+  to: string
+  label: string
+  icon: Component
+  badge?: number
+}
+
+const primaryLinks = computed<PrimaryNavLink[]>(() => {
+  const links: PrimaryNavLink[] = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/crm', label: 'CRM', icon: Kanban },
+    { to: '/conversas', label: 'Conversas', icon: MessageSquare },
     { to: '/events', label: 'Eventos', icon: Zap },
     { to: '/users', label: 'Usuários', icon: Users },
+    { to: '/notificacoes', label: 'Notificações', icon: Bell, badge: notifStore.unreadCount },
   ]
   if (canManageAccounts.value) {
     links.push({ to: '/empresas', label: 'Empresas', icon: Building2 })
@@ -119,122 +128,43 @@ const integrationLinks = [
 </script>
 
 <style scoped>
-.app-sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 260px;
-  background: var(--surface-deep);
-  display: flex;
-  flex-direction: column;
-  z-index: 50;
-}
-.sidebar-header {
-  padding: 1.5rem 1.25rem;
-  border-bottom: 1px solid var(--border-soft);
-}
-.sidebar-logo {
-  display: flex;
-  align-items: center;
-  text-decoration: none;
-}
-.sidebar-nav {
-  flex: 1;
-  padding: 1rem 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  overflow-y: auto;
-}
+.app-sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 260px; background: var(--surface-deep); display: flex; flex-direction: column; z-index: 50; }
+.sidebar-header { padding: 1.5rem 1.25rem; border-bottom: 1px solid var(--border-soft); }
+.sidebar-logo { display: flex; align-items: center; text-decoration: none; }
+.sidebar-nav { flex: 1; padding: 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; overflow-y: auto; }
 .sidebar-link {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 0.875rem;
-  border-radius: 8px;
-  color: var(--text-2);
-  text-decoration: none;
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-medium);
-  transition: all 0.15s ease;
-  position: relative;
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0.875rem; border-radius: 8px;
+  color: var(--text-2); text-decoration: none; font-size: var(--fs-lg); font-weight: var(--fw-medium);
+  transition: all 0.15s ease; position: relative;
 }
 .sidebar-link:hover { background: var(--surface-soft); color: var(--text-1); }
 .sidebar-link.active { background: transparent; color: var(--brand); }
 .sidebar-link.active::before {
-  content: '';
-  position: absolute;
-  left: -0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 60%;
-  background: var(--brand);
-  border-radius: 0 3px 3px 0;
+  content: ''; position: absolute; left: -0.75rem; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 60%; background: var(--brand); border-radius: 0 3px 3px 0;
+}
+.unread-pill {
+  min-width: 20px; height: 20px; padding: 0 0.375rem; border-radius: 999px;
+  background: var(--brand); color: var(--brand-text); font-size: var(--fs-xs); font-weight: var(--fw-bold);
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .sidebar-sublink { font-size: var(--fs-md); padding: 0.5rem 0.75rem; gap: 0.625rem; }
 .sidebar-sublink.active::before { display: none; }
 .sublink-icon { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: inherit; }
 .link-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.sidebar-footer {
-  padding: 1rem 0.75rem;
-  border-top: 1px solid var(--border-soft);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.25rem;
-}
+.sidebar-footer { padding: 1rem 0.75rem; border-top: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 0.5rem; }
+.user-info { display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.75rem; margin-bottom: 0.25rem; }
 .user-avatar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--brand);
-  color: var(--brand-text);
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-base);
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
+  border-radius: 50%; background: var(--brand); color: var(--brand-text); font-weight: var(--fw-bold); font-size: var(--fs-base);
 }
 .user-details { flex: 1; min-width: 0; }
-.user-name {
-  font-size: var(--fs-md);
-  font-weight: var(--fw-semibold);
-  color: var(--text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.user-email {
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.user-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-email { font-size: var(--fs-sm); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .theme-toggle, .logout-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.5rem 0.875rem;
-  border-radius: 8px;
-  background: transparent;
-  border: none;
-  color: var(--text-2);
-  font-size: var(--fs-md);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  text-align: left;
-  width: 100%;
+  display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.875rem; border-radius: 8px;
+  background: transparent; border: none; color: var(--text-2); font-size: var(--fs-md);
+  font-weight: var(--fw-medium); cursor: pointer; transition: all 0.15s ease; text-align: left; width: 100%;
 }
 .theme-toggle:hover { background: var(--surface-soft); color: var(--text-1); }
 .logout-btn:hover { background: var(--danger-soft); color: var(--danger); }

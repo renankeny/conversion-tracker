@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-import { LayoutDashboard, Kanban, Zap, Users, Menu, X } from 'lucide-vue-next'
+import { LayoutDashboard, Kanban, MessageSquare, Zap, Menu, X } from 'lucide-vue-next'
 
 const { isActive, loadAccounts } = useAccountNavigation()
 const drawerOpen = ref(false)
@@ -41,8 +41,8 @@ onMounted(loadAccounts)
 const mainNavItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/crm', label: 'CRM', icon: Kanban },
+  { path: '/conversas', label: 'Conversas', icon: MessageSquare },
   { path: '/events', label: 'Eventos', icon: Zap },
-  { path: '/users', label: 'Usuários', icon: Users },
 ]
 
 const isMoreActive = computed(() => !mainNavItems.some((item) => isActive(item.path)))

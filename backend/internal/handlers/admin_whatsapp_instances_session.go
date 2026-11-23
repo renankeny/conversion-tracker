@@ -161,9 +161,14 @@ func (h *AdminWhatsAppInstances) RefreshStatus(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	wasOpen := isWhatsAppInstanceConnected(inst.ConnectionStatus)
 	if err := syncInstanceLiveStatus(ctx, h.repo, inst, h.publicAPIURL); err != nil {
 		writeError(w, http.StatusBadGateway, "erro ao consultar status: "+err.Error())
 		return
+	}
+	nowOpen := isWhatsAppInstanceConnected(inst.ConnectionStatus)
+	if wasOpen != nowOpen {
+		emitWhatsAppStatusNotification(h.notify, inst, nowOpen)
 	}
 	updated, _ := h.repo.GetInstance(ctx, inst.AccountID, inst.ID)
 	if updated == nil {
@@ -178,17 +183,24 @@ func (h *AdminWhatsAppInstances) Disconnect(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	wasOpen := isWhatsAppInstanceConnected(inst.ConnectionStatus)
 	if inst.IsExternalUazapi() {
 		if inst.ExternalAPIURL != "" && inst.InstanceToken != "" {
 			_ = uazapi.New(inst.ExternalAPIURL, inst.InstanceToken).Disconnect(r.Context())
 		}
 		_ = h.repo.ResetInstanceSession(r.Context(), inst.ID, "CLOSED")
+		if wasOpen {
+			emitWhatsAppStatusNotification(h.notify, inst, false)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"disconnected": true})
 		return
 	}
 	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
 	_ = cli.LogoutInstance(r.Context(), inst.InstanceToken)
 	_ = h.repo.ResetInstanceSession(r.Context(), inst.ID, "CLOSED")
+	if wasOpen {
+		emitWhatsAppStatusNotification(h.notify, inst, false)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"disconnected": true})
 }
 

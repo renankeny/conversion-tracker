@@ -11,7 +11,9 @@ import type {
   GroupedEventsResponse,
   PanelAudit,
   PreviousPeriodMetrics,
+  PublicSalesGoal,
   SourceBreakdown,
+  TrackableLinksOverview,
   TrafficQualityStats,
 } from '#shared/types'
 
@@ -34,7 +36,7 @@ export const usePublicDashboard = (token: string) => {
   const base = `/public/dashboard/${encodeURIComponent(token)}`
 
   const meta = (signal?: AbortSignal) =>
-    api.publicGet<{ pixel_label: string; currency?: string; dashboard_config: DashboardConfig }>(`${base}/meta`, { signal })
+    api.publicGet<{ pixel_label: string; currency?: string; dashboard_config: DashboardConfig; sales_goal?: PublicSalesGoal }>(`${base}/meta`, { signal })
 
   const adsSummary = (f: { from: string; to: string }, signal?: AbortSignal) =>
     api.publicGet<{ meta?: AdPlatformLiveInsights; google?: AdPlatformLiveInsights }>(
@@ -97,5 +99,11 @@ export const usePublicDashboard = (token: string) => {
       { signal },
     )
 
-  return { meta, adsSummary, metaCreatives, googleKeywords, summary, series, geo, geoByEvent, purchases, revenue }
+  const trackableLinks = (f: { from: string; to: string }, signal?: AbortSignal) =>
+    api.publicGet<TrackableLinksOverview>(
+      `${base}/trackable-links${buildPublicQuery({ from: f.from, to: f.to })}`,
+      { signal },
+    )
+
+  return { meta, adsSummary, metaCreatives, googleKeywords, summary, series, geo, geoByEvent, purchases, revenue, trackableLinks }
 }

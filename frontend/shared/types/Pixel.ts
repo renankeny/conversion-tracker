@@ -35,12 +35,24 @@ export interface TrackerConfig {
   utm_origin_param: string
 }
 
+export type SalesGoalType = 'revenue' | 'count'
+
+export interface PublicSalesGoal {
+  enabled: boolean
+  type: SalesGoalType
+  target: number
+}
+
 export interface DashboardConfig {
   enabled_cards: string[]
   card_order: string[]
   enabled_funnel_events: string[]
   funnel_order: string[]
   event_labels: Record<string, string>
+  public_show_crm?: boolean
+  public_allow_crm_edit?: boolean
+  public_show_conversations?: boolean
+  public_show_sales_goal?: boolean
 }
 
 export interface Pixel {
@@ -83,6 +95,11 @@ export interface Pixel {
   aggregation_enabled?: boolean
   aggregation_window_minutes?: number
 
+  /** Meta de Vendas por Pixel */
+  sales_goal_enabled?: boolean
+  sales_goal_type?: SalesGoalType
+  sales_goal_target?: number
+
   created_at: string
   updated_at: string
 }
@@ -116,6 +133,11 @@ export interface PixelInput {
 
   aggregation_enabled?: boolean
   aggregation_window_minutes?: number
+
+  sales_goal_enabled?: boolean
+  sales_goal_type?: SalesGoalType
+  sales_goal_target?: number
+  public_show_sales_goal?: boolean
 }
 
 export type CreatePixelInput = PixelInput

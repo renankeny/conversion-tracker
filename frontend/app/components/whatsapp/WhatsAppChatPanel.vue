@@ -27,11 +27,11 @@
             :loading="loadingMore"
             :total-loaded="messages.length"
             :can-auto-trigger="canAutoLoadOlder"
-            @load-more="loadOlder(crmLeadId, trackedUserId)"
+            @load-more="loadOlder(crmLeadId, trackedUserId, chatId, publicToken)"
           />
 
           <div v-if="!messages.length && !aiEvents.length" class="no-msgs">
-            Conversa vinculada — aguardando mensagens.
+            Conversa vinculada, aguardando mensagens.
           </div>
 
           <template v-for="item in feedItems" :key="item.key">
@@ -84,8 +84,10 @@ import { useWhatsAppChat } from '~/composables/useWhatsAppChat'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
 
 const props = defineProps<{
+  chatId?: number | null
   crmLeadId?: number | null
   trackedUserId?: number | null
+  publicToken?: string | null
 }>()
 
 const { user } = useAuth()
@@ -94,7 +96,7 @@ const panelRef = ref<HTMLElement | null>(null)
 const showContestModal = ref(false)
 const contestingEvent = ref<WhatsAppAIEvent | null>(null)
 
-const canContestAI = computed(() => user.value?.role !== 'employee')
+const canContestAI = computed(() => !props.publicToken && user.value?.role !== 'employee')
 
 const {
   loading, loadingMore, canAutoLoadOlder, chat, messages, aiEvents, hasMore,
@@ -109,8 +111,8 @@ const openContestModal = (ev: WhatsAppAIEvent) => {
 }
 
 watch(
-  () => [props.crmLeadId, props.trackedUserId] as const,
-  ([lId, uId]) => { void loadInitial(lId, uId) },
+  () => [props.crmLeadId, props.trackedUserId, props.chatId, props.publicToken] as const,
+  ([lId, uId, cId, pubTok]) => { void loadInitial(lId, uId, cId, pubTok) },
   { immediate: true },
 )
 
@@ -138,7 +140,7 @@ onMounted(() => {
     const matchesUser = props.trackedUserId && d?.tracked_user_id === props.trackedUserId
     if (!matchesChat && !matchesLead && !matchesUser) return
     if (!chat.value) {
-      void loadInitial(props.crmLeadId, props.trackedUserId)
+      void loadInitial(props.crmLeadId, props.trackedUserId, props.chatId, props.publicToken)
       return
     }
     if (d?.message) appendLiveMessage(d.message)

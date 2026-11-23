@@ -28,7 +28,7 @@ const userColumns = `id, external_id, id_wpp, pixel_name, account_id, group_id,
 		first_utm_source, first_utm_medium, first_utm_campaign, first_utm_content, first_utm_term,
 		last_utm_source, last_utm_medium, last_utm_campaign, last_utm_content, last_utm_term,
 		ctwa_clid, wa_chat_id, wa_name, wa_ad_id, wa_source_app,
-		ga4_client_id, ga4_session_id, wa_lid,
+		ga4_client_id, ga4_session_id, wa_lid, trackable_link_id,
 		created_at, updated_at,
 		pageview_count, checkout_count, last_seen_at,
 		referrer, traffic_type, traffic_score, traffic_category, traffic_rules`

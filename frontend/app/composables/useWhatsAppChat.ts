@@ -1,4 +1,4 @@
-import type { WhatsAppAIEvent, WhatsAppChat, WhatsAppMessage } from '#shared/types'
+import type { WhatsAppAIEvent, WhatsAppChat, WhatsAppChatWithMessages, WhatsAppMessage } from '#shared/types'
 import { dateKeySP } from '~/utils/formatDate'
 
 export interface ChatFeedItem {
@@ -9,8 +9,16 @@ export interface ChatFeedItem {
   aiEvent?: WhatsAppAIEvent
 }
 
+export interface ChatTargetRef {
+  chatId?: number | null
+  leadId?: number | null
+  userId?: number | null
+  publicToken?: string | null
+}
+
 export const useWhatsAppChat = () => {
   const wa = useWhatsApp()
+  const api = useAPI()
 
   const loading = ref(false)
   const loadingMore = ref(false)
@@ -25,14 +33,30 @@ export const useWhatsAppChat = () => {
   const unreadBelow = ref(0)
   const canAutoLoadOlder = ref(false)
 
+  const fetchChatPage = (target: ChatTargetRef, params: { before_id?: number | null; limit: number }): Promise<WhatsAppChatWithMessages> => {
+    const q = new URLSearchParams()
+    if (params.before_id) q.set('before_id', String(params.before_id))
+    q.set('limit', String(params.limit))
+    const qs = `?${q.toString()}`
+
+    if (target.publicToken) {
+      const base = `/public/dashboard/${encodeURIComponent(target.publicToken)}`
+      if (target.chatId) {
+        return api.publicGet<WhatsAppChatWithMessages>(`${base}/chats/${target.chatId}/messages${qs}`)
+      }
+      return api.publicGet<WhatsAppChatWithMessages>(`${base}/crm/leads/${target.leadId}/chat${qs}`)
+    }
+    if (target.chatId) return wa.getChatMessages(target.chatId, params)
+    if (target.leadId) return wa.getChatByLead(target.leadId, params)
+    return wa.getChatByTrackedUser(target.userId!, params)
+  }
+
   const scrollToBottom = (smooth = false) => {
     nextTick(() => {
       const el = scrollBox.value
       if (!el) return
       el.scrollTop = el.scrollHeight
-      if (smooth) {
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-      }
+      if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
       unreadBelow.value = 0
       showScrollBottom.value = false
     })
@@ -40,9 +64,10 @@ export const useWhatsAppChat = () => {
 
   let loadSeq = 0
 
-  const loadInitial = async (leadId?: number | null, userId?: number | null) => {
+  const loadInitial = async (leadId?: number | null, userId?: number | null, chatId?: number | null, publicToken?: string | null) => {
     const seq = ++loadSeq
-    if (!leadId && !userId) {
+    const hasTarget = Boolean(chatId || leadId || (!publicToken && userId))
+    if (!hasTarget) {
       chat.value = null
       messages.value = []
       aiEvents.value = []
@@ -55,10 +80,7 @@ export const useWhatsAppChat = () => {
     canAutoLoadOlder.value = false
     loading.value = true
     try {
-      const res = leadId
-        ? await wa.getChatByLead(leadId, { limit: 20 })
-        : await wa.getChatByTrackedUser(userId!, { limit: 20 })
-
+      const res = await fetchChatPage({ chatId, leadId, userId, publicToken }, { limit: 20 })
       if (seq !== loadSeq) return
       chat.value = res.chat || null
       messages.value = res.messages || []
@@ -89,7 +111,7 @@ export const useWhatsAppChat = () => {
     }
   }
 
-  const loadOlder = async (leadId?: number | null, userId?: number | null) => {
+  const loadOlder = async (leadId?: number | null, userId?: number | null, chatId?: number | null, publicToken?: string | null) => {
     if (!hasMore.value || loadingMore.value || !nextBeforeId.value) return
     const seq = loadSeq
     const el = scrollBox.value
@@ -98,10 +120,7 @@ export const useWhatsAppChat = () => {
 
     loadingMore.value = true
     try {
-      const res = leadId
-        ? await wa.getChatByLead(leadId, { before_id: nextBeforeId.value, limit: 20 })
-        : await wa.getChatByTrackedUser(userId!, { before_id: nextBeforeId.value, limit: 20 })
-
+      const res = await fetchChatPage({ chatId, leadId, userId, publicToken }, { before_id: nextBeforeId.value, limit: 20 })
       if (seq !== loadSeq) return
       const older = res.messages || []
       const existingIds = new Set(messages.value.map((m) => m.id))
@@ -113,9 +132,7 @@ export const useWhatsAppChat = () => {
       nextBeforeId.value = res.next_before_id ?? null
 
       await nextTick()
-      if (el) {
-        el.scrollTop = el.scrollHeight - prevScrollHeight + prevScrollTop
-      }
+      if (el) el.scrollTop = el.scrollHeight - prevScrollHeight + prevScrollTop
     } catch {
       // Falha de rede silenciosa para permitir nova tentativa no scroll
     } finally {
@@ -127,9 +144,8 @@ export const useWhatsAppChat = () => {
     const el = scrollBox.value
     if (!el) return
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (distanceToBottom > 150) {
-      showScrollBottom.value = true
-    } else {
+    if (distanceToBottom > 150) showScrollBottom.value = true
+    else {
       showScrollBottom.value = false
       unreadBelow.value = 0
     }
@@ -138,16 +154,14 @@ export const useWhatsAppChat = () => {
   const appendLiveMessage = (msg: WhatsAppMessage) => {
     if (messages.value.some((m) => m.id === msg.id)) return
     messages.value.push(msg)
-
     const el = scrollBox.value
     if (!el) {
       scrollToBottom(false)
       return
     }
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (distanceToBottom <= 180) {
-      scrollToBottom(true)
-    } else {
+    if (distanceToBottom <= 180) scrollToBottom(true)
+    else {
       unreadBelow.value++
       showScrollBottom.value = true
     }
@@ -155,16 +169,13 @@ export const useWhatsAppChat = () => {
 
   const updateMessageMedia = (messageId: number, mediaData: Partial<WhatsAppMessage>) => {
     const idx = messages.value.findIndex((m) => m.id === messageId)
-    if (idx >= 0) {
-      messages.value[idx] = { ...messages.value[idx]!, ...mediaData }
-    }
+    if (idx >= 0) messages.value[idx] = { ...messages.value[idx]!, ...mediaData }
   }
 
   const upsertAIEvent = (ev: WhatsAppAIEvent) => {
     const idx = aiEvents.value.findIndex((e) => e.id === ev.id)
-    if (idx >= 0) {
-      aiEvents.value[idx] = ev
-    } else {
+    if (idx >= 0) aiEvents.value[idx] = ev
+    else {
       aiEvents.value.push(ev)
       scrollToBottom(true)
     }
@@ -203,9 +214,7 @@ export const useWhatsAppChat = () => {
     }
 
     for (const ev of aiEvents.value) {
-      if (!placedIds.has(ev.id)) {
-        items.push({ key: `ai-${ev.id}`, type: 'ai', aiEvent: ev })
-      }
+      if (!placedIds.has(ev.id)) items.push({ key: `ai-${ev.id}`, type: 'ai', aiEvent: ev })
     }
     return items
   })

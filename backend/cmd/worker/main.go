@@ -17,6 +17,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/maintenance"
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/metaoauth"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/storage"
@@ -105,6 +106,9 @@ func main() {
 		}
 	}
 
+	notifySvc := notify.NewService(repo.NewNotificationRepo(pool), rdb, cfg.AdminEmail, cfg.AppURL)
+	_, _ = notifySvc.EnsureKeys(ctx)
+
 	srv := queue.NewServer(redisOpt, queue.Deps{
 		Pool:               pool,
 		Pixels:             pixelRepo,
@@ -112,6 +116,7 @@ func main() {
 		GoogleAdsAcc:       repo.NewGoogleAdsAccountRepo(pool),
 		MetaAcc:            repo.NewMetaAccountRepo(pool),
 		WhatsApp:           repo.NewWhatsAppRepo(pool),
+		TrackableLinks:     repo.NewTrackableLinkRepo(pool),
 		CRM:                repo.NewCRMRepo(pool),
 		Storage:            mediaStorage,
 		Enqueuer:           enq,
@@ -122,7 +127,9 @@ func main() {
 		GA4:                ga4.NewClient(),
 		Counters:           repo.NewEventCounterRepo(pool),
 		SentEvents:         repo.NewSentEventRepo(pool),
+		Notify:             notifySvc,
 		Redis:              rdb,
+		AppURL:             cfg.AppURL,
 		PublicAPIURL:       cfg.PublicAPIURL,
 		JWTSecret:          cfg.JWTSecret,
 		MediaRetentionDays: cfg.WhatsAppMediaRetentionDays,
@@ -162,6 +169,7 @@ func main() {
 			MetaAcc:  repo.NewMetaAccountRepo(pool),
 			Storage:  mediaStorage,
 			Enqueuer: enq,
+			Notify:   notifySvc,
 			Redis:    rdb,
 		},
 		Interval: 15 * time.Minute,

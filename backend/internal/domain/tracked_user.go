@@ -66,8 +66,9 @@ type TrackedUser struct {
 	WaChatID    string `json:"wa_chat_id"`    // ID do chat
 	WaName      string `json:"wa_name"`       // Nome do contato
 	WaAdID      string `json:"wa_ad_id"`      // ID do criativo
-	WaSourceApp string `json:"wa_source_app"` // fb_messenger, instagram, etc
-	WaLid       string `json:"wa_lid"`        // Linked ID (JID @lid) — fallback quando o WhatsApp não expõe o telefone real
+	WaSourceApp     string `json:"wa_source_app"` // fb_messenger, instagram, etc
+	WaLid           string `json:"wa_lid"`        // Linked ID (JID @lid) — fallback quando o WhatsApp não expõe o telefone real
+	TrackableLinkID *int64 `json:"trackable_link_id,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

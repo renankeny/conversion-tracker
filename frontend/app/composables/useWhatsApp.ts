@@ -1,6 +1,8 @@
 import type {
   AccountAISettings,
   AccountAISettingsInput,
+  ConversationAuditQuery,
+  ConversationAuditResponse,
   WhatsAppAIEvent,
   WhatsAppAIRunSummary,
   WhatsAppChatWithMessages,
@@ -99,6 +101,19 @@ export const useWhatsApp = () => {
     return api.get<WhatsAppChatWithMessages>(`/admin/whatsapp/chats/${chatId}/messages${qs}`)
   }
 
+  const listAuditConversations = (query: ConversationAuditQuery, signal?: AbortSignal): Promise<ConversationAuditResponse> => {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined && v !== null && v !== '') q.set(k, String(v))
+    }
+    const qs = q.toString() ? `?${q.toString()}` : ''
+    return api.get<ConversationAuditResponse>(`/admin/whatsapp/conversations${qs}`, { signal })
+  }
+
+  const getWaitingCount = (): Promise<{ waiting_count: number }> => {
+    return api.get<{ waiting_count: number }>('/admin/whatsapp/conversations/waiting-count')
+  }
+
   const convertChat = (
     chatId: number,
     body: { event_name: string; value?: number; currency?: string },
@@ -139,6 +154,8 @@ export const useWhatsApp = () => {
     getChatByLead,
     getChatByTrackedUser,
     getChatMessages,
+    listAuditConversations,
+    getWaitingCount,
     convertChat,
     getAISettings,
     updateAISettings,

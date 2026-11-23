@@ -31,9 +31,11 @@ type routeHandlers struct {
 	adminWAServers      *handlers.AdminWhatsAppServers
 	adminWAInstances    *handlers.AdminWhatsAppInstances
 	adminWAChats        *handlers.AdminWhatsAppChats
-	adminWAStats        *handlers.AdminWhatsAppStats
-	adminWhatsAppAI     *handlers.AdminWhatsAppAI
-	customWebhook       *handlers.CustomWebhookHandler
+	adminWAStats         *handlers.AdminWhatsAppStats
+	adminWhatsAppAI      *handlers.AdminWhatsAppAI
+	publicTrackableLinks *handlers.PublicTrackableLinks
+	adminTrackableLinks  *handlers.AdminTrackableLinks
+	customWebhook        *handlers.CustomWebhookHandler
 	publicDashboard     *handlers.PublicDashboard
 	adminAuth           *handlers.AdminAuth
 	adminGoogleAds      *handlers.AdminGoogleAdsAccounts
@@ -57,6 +59,7 @@ type routeHandlers struct {
 	adminStats          *handlers.AdminStats
 	adminCounters       *handlers.AdminCounters
 	adminAPIKeys        *handlers.AdminAPIKeys
+	adminNotifications  *handlers.AdminNotifications
 	adminDashboardMeta   *handlers.AdminDashboardMeta
 	adminDashboardGoogle *handlers.AdminDashboardGoogle
 	apiEvents            *handlers.APIEvents

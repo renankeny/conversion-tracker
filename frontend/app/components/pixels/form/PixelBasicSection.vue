@@ -45,6 +45,15 @@
       />
     </div>
 
+    <PixelSalesGoalSection
+      v-model:enabled="form.sales_goal_enabled"
+      v-model:goal-type="form.sales_goal_type"
+      v-model:target="form.sales_goal_target"
+      v-model:show-on-public-link="form.public_show_sales_goal"
+      :currency="form.tracker_config?.product_currency || 'BRL'"
+      :error="salesGoalError"
+    />
+
     <PixelAggregationSection
       v-model:enabled="form.aggregation_enabled"
       v-model:window-minutes="form.aggregation_window_minutes"
@@ -53,7 +62,9 @@
 </template>
 
 <script setup lang="ts">
+import type { SalesGoalType, TrackerConfig } from '#shared/types'
 import PixelAggregationSection from '~/components/pixels/form/PixelAggregationSection.vue'
+import PixelSalesGoalSection from '~/components/pixels/form/PixelSalesGoalSection.vue'
 
 interface BasicFormState {
   name: string
@@ -62,12 +73,18 @@ interface BasicFormState {
   account_id: number | null
   aggregation_enabled: boolean
   aggregation_window_minutes: number
+  sales_goal_enabled: boolean
+  sales_goal_type: SalesGoalType
+  sales_goal_target: number
+  public_show_sales_goal: boolean
+  tracker_config?: TrackerConfig
 }
 
 const props = defineProps<{
   form: BasicFormState
   domainsInput: string
   nameError: string
+  salesGoalError?: string
   isEditing: boolean
 }>()
 

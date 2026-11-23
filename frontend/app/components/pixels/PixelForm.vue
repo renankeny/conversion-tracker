@@ -19,6 +19,10 @@
         <span v-if="form.google_ads_account_id" class="tab-count">1</span>
       </button>
       <button type="button" class="tab" :class="{ active: activeTab === 'tracker' }" @click="activeTab = 'tracker'">Tracker</button>
+      <button v-if="isEditing && pixel" type="button" class="tab" :class="{ active: activeTab === 'links' }" @click="activeTab = 'links'">
+        Links WhatsApp
+        <span v-if="linksCount > 0" class="tab-count">{{ linksCount }}</span>
+      </button>
     </div>
 
     <PixelBasicSection
@@ -26,6 +30,7 @@
       :form="form"
       v-model:domains-input="domainsInput"
       :name-error="errors.name"
+      :sales-goal-error="errors.sales_goal"
       :is-editing="isEditing"
       @submit="onSubmit"
     />
@@ -50,6 +55,10 @@
     <div v-show="activeTab === 'tracker'" class="tab-content">
       <TrackerConfigEditor v-model="form.tracker_config" />
     </div>
+
+    <div v-if="isEditing && pixel" v-show="activeTab === 'links'" class="tab-content">
+      <PixelTrackableLinksSection :pixel="pixel" @count-updated="linksCount = $event" />
+    </div>
   </div>
 </template>
 
@@ -58,6 +67,7 @@ import TrackerConfigEditor from '~/components/pixels/TrackerConfigEditor.vue'
 import PixelBasicSection from '~/components/pixels/form/PixelBasicSection.vue'
 import PixelChannelsSection from '~/components/pixels/form/PixelChannelsSection.vue'
 import PixelAdvancedSection from '~/components/pixels/form/PixelAdvancedSection.vue'
+import PixelTrackableLinksSection from '~/components/pixels/links/PixelTrackableLinksSection.vue'
 import { usePixelForm, type PixelFormTabKey } from '~/composables/usePixelForm'
 import type { Pixel, PixelInput } from '#shared/types'
 
@@ -86,6 +96,7 @@ const {
   buildPayload,
 } = usePixelForm(props)
 
+const linksCount = ref(0)
 const metaTabCount = computed(() => form.pixel_ids.map((s) => s.trim()).filter(Boolean).length)
 const tiktokTabCount = computed(() => form.tiktok_pixel_ids.map((s) => s.trim()).filter(Boolean).length)
 

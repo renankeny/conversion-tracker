@@ -26,7 +26,7 @@ export const useDashboardFetch = (selectedPixel: ComputedRef<string>) => {
 
   const {
     summaryData, seriesData, trafficQuality, sourceBreakdown, panelAudit,
-    previousPeriod, heatmap, recentPurchases, geoData, totalRevenue,
+    previousPeriod, heatmap, recentPurchases, geoData, totalRevenue, trackableLinks,
     metaInsights, googleInsights, metaCreatives, googleKeywords,
   } = storeToRefs(dataStore)
 
@@ -70,13 +70,14 @@ export const useDashboardFetch = (selectedPixel: ComputedRef<string>) => {
     else isRefreshing.value = true
 
     try {
-      const [summary, series, purchases, geo, geoPurchases, revenue] = await Promise.all([
+      const [summary, series, purchases, geo, geoPurchases, revenue, linksRes] = await Promise.all([
         dashboard.summary({ from, to, pixel: px, traffic_source: ts }, ac.signal),
         dashboard.series({ from, to, granularity: dashboardStore.granularityFor, pixel: px, traffic_source: ts }, ac.signal),
         dashboard.recentPurchases({ from, to, limit: 50, pixel: px, traffic_source: ts }, ac.signal),
         dashboard.geoStats({ from, to, pixel: px, traffic_source: ts }, ac.signal),
         dashboard.geoStatsByEvent({ from, to, event: 'Purchase', pixel: px, traffic_source: ts }, ac.signal),
         dashboard.revenue({ from, to, pixel: px, traffic_source: ts }, ac.signal),
+        dashboard.trackableLinksStats({ pixel_name: px, from, to }, ac.signal).catch(() => null),
       ])
       if (seq !== coreSeq || ac.signal.aborted) return
 
@@ -84,6 +85,7 @@ export const useDashboardFetch = (selectedPixel: ComputedRef<string>) => {
       seriesData.value = series
       recentPurchases.value = purchases.data || []
       totalRevenue.value = revenue.total_revenue ?? 0
+      trackableLinks.value = linksRes
       trafficQuality.value = revenue.traffic_quality
       sourceBreakdown.value = revenue.source_breakdown || null
       panelAudit.value = revenue.panel_audit || null
@@ -221,7 +223,7 @@ export const useDashboardFetch = (selectedPixel: ComputedRef<string>) => {
   return {
     loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, sourceBreakdown,
     panelAudit, previousPeriod, heatmap, metaInsights, googleInsights, metaCreatives,
-    googleKeywords, recentPurchases, geoData, totalRevenue,
+    googleKeywords, recentPurchases, geoData, totalRevenue, trackableLinks,
     refresh: () => fetchAll({ force: true }),
   }
 }

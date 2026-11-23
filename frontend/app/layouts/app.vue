@@ -15,8 +15,10 @@
 </template>
 
 <script setup lang="ts">
+import type { UserNotificationItem } from '#shared/types'
 import { useAuthStore } from '~/stores/useAuthStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
+import { useNotificationsStore } from '~/stores/useNotificationsStore'
 import { useTenantStore } from '~/stores/useTenantStore'
 
 // Conecta o WebSocket de eventos ao vivo quando o usuário entra no painel.
@@ -25,14 +27,21 @@ const { token } = useAuth()
 const authStore = useAuthStore()
 const tenantStore = useTenantStore()
 const liveStore = useLiveEventsStore()
+const notifStore = useNotificationsStore()
+let offRealtimeNotif: (() => void) | null = null
 
 onMounted(async () => {
+  void notifStore.initClientPWA()
+  offRealtimeNotif = liveStore.onCustomEvent<UserNotificationItem>('notification_created', (item) => {
+    notifStore.pushIncomingRealtime(item)
+  })
   if (!token.value) return
   if (authStore.canManageAccounts && !tenantStore.loaded) {
     await tenantStore.fetchAccounts().catch(() => {})
   }
   if (token.value) {
     void liveStore.connect(token.value)
+    void notifStore.fetchOverview().catch(() => {})
   }
 })
 
@@ -50,6 +59,7 @@ watch(token, async (newToken) => {
 })
 
 onUnmounted(() => {
+  offRealtimeNotif?.()
   liveStore.disconnect()
 })
 </script>

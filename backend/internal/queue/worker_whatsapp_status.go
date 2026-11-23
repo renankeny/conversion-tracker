@@ -38,6 +38,7 @@ func handleEvolutionConnected(ctx context.Context, deps Deps, inst *domain.Whats
 		}
 	}
 
+	wasOpen := strings.EqualFold(inst.ConnectionStatus, "OPEN")
 	_ = deps.WhatsApp.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, profName, profPic)
 	wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
 		"instance_id":     inst.ID,
@@ -46,6 +47,9 @@ func handleEvolutionConnected(ctx context.Context, deps Deps, inst *domain.Whats
 		"profile_name":    profName,
 		"profile_pic_url": profPic,
 	})
+	if !wasOpen {
+		notifyWhatsAppStateChange(deps, inst, true)
+	}
 }
 
 func handleEvolutionProfile(ctx context.Context, deps Deps, inst *domain.WhatsAppInstance, raw json.RawMessage) {
@@ -87,11 +91,15 @@ func syncUazapiMetaFromWebhook(ctx context.Context, deps Deps, inst *domain.What
 	profPic := meta.ProfilePicURL
 
 	if meta.ConnStatus == "disconnected" || meta.ConnStatus == "hibernated" {
+		wasOpen := strings.EqualFold(inst.ConnectionStatus, "OPEN")
 		_ = deps.WhatsApp.UpdateInstanceStatus(ctx, inst.ID, "DISCONNECTED")
 		wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
 			"instance_id": inst.ID,
 			"status":      "DISCONNECTED",
 		})
+		if wasOpen {
+			notifyWhatsAppStateChange(deps, inst, false)
+		}
 		return
 	}
 
@@ -119,6 +127,7 @@ func syncUazapiMetaFromWebhook(ctx context.Context, deps Deps, inst *domain.What
 		inst.OwnerJID = ownerBare
 	}
 	if needUpdate {
+		wasOpen := strings.EqualFold(inst.ConnectionStatus, "OPEN")
 		_ = deps.WhatsApp.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, profName, profPic)
 		wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
 			"instance_id":     inst.ID,
@@ -127,6 +136,9 @@ func syncUazapiMetaFromWebhook(ctx context.Context, deps Deps, inst *domain.What
 			"profile_name":    profName,
 			"profile_pic_url": profPic,
 		})
+		if !wasOpen {
+			notifyWhatsAppStateChange(deps, inst, true)
+		}
 	}
 }
 
@@ -166,6 +178,7 @@ func HandleWhatsAppLifecycleEvent(ctx context.Context, deps Deps, inst *domain.W
 		handleEvolutionProfile(ctx, deps, inst, data)
 		return true
 	case "Disconnected", "LoggedOut", "ConnectFailure", "TemporaryBan":
+		wasOpen := strings.EqualFold(inst.ConnectionStatus, "OPEN")
 		status := "DISCONNECTED"
 		if event == "LoggedOut" {
 			status = "CLOSED"
@@ -178,6 +191,9 @@ func HandleWhatsAppLifecycleEvent(ctx context.Context, deps Deps, inst *domain.W
 			"status":      status,
 			"event":       event,
 		})
+		if wasOpen {
+			notifyWhatsAppStateChange(deps, inst, false)
+		}
 		return true
 	case "QRCode":
 		var qr struct {

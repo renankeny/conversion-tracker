@@ -31,7 +31,7 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 		first_utm_source, first_utm_medium, first_utm_campaign, first_utm_content, first_utm_term,
 		last_utm_source,  last_utm_medium,  last_utm_campaign,  last_utm_content,  last_utm_term,
 		ctwa_clid, wa_chat_id, wa_name, wa_ad_id, wa_source_app, wa_lid,
-		ga4_client_id, ga4_session_id,
+		ga4_client_id, ga4_session_id, trackable_link_id,
 		pageview_count, checkout_count, last_seen_at,
 		referrer, traffic_type, traffic_score, traffic_category, traffic_rules
 	) VALUES (
@@ -43,7 +43,7 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 		$22,$23,$24,$25,$26,
 		$22,$23,$24,$25,$26,
 		$28,$29,$30,$31,$32,$33,
-		$34,$35,
+		$34,$35,$44,
 		$36,$37,NOW(),
 		$38,$39,$40,$41,$42
 	)
@@ -88,6 +88,7 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 		wa_lid            = COALESCE(NULLIF(EXCLUDED.wa_lid, ''),       tracked_users.wa_lid),
 		ga4_client_id     = COALESCE(NULLIF(EXCLUDED.ga4_client_id, ''),  tracked_users.ga4_client_id),
 		ga4_session_id    = COALESCE(NULLIF(EXCLUDED.ga4_session_id, ''), tracked_users.ga4_session_id),
+		trackable_link_id = COALESCE(EXCLUDED.trackable_link_id, tracked_users.trackable_link_id),
 		pageview_count    = CASE WHEN EXCLUDED.pageview_count > 0 THEN tracked_users.pageview_count + EXCLUDED.pageview_count ELSE tracked_users.pageview_count END,
 		checkout_count    = CASE WHEN EXCLUDED.checkout_count > 0 THEN tracked_users.checkout_count + EXCLUDED.checkout_count ELSE tracked_users.checkout_count END,
 		referrer          = CASE WHEN tracked_users.referrer = '' THEN EXCLUDED.referrer ELSE tracked_users.referrer END,
@@ -136,7 +137,7 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 		u.GA4ClientID, u.GA4SessionID,
 		u.PageViewCount, u.CheckoutCount,
 		u.Referrer, trafficType, trafficScore, trafficCategory, trafficRules,
-		firstURL,
+		firstURL, u.TrackableLinkID,
 	).Scan(&u.ID)
 }
 
@@ -172,7 +173,7 @@ func scanUser(row pgx.Row) (*domain.TrackedUser, error) {
 		&u.FirstUTMSource, &u.FirstUTMMedium, &u.FirstUTMCampaign, &u.FirstUTMContent, &u.FirstUTMTerm,
 		&u.LastUTMSource, &u.LastUTMMedium, &u.LastUTMCampaign, &u.LastUTMContent, &u.LastUTMTerm,
 		&u.CtwaClid, &u.WaChatID, &u.WaName, &u.WaAdID, &u.WaSourceApp,
-		&u.GA4ClientID, &u.GA4SessionID, &u.WaLid,
+		&u.GA4ClientID, &u.GA4SessionID, &u.WaLid, &u.TrackableLinkID,
 		&u.CreatedAt, &u.UpdatedAt,
 		&u.PageViewCount, &u.CheckoutCount, &u.LastSeenAt,
 		&u.Referrer, &u.TrafficType, &u.TrafficScore, &u.TrafficCategory, &rulesJSON,

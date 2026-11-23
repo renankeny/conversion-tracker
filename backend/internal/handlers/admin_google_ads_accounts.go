@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/googleads"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
@@ -24,6 +26,7 @@ type AdminGoogleAdsAccounts struct {
 	client    *googleads.Client
 	oauth     googleads.OAuthConfig
 	state     *cache.OAuthStateStore
+	notify    *notify.Service
 	rdb       *redis.Client
 	frontHost string
 }
@@ -46,6 +49,8 @@ func (h *AdminGoogleAdsAccounts) SetRedis(rdb *redis.Client) {
 func (h *AdminGoogleAdsAccounts) SetPixels(pixels *repo.PixelRepo) {
 	h.pixels = pixels
 }
+
+func (h *AdminGoogleAdsAccounts) SetNotify(n *notify.Service) { h.notify = n }
 
 func (h *AdminGoogleAdsAccounts) invalidateAccountCaches(ctx context.Context, accountID, gadsAccountID int64) {
 	if h.pixels != nil && gadsAccountID > 0 {
@@ -150,6 +155,7 @@ func (h *AdminGoogleAdsAccounts) Create(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	h.invalidateAccountCaches(r.Context(), a.AccountID, a.ID)
+	emitResourceLifecycleNotification(h.notify, a.AccountID, domain.NotifGoogleAdsAccountLifecycle, "Conta Google Ads Criada", fmt.Sprintf("A conexão \"%s\" foi adicionada às integrações do Google Ads.", a.Name), "/integracoes/google-ads")
 	writeJSON(w, http.StatusCreated, a.PublicView())
 }
 
@@ -202,6 +208,7 @@ func (h *AdminGoogleAdsAccounts) Delete(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "erro ao excluir conta Google Ads")
 		return
 	}
+	emitResourceLifecycleNotification(h.notify, a.AccountID, domain.NotifGoogleAdsAccountLifecycle, "Conta Google Ads Removida", fmt.Sprintf("A conexão \"%s\" foi excluída das integrações do Google Ads.", a.Name), "/integracoes/google-ads")
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
 

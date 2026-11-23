@@ -53,6 +53,7 @@
           >
             <component :is="link.icon" :size="18" />
             <span class="flex-1">{{ link.label }}</span>
+            <span v-if="link.badge && link.badge > 0" class="drawer-unread">{{ link.badge }}</span>
           </NuxtLink>
 
           <div class="flex flex-col">
@@ -123,10 +124,12 @@
 
 <script setup lang="ts">
 import {
-  LayoutDashboard, Kanban, Zap, Users,
+  LayoutDashboard, Kanban, MessageSquare, Zap, Users,
   Plug, Settings, X, Sun, Moon, LogOut,
-  Building2, ChevronDown,
+  Building2, ChevronDown, Bell,
 } from 'lucide-vue-next'
+import type { Component } from 'vue'
+import { useNotificationsStore } from '~/stores/useNotificationsStore'
 import { MetaAdsIcon, GoogleAdsIcon, WhatsAppIcon, PixelBrainIcon } from '~/utils/adIcons'
 
 defineProps<{ modelValue: boolean }>()
@@ -150,12 +153,16 @@ const onLogout = async () => {
   await logout()
 }
 
-const primaryLinks = computed(() => {
-  const links = [
+const notifStore = useNotificationsStore()
+
+const primaryLinks = computed<Array<{ to: string; label: string; icon: Component; badge?: number }>>(() => {
+  const links: Array<{ to: string; label: string; icon: Component; badge?: number }> = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/crm', label: 'CRM', icon: Kanban },
+    { to: '/conversas', label: 'Conversas', icon: MessageSquare },
     { to: '/events', label: 'Eventos', icon: Zap },
     { to: '/users', label: 'Usuários', icon: Users },
+    { to: '/notificacoes', label: 'Notificações', icon: Bell, badge: notifStore.unreadCount },
   ]
   if (canManageAccounts.value) {
     links.push({ to: '/empresas', label: 'Empresas', icon: Building2 })
@@ -199,6 +206,7 @@ const integrationLinks = [
 .drawer-nav { flex: 1; overflow-y: auto; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 3px; }
 .drawer-link, .drawer-group-toggle { display: flex; align-items: center; gap: 0.75rem; padding: 0.6875rem 0.875rem; border-radius: 10px; color: var(--text-2); text-decoration: none; font-size: var(--fs-lg); font-weight: var(--fw-medium); background: transparent; border: none; width: 100%; text-align: left; cursor: pointer; }
 .drawer-link.active { background: var(--brand-soft); color: var(--brand); font-weight: var(--fw-semibold); }
+.drawer-unread { min-width: 20px; height: 20px; padding: 0 0.375rem; border-radius: 999px; background: var(--brand); color: var(--brand-text); font-size: var(--fs-xs); font-weight: var(--fw-bold); display: inline-flex; align-items: center; justify-content: center; }
 .group-chevron { transition: transform 0.2s ease; opacity: 0.6; }
 .group-chevron.rotated { transform: rotate(180deg); }
 .drawer-group-children { display: flex; flex-direction: column; gap: 2px; padding: 0.25rem 0 0.25rem 1.75rem; }

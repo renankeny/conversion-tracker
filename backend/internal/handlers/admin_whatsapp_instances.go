@@ -13,6 +13,7 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/evolution"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/uazapi"
 )
@@ -20,8 +21,11 @@ import (
 type AdminWhatsAppInstances struct {
 	repo         *repo.WhatsAppRepo
 	pixels       *repo.PixelRepo
+	notify       *notify.Service
 	publicAPIURL string
 }
+
+func (h *AdminWhatsAppInstances) SetNotify(n *notify.Service) { h.notify = n }
 
 func NewAdminWhatsAppInstances(repo *repo.WhatsAppRepo, pixels *repo.PixelRepo, publicAPIURL string) *AdminWhatsAppInstances {
 	return &AdminWhatsAppInstances{
@@ -132,16 +136,6 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 	pixel, err := h.pixels.FindByID(ctx, in.PixelID)
 	if err != nil || pixel == nil || pixel.AccountID != accID {
 		writeError(w, http.StatusBadRequest, "selecione um Pixel válido desta conta")
-		return
-	}
-
-	count, err := h.repo.CountInstances(ctx, accID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if count >= 5 {
-		writeError(w, http.StatusBadRequest, "limite máximo de 5 conexões de WhatsApp por conta atingido")
 		return
 	}
 

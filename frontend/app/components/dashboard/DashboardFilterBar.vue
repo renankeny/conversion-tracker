@@ -15,7 +15,7 @@
           </span>
         </div>
 
-        <!-- Link público de visualização (por pixel) -->
+        <!-- Portal público do cliente (por pixel) -->
         <div v-if="selectedPixelObj" class="share-link-bar">
           <template v-if="!shareToken">
             <BaseButton variant="outline" size="sm" :loading="shareLinkLoading" @click="generateShareLink">
@@ -29,8 +29,11 @@
             <template v-if="linkVisible">
               <code class="share-link-value">{{ publicDashboardUrl }}</code>
               <BaseButton variant="outline" size="sm" @click="copyShareLink">Copiar</BaseButton>
-              <BaseButton variant="ghost" size="sm" :loading="shareLinkLoading" @click="revokeShareLink">Desativar</BaseButton>
             </template>
+            <BaseButton variant="outline" size="sm" @click="portalConfigOpen = true">
+              <SlidersHorizontal :size="13" />
+              <span>Permissões do link</span>
+            </BaseButton>
           </template>
         </div>
       </div>
@@ -39,10 +42,7 @@
 
     <div class="header-controls">
       <PixelDropdown v-model="selectedPixel" :allow-all="false" />
-      <BaseDropdown
-        v-model="dashboardStore.trafficSource"
-        :options="sourceOptions"
-      />
+      <BaseDropdown v-model="dashboardStore.trafficSource" :options="sourceOptions" />
       <PeriodSelector
         v-model="dashboardStore.period"
         v-model:customFrom="dashboardStore.customFrom"
@@ -61,15 +61,28 @@
         Atualizar
       </BaseButton>
     </div>
+
+    <PublicPortalConfigModal
+      v-model="portalConfigOpen"
+      :share-url="publicDashboardUrl"
+      :config="selectedPixelObj?.dashboard_config"
+      :saving="savingPortalConfig"
+      :revoking="shareLinkLoading"
+      :copied="copiedRecently"
+      @copy="copyShareLink"
+      @revoke="revokeShareLink"
+      @save="savePortalPermissions"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Eye, EyeOff } from 'lucide-vue-next'
+import { Eye, EyeOff, SlidersHorizontal } from 'lucide-vue-next'
 import PeriodSelector from '~/components/dashboard/PeriodSelector.vue'
+import PublicPortalConfigModal from '~/components/dashboard/PublicPortalConfigModal.vue'
 import { useDashboardStore } from '~/stores/useDashboardStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
-import type { Pixel } from '#shared/types'
+import type { DashboardConfig, Pixel } from '#shared/types'
 
 const props = defineProps<{
   selectedPixelObj: Pixel | null
@@ -97,7 +110,11 @@ const sourceOptions = [
 ]
 
 const shareLinkLoading = ref(false)
+const savingPortalConfig = ref(false)
+const portalConfigOpen = ref(false)
 const linkVisible = ref(false)
+const copiedRecently = ref(false)
+
 const shareToken = computed(() => props.selectedPixelObj?.dashboard_share_token || '')
 const publicDashboardUrl = computed(() => {
   if (!shareToken.value) return ''
@@ -114,7 +131,8 @@ const generateShareLink = async () => {
   try {
     const res = await pixelsApi.generateDashboardShareLink(props.selectedPixelObj.id)
     pixelStore.upsertPixel({ ...props.selectedPixelObj, dashboard_share_token: res.dashboard_share_token })
-    toast.success('Sucesso', 'Link público gerado.')
+    portalConfigOpen.value = true
+    toast.success('Sucesso', 'Link do Portal do Cliente gerado.')
   } catch {
     toast.error('Erro', 'Não foi possível gerar o link público.')
   } finally {
@@ -126,7 +144,9 @@ const copyShareLink = async () => {
   if (!publicDashboardUrl.value) return
   try {
     await navigator.clipboard.writeText(publicDashboardUrl.value)
-    toast.success('Copiado', 'Link copiado pra área de transferência.')
+    copiedRecently.value = true
+    setTimeout(() => { copiedRecently.value = false }, 2000)
+    toast.success('Copiado', 'Link copiado para a área de transferência.')
   } catch {
     toast.error('Erro', 'Não foi possível copiar o link automaticamente.')
   }
@@ -138,11 +158,30 @@ const revokeShareLink = async () => {
   try {
     await pixelsApi.revokeDashboardShareLink(props.selectedPixelObj.id)
     pixelStore.upsertPixel({ ...props.selectedPixelObj, dashboard_share_token: '' })
+    portalConfigOpen.value = false
     toast.success('Sucesso', 'Link público desativado.')
   } catch {
     toast.error('Erro', 'Não foi possível desativar o link público.')
   } finally {
     shareLinkLoading.value = false
+  }
+}
+
+const savePortalPermissions = async (patch: Pick<DashboardConfig, 'public_show_crm' | 'public_allow_crm_edit' | 'public_show_conversations' | 'public_show_sales_goal'>) => {
+  if (!props.selectedPixelObj) return
+  savingPortalConfig.value = true
+  try {
+    const baseCfg: DashboardConfig = props.selectedPixelObj.dashboard_config || {
+      enabled_cards: [], card_order: [], enabled_funnel_events: [], funnel_order: [], event_labels: {},
+    }
+    const res = await pixelsApi.updateDashboardConfig(props.selectedPixelObj.id, { ...baseCfg, ...patch })
+    pixelStore.upsertPixel({ ...props.selectedPixelObj, dashboard_config: res.dashboard_config })
+    portalConfigOpen.value = false
+    toast.success('Sucesso', 'Permissões do Portal do Cliente salvas.')
+  } catch {
+    toast.error('Erro', 'Não foi possível salvar as permissões do link.')
+  } finally {
+    savingPortalConfig.value = false
   }
 }
 </script>
@@ -156,10 +195,7 @@ const revokeShareLink = async () => {
 .live-pill.is-offline { background: var(--surface-soft); border-color: var(--border); color: var(--text-3); }
 .live-pill.is-offline .pulse-dot { background: var(--text-3); box-shadow: none; animation: none; }
 .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 6px var(--brand); animation: livePulse 1.8s infinite; }
-@keyframes livePulse {
-  0%, 100% { transform: scale(0.95); opacity: 0.8; }
-  50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 10px var(--brand); }
-}
+@keyframes livePulse { 0%, 100% { transform: scale(0.95); opacity: 0.8; } 50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 10px var(--brand); } }
 .page-subtitle { color: var(--text-3); font-size: var(--fs-base); margin-top: 0.25rem; }
 .header-controls { display: flex; gap: 0.625rem; align-items: center; flex-wrap: wrap; }
 .share-link-bar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }

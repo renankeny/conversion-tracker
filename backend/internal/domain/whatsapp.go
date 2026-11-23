@@ -134,6 +134,7 @@ type WhatsAppChat struct {
 	RemoteJid       string    `json:"remote_jid"`
 	TrackedUserID   *int64    `json:"tracked_user_id,omitempty"`
 	CRMLeadID       *int64    `json:"crm_lead_id,omitempty"`
+	TrackableLinkID *int64    `json:"trackable_link_id,omitempty"`
 	Phone           string    `json:"phone"`
 	LidJid          string    `json:"lid_jid"`
 	PushName        string    `json:"push_name"`

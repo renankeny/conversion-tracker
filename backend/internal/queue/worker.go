@@ -14,6 +14,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/googleads"
 	"github.com/renankeny/conversion-tracker/backend/internal/meta"
 	"github.com/renankeny/conversion-tracker/backend/internal/metaoauth"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/storage"
 	"github.com/renankeny/conversion-tracker/backend/internal/tiktok"
@@ -31,6 +32,7 @@ type Deps struct {
 	GoogleAdsAcc       *repo.GoogleAdsAccountRepo
 	MetaAcc            *repo.MetaAccountRepo
 	WhatsApp           *repo.WhatsAppRepo
+	TrackableLinks     *repo.TrackableLinkRepo
 	CRM                *repo.CRMRepo
 	Storage            *storage.MediaStorage
 	Enqueuer           *Enqueuer
@@ -41,7 +43,9 @@ type Deps struct {
 	GA4                *ga4.Client
 	Counters           *repo.EventCounterRepo
 	SentEvents         *repo.SentEventRepo
+	Notify             *notify.Service
 	Redis              *redis.Client
+	AppURL             string
 	PublicAPIURL       string
 	JWTSecret          string
 	MediaRetentionDays int

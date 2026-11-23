@@ -36,6 +36,7 @@ export default defineNuxtConfig({
   // Nuxt lê variáveis de ambiente automaticamente via prefixo NUXT_PUBLIC_*.
   // Os defaults aqui servem apenas para desenvolvimento local.
   runtimeConfig: {
+    internalApiUrl: '',
     public: {
       apiUrl: 'http://localhost:8080/api/v1',
       appUrl: 'http://localhost:3000',

@@ -70,7 +70,17 @@ func (r *CRMRepo) GetLeads(ctx context.Context, accountID int64, pixel string) (
 	args := []any{accountID}
 
 	if pixel != "" {
-		query += ` AND t.pixel_name = $2 `
+		query += ` AND (
+			t.pixel_name = $2
+			OR EXISTS (
+				SELECT 1 FROM whatsapp_chats wc
+				JOIN whatsapp_instances wi ON wi.id = wc.instance_id
+				JOIN pixels px ON px.id = wi.pixel_id
+				WHERE (wc.crm_lead_id = c.id OR wc.tracked_user_id = c.tracked_user_id)
+				  AND px.account_id = c.account_id
+				  AND px.name = $2
+			)
+		) `
 		args = append(args, pixel)
 	}
 

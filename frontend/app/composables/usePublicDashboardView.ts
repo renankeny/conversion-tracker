@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { usePublicDashboardFetch } from '~/composables/usePublicDashboardFetch'
 import {
   ALL_CARD_IDS, DEFAULT_ENABLED_CARDS, CATALOG_IDS,
-  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon, resolvePanelLeads,
+  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon, resolvePanelLeads, resolvePanelPurchases,
   type DashboardMetricsContext,
 } from '~/utils/dashboardEventCatalog'
 import { computeCardRichDetails } from '~/utils/dashboardCardDetails'
@@ -18,9 +18,9 @@ export const PUBLIC_PERIOD_LABELS: Record<string, string> = {
 export const usePublicDashboardView = (token: string) => {
   const {
     period, customFrom, customTo, trafficSource, privacyMode, dateRange, granularity,
-    loading, isRefreshing, adsLoading, notFound, metaLoaded, loadError, pixelLabel, currency, dashboardConfig,
+    loading, isRefreshing, adsLoading, notFound, metaLoaded, loadError, pixelLabel, currency, dashboardConfig, publicSalesGoal,
     summaryData, seriesData, recentPurchases, geoData, totalRevenue, trafficQuality,
-    sourceBreakdown, panelAudit, previousPeriod, heatmap, metaInsights, googleInsights,
+    sourceBreakdown, panelAudit, previousPeriod, heatmap, trackableLinks, metaInsights, googleInsights,
     metaCreatives, googleKeywords, refresh, retryLoad,
   } = usePublicDashboardFetch(token)
 
@@ -60,6 +60,13 @@ export const usePublicDashboardView = (token: string) => {
 
   const panelLeadsTotal = computed(() => resolvePanelLeads(metricsCtx.value))
 
+  const salesGoal = computed(() => {
+    const g = publicSalesGoal.value
+    if (!g?.enabled || !g.target || g.target <= 0) return null
+    const current = g.type === 'count' ? resolvePanelPurchases(metricsCtx.value) : totalRevenue.value
+    return { type: g.type, target: g.target, current }
+  })
+
   const visibleCards = computed<DashboardVisibleCard[]>(() => {
     const order = dashboardConfig.value?.card_order?.length
       ? Array.from(new Set([...dashboardConfig.value.card_order, ...ALL_CARD_IDS]))
@@ -97,9 +104,9 @@ export const usePublicDashboardView = (token: string) => {
   return {
     period, customFrom, customTo, trafficSource, privacyMode, dateRange, granularity,
     loading, isRefreshing, adsLoading, notFound, metaLoaded, loadError, pixelLabel, currency,
-    headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle,
-    summaryData, seriesData, recentPurchases, geoData, trafficQuality, heatmap,
-    metaCreatives, googleKeywords, panelLeadsTotal, visibleCards, funnelSteps,
+    headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, periodLabel,
+    summaryData, seriesData, recentPurchases, geoData, trafficQuality, heatmap, trackableLinks,
+    metaCreatives, googleKeywords, panelLeadsTotal, salesGoal, visibleCards, funnelSteps,
     purchaseModalOpen, purchaseSelected, onPurchaseSelect, refresh, retryLoad,
   }
 }

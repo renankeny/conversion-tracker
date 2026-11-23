@@ -149,3 +149,52 @@ func TestTenantMiddlewareEnforcesAccountIsolation(t *testing.T) {
 	}
 }
 
+func TestExtractAuthTokenSupportsXAPIKeyAndBearer(t *testing.T) {
+	jwtSvc := auth.NewJWT("middleware-test-secret-key-32-chars", 24)
+	mw := AuthMiddlewareWithSessions(jwtSvc, nil, nil)(okHandler(nil))
+
+	tok, err := jwtSvc.Issue(12, "dev@trackfind.test", "admin", 2, nil, nil)
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+
+	// Header X-API-Key unificado
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/pixels", nil)
+	req.Header.Set("X-API-Key", tok)
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("X-API-Key header: got %d, want 200", rec.Code)
+	}
+
+	// Sem nenhum header -> 401
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/admin/pixels", nil)
+	rec2 := httptest.NewRecorder()
+	mw.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusUnauthorized {
+		t.Fatalf("missing auth headers: got %d, want 401", rec2.Code)
+	}
+}
+
+func TestRequireManagerOrAPIKeyPermissions(t *testing.T) {
+	h := RequireManagerOrAPIKey(okHandler(nil))
+
+	// API Key da empresa 7 -> permitido (200)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/sent-events/retry", nil)
+	req = req.WithContext(auth.WithClaims(req.Context(), &auth.Claims{Role: "member", TokenType: auth.TokenTypeAPIKey, AccountID: 7}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("scoped API key: got %d, want 200", rec.Code)
+	}
+
+	// Colaborador employee -> bloqueado (403)
+	reqEmp := httptest.NewRequest(http.MethodPost, "/api/v1/admin/sent-events/retry", nil)
+	reqEmp = reqEmp.WithContext(auth.WithClaims(reqEmp.Context(), &auth.Claims{UserID: 9, Role: "employee", TokenType: auth.TokenTypeHuman, AccountID: 7}))
+	recEmp := httptest.NewRecorder()
+	h.ServeHTTP(recEmp, reqEmp)
+	if recEmp.Code != http.StatusForbidden {
+		t.Fatalf("employee role: got %d, want 403", recEmp.Code)
+	}
+}
+

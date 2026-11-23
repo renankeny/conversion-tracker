@@ -1,5 +1,5 @@
 <template>
-  <div class="kanban-card" @pointerdown="onPointerDown" @click="onClick">
+  <div class="kanban-card" :class="{ 'is-readonly': readOnly }" @pointerdown="onPointerDown" @click="onClick">
     <div class="card-header">
       <div class="lead-info">
         <div class="lead-avatar">{{ getLeadInitials(lead) }}</div>
@@ -23,7 +23,7 @@
     </div>
 
     <div class="card-meta">
-      <span class="card-value">{{ formatCurrency(lead.value || 0) }}</span>
+      <span class="card-value" :class="{ blurred }">{{ formatCurrency(lead.value || 0) }}</span>
       <div class="card-pills">
         <span v-if="originBadge" class="origin-pill">
           {{ originBadge.label }}
@@ -69,6 +69,8 @@ const props = defineProps<{
   lead: CrmLead
   isDragging?: boolean
   isTerminal?: boolean
+  readOnly?: boolean
+  blurred?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -123,6 +125,8 @@ const onClick = (e: MouseEvent) => {
   flex-direction: column;
   gap: 0.35rem;
 }
+.kanban-card.is-readonly { cursor: pointer; }
+.card-value.blurred { filter: blur(5px); user-select: none; }
 .kanban-card:hover {
   border-color: var(--border-hover);
   transform: translateY(-1px);

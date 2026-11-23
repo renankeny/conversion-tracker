@@ -1,177 +1,173 @@
 <script setup lang="ts">
-import { buildApiDocSnippets } from '~/utils/apiDocSnippets'
+import { KeyRound, Copy, Check } from 'lucide-vue-next'
+import ApiDocsSidebar from '~/components/api/ApiDocsSidebar.vue'
+import ApiMcpSetupSection from '~/components/api/ApiMcpSetupSection.vue'
+import ApiAuthSection from '~/components/api/ApiAuthSection.vue'
+import ApiEndpointCard from '~/components/api/ApiEndpointCard.vue'
+import SettingsApiKeysTab from '~/components/settings/SettingsApiKeysTab.vue'
+import { API_MODULES } from '~/utils/apiCatalog'
 
 definePageMeta({
   layout: 'app',
   middleware: 'auth',
 })
 
-const { formatTitle, brandName } = useBranding()
-useHead({ title: computed(() => formatTitle('Documentação da API')) })
+const { formatTitle } = useBranding()
+useHead({ title: computed(() => formatTitle('API e Agentes IA (MCP)')) })
 
 const config = useRuntimeConfig()
-const apiUrl = computed(() => String(config.public.apiUrl || 'http://localhost:8080/api/v1'))
-const snippets = computed(() => buildApiDocSnippets(apiUrl.value))
+const apiUrl = computed(() => {
+  const configured = String(config.public.apiUrl || '').trim()
+  if (configured) return configured.replace(/\/+$/, '')
+  if (import.meta.client) return `${window.location.origin}/api/v1`
+  return 'http://localhost:8080/api/v1'
+})
+
+const activeSection = ref('mcp')
+const searchQuery = ref('')
+const keysModalOpen = ref(false)
+const copiedBase = ref(false)
+
+const activeModule = computed(() => API_MODULES.find((m) => m.id === activeSection.value) || null)
+
+const filteredResults = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return []
+  return API_MODULES.map((mod) => ({
+    ...mod,
+    endpoints: mod.endpoints.filter(
+      (ep) =>
+        ep.title.toLowerCase().includes(q) ||
+        ep.path.toLowerCase().includes(q) ||
+        ep.summary.toLowerCase().includes(q) ||
+        ep.method.toLowerCase().includes(q)
+    ),
+  })).filter((mod) => mod.endpoints.length > 0)
+})
+
+const copyBaseUrl = async () => {
+  await navigator.clipboard.writeText(apiUrl.value)
+  copiedBase.value = true
+  setTimeout(() => {
+    copiedBase.value = false
+  }, 1800)
+}
 </script>
 
 <template>
-  <div class="h-full bg-background flex flex-col">
-    <div class="flex-1 w-full flex flex-col lg:flex-row">
-      <div class="flex-1 max-w-3xl px-6 lg:px-12 py-8 overflow-y-auto">
-        <div class="mb-10">
-          <h1 class="doc-h1">API Reference</h1>
-          <p class="doc-lead">
-            Integre seus sistemas via API. Todos os endpoints requerem uma API Key em
-            <code class="code-inline">X-API-Key</code> ou <code class="code-inline">Authorization: Bearer</code>.
-          </p>
-        </div>
-
-        <section class="mb-16">
-          <h2 class="doc-h2">Autenticação</h2>
-          <p class="doc-p">
-            Para autenticar suas requisições, você precisará de uma API Key. Crie uma em <strong>Configurações &gt; API Keys</strong>.
-            Passe essa chave no header das suas chamadas:
-          </p>
-          <div class="bg-surface-soft p-4 rounded-xl border border-border">
-            <code class="doc-endpoint">X-API-Key: trk_xxxxxxxxxxxxxxxxxxxxxx</code><br /><br />
-            <span class="doc-caption">Para as rotas do CRM, use o formato Bearer:</span><br />
-            <code class="doc-endpoint">Authorization: Bearer trk_xxxxxxxxxxxxxxxxxxxxxx</code>
-          </div>
-        </section>
-
-        <section class="mb-16">
-          <h2 class="doc-h2">Envio de Eventos</h2>
-
-          <div class="mb-12">
-            <h3 class="doc-h3">Enviar Evento Único</h3>
-            <div class="flex items-center gap-2 mb-3">
-              <span class="badge badge-success">POST</span>
-              <code class="doc-endpoint">/api/v1/send-event</code>
-            </div>
-            <p class="doc-p">
-              Envia um evento de conversão, como Lead, Purchase ou AddToCart. O {{ brandName }} se encarrega de disparar para o Meta, TikTok e Google Ads.
-            </p>
-
-            <div class="info-callout mb-4">
-              <span class="callout-icon">💡</span>
-              <div>
-                <strong class="block mb-1">Criação Automática no CRM:</strong>
-                Se você enviar o <code>event_name: "Lead"</code> junto com o <code>external_id</code> (seu user ID), a API não apenas despachará o evento para as redes, mas <strong>criará/atualizará o contato automaticamente no Kanban do CRM</strong>.
-              </div>
-            </div>
-
-            <h4 class="doc-h4">Response (202 Accepted)</h4>
-            <pre class="code-box">{
-  "queued": true,
-  "event_id": "ABC123XYZ4"
-}</pre>
-          </div>
-
-          <div>
-            <h3 class="doc-h3">Enviar Eventos em Lote</h3>
-            <div class="flex items-center gap-2 mb-3">
-              <span class="badge badge-success">POST</span>
-              <code class="doc-endpoint">/api/v1/send-events-batch</code>
-            </div>
-            <p class="doc-p">Envie até 100 eventos de uma vez para otimizar o processamento.</p>
-          </div>
-        </section>
-
-        <section class="mb-16">
-          <h2 class="doc-h2">Integração CRM</h2>
-
-          <div class="mb-12">
-            <h3 class="doc-h3">Listar Etapas</h3>
-            <div class="flex items-center gap-2 mb-3">
-              <span class="badge badge-info">GET</span>
-              <code class="doc-endpoint">/api/v1/admin/ext-api/crm/stages</code>
-            </div>
-            <p class="doc-p">Lista as etapas do funil de vendas. Os IDs retornados podem ser usados na criação do lead.</p>
-            <h4 class="doc-h4">Response (200 OK)</h4>
-            <pre class="code-box">{
-  "stages": [{ "id": 1, "name": "Lead Frio", "color": "gray" }]
-}</pre>
-          </div>
-
-          <div>
-            <h3 class="doc-h3">Criar ou Atualizar Lead</h3>
-            <div class="flex items-center gap-2 mb-3">
-              <span class="badge badge-success">POST</span>
-              <code class="doc-endpoint">/api/v1/admin/ext-api/crm/leads</code>
-            </div>
-            <p class="doc-p">Cria um lead e insere na coluna desejada do Kanban. Se o e-mail ou telefone já existir na base, atualiza e move o lead.</p>
-            <h4 class="doc-h4">Response (200 OK)</h4>
-            <pre class="code-box">{
-  "success": true,
-  "lead_id": 45,
-  "stage_id": 1
-}</pre>
-          </div>
-        </section>
-
-        <section class="mb-16">
-          <h2 class="doc-h2">Consulta de Usuário</h2>
-
-          <div class="mb-12">
-            <h3 class="doc-h3">Lookup</h3>
-            <div class="flex items-center gap-2 mb-3">
-              <span class="badge badge-info">GET</span>
-              <code class="doc-endpoint">/api/v1/admin/tracked-users/lookup</code>
-            </div>
-            <p class="doc-p">Busca um usuário já identificado pelo <code class="code-inline">email</code>, <code class="code-inline">phone</code> ou <code class="code-inline">external_id</code>.</p>
-            <h4 class="doc-h4">Response (200 OK)</h4>
-            <pre class="code-box">{
-  "id": 42,
-  "external_id": "ABC1234567",
-  "first_name": "João",
-  "email": "joao@exemplo.com",
-  "first_utm_source": "facebook",
-  "first_utm_campaign": "black-friday"
-}</pre>
-          </div>
-        </section>
+  <div class="api-docs-page">
+    <header class="page-top">
+      <div>
+        <h1 class="page-title">API e Servidor MCP (IA)</h1>
+        <p class="page-subtitle">
+          Conecte agentes de IA, n8n, Make ou sistemas próprios com cabeçalho único <code>X-API-Key</code>.
+        </p>
       </div>
 
-      <div class="lg:w-[500px] xl:w-[600px] bg-surface-soft border-l border-border p-6 overflow-y-auto">
-        <div class="sticky top-6 space-y-10">
-          <div>
-            <h4 class="snippet-title">Exemplo: Enviar Evento Único</h4>
-            <CodeTabs :tabs="snippets.sendEventTabs" />
-          </div>
-          <div>
-            <h4 class="snippet-title">Exemplo: Enviar Lote</h4>
-            <CodeTabs :tabs="snippets.batchTabs" />
-          </div>
-          <div>
-            <h4 class="snippet-title">Exemplo: Listar Etapas</h4>
-            <CodeTabs :tabs="snippets.stageTabs" />
-          </div>
-          <div>
-            <h4 class="snippet-title">Exemplo: Criar Lead no CRM</h4>
-            <CodeTabs :tabs="snippets.crmLeadTabs" />
-          </div>
-          <div>
-            <h4 class="snippet-title">Exemplo: Lookup de Usuário</h4>
-            <CodeTabs :tabs="snippets.lookupTabs" />
-          </div>
-        </div>
+      <div class="top-actions">
+        <button type="button" class="base-pill" title="Copiar URL Base da API" @click="copyBaseUrl">
+          <span class="base-pill-label">Base:</span>
+          <code>{{ apiUrl }}</code>
+          <Check v-if="copiedBase" class="icon-sm text-brand" />
+          <Copy v-else class="icon-sm" />
+        </button>
+
+        <BaseButton variant="primary" size="sm" @click="keysModalOpen = true">
+          <KeyRound class="icon-sm" />
+          Gerenciar API Keys
+        </BaseButton>
       </div>
+    </header>
+
+    <div class="docs-layout">
+      <ApiDocsSidebar
+        v-model:active-section="activeSection"
+        v-model:search-query="searchQuery"
+        :modules="API_MODULES"
+      />
+
+      <main class="docs-content">
+        <template v-if="searchQuery.trim()">
+          <div v-if="!filteredResults.length" class="empty-search">
+            Nenhuma rota encontrada para <strong>"{{ searchQuery }}"</strong>.
+          </div>
+
+          <section v-for="group in filteredResults" :key="group.id" class="module-section">
+            <div class="module-head">
+              <h2 class="module-title">{{ group.badge }} · {{ group.title }}</h2>
+              <p class="module-sub">{{ group.subtitle }}</p>
+            </div>
+            <div class="endpoints-stack">
+              <ApiEndpointCard
+                v-for="ep in group.endpoints"
+                :key="ep.id"
+                :endpoint="ep"
+                :api-url="apiUrl"
+                default-open
+              />
+            </div>
+          </section>
+        </template>
+
+        <ApiMcpSetupSection
+          v-else-if="activeSection === 'mcp'"
+          :api-url="apiUrl"
+          @open-keys="keysModalOpen = true"
+        />
+
+        <ApiAuthSection
+          v-else-if="activeSection === 'auth'"
+          :api-url="apiUrl"
+          @open-keys="keysModalOpen = true"
+        />
+
+        <section v-else-if="activeModule" class="module-section">
+          <div class="module-head">
+            <h2 class="module-title">{{ activeModule.badge }} · {{ activeModule.title }}</h2>
+            <p class="module-sub">{{ activeModule.subtitle }}</p>
+          </div>
+
+          <div class="endpoints-stack">
+            <ApiEndpointCard
+              v-for="(ep, idx) in activeModule.endpoints"
+              :key="ep.id"
+              :endpoint="ep"
+              :api-url="apiUrl"
+              :default-open="idx === 0"
+            />
+          </div>
+        </section>
+      </main>
     </div>
+
+    <BaseModal v-model="keysModalOpen" title="Gerenciar Chaves de API" size="lg">
+      <SettingsApiKeysTab />
+    </BaseModal>
   </div>
 </template>
 
 <style scoped>
-.doc-h1 { font-family: var(--font-heading); font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.5rem; }
-.doc-lead { font-size: var(--fs-md); color: var(--text-2); }
-.doc-h2 { font-family: var(--font-heading); font-size: var(--fs-2xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
-.doc-h3 { font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
-.doc-h4 { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
-.doc-p { font-size: var(--fs-lg); color: var(--text-2); margin-bottom: 1rem; }
-.doc-endpoint { font-family: var(--font-mono); font-size: var(--fs-lg); color: var(--text-1); }
-.doc-caption { font-size: var(--fs-base); color: var(--text-3); }
-.code-inline { font-family: var(--font-mono); font-size: var(--fs-base); background: var(--surface-soft); padding: 0.1rem 0.35rem; border-radius: 4px; color: var(--text-1); }
-.snippet-title { font-family: var(--font-heading); font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.75rem; }
-.callout-icon { font-size: var(--fs-xl); }
-.info-callout { background: var(--info-soft); border: 1px solid var(--border); color: var(--text-1); padding: 1rem; border-radius: 12px; font-size: var(--fs-md); display: flex; gap: 0.75rem; align-items: flex-start; }
-.code-box { background: var(--surface-deep); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; font-size: var(--fs-md); font-family: var(--font-mono); color: var(--text-1); overflow-x: auto; }
+.api-docs-page { display: flex; flex-direction: column; gap: 1.35rem; }
+.page-top { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.page-title { font-family: var(--font-sans); font-size: var(--fs-3xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.2rem; }
+.page-subtitle { font-size: var(--fs-lg); color: var(--text-2); }
+.page-subtitle code { font-family: var(--font-mono); color: var(--brand); background: var(--brand-soft); padding: 0.1rem 0.4rem; border-radius: 5px; }
+.top-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.65rem; }
+.base-pill { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.45rem 0.75rem; background: var(--surface-deep); border: 1px solid var(--border); border-radius: 8px; color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
+.base-pill:hover { border-color: var(--brand-border); }
+.base-pill code { font-family: var(--font-mono); color: var(--text-1); }
+.base-pill-label { color: var(--text-3); }
+.icon-sm { width: 0.9rem; height: 0.9rem; }
+.text-brand { color: var(--brand); }
+.docs-layout { display: flex; align-items: flex-start; gap: 1.5rem; }
+.docs-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1.5rem; }
+.module-section { display: flex; flex-direction: column; gap: 0.85rem; }
+.module-head { margin-bottom: 0.15rem; }
+.module-title { font-family: var(--font-sans); font-size: var(--fs-2xl); font-weight: var(--fw-bold); color: var(--text-strong); margin-bottom: 0.2rem; }
+.module-sub { font-size: var(--fs-md); color: var(--text-2); }
+.endpoints-stack { display: flex; flex-direction: column; gap: 0.65rem; }
+.empty-search { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; text-align: center; color: var(--text-2); font-size: var(--fs-lg); }
+@media (max-width: 1023px) {
+  .docs-layout { flex-direction: column; }
+}
 </style>

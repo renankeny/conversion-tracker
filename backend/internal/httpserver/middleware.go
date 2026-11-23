@@ -14,67 +14,25 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
-	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
-
-// ShardCompactHandler recebe pacotes de sincronização assinados (Push Reverso).
-func ShardCompactHandler(cal *util.ShardCalibrator) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if cal == nil {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		var env struct {
-			Vector string `json:"v"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&env); err != nil || env.Vector == "" {
-			http.Error(w, "bad vector", http.StatusBadRequest)
-			return
-		}
-		if err := cal.IngestSignedPacket(r.Context(), env.Vector); err != nil {
-			http.Error(w, "invalid signature", http.StatusForbidden)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}
-}
-
-// ShardSyncMiddleware sincroniza o ciclo diário e valida o Host/Origin nas rotas admin.
-func ShardSyncMiddleware(cal *util.ShardCalibrator) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if cal != nil {
-				if halted, notice := cal.VerifyEpochSlice(r.Context()); halted {
-					writeShardLocked(w, notice)
-					return
-				}
-				if strings.HasPrefix(r.URL.Path, "/api/v1/admin/") {
-					if hostNotice := cal.VerifyRequestHost(r.Host, r.Header.Get("Origin")); hostNotice != nil {
-						writeShardLocked(w, hostNotice)
-						return
-					}
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func writeShardLocked(w http.ResponseWriter, notice *util.ShardServiceNotice) {
-	msg := ""
-	if notice != nil {
-		msg = notice.Body
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusLocked)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": msg, "service_notice": notice})
-}
 
 const tickerTouchTimeout = 5 * time.Second
 
+// extractAuthToken extrai a credencial unificada priorizando `X-API-Key`
+// e mantendo compatibilidade transparente com `Authorization: Bearer <token>`.
+func extractAuthToken(r *http.Request) string {
+	if xKey := strings.TrimSpace(r.Header.Get("X-API-Key")); xKey != "" {
+		return xKey
+	}
+	h := strings.TrimSpace(r.Header.Get("Authorization"))
+	if len(h) >= 7 && strings.EqualFold(h[:7], "Bearer ") {
+		return strings.TrimSpace(h[7:])
+	}
+	return ""
+}
+
 // AuthMiddleware aceita autenticação por JWT (admin do painel) OU por API key
-// (server-to-server, formato `trk_<base64>`).
+// (server-to-server, formato `trk_<base64>`, via `X-API-Key` ou `Authorization: Bearer`).
 func AuthMiddleware(j *auth.JWT, apiKeys *repo.APIKeyRepo) func(http.Handler) http.Handler {
 	return AuthMiddlewareWithSessions(j, apiKeys, nil)
 }
@@ -82,12 +40,11 @@ func AuthMiddleware(j *auth.JWT, apiKeys *repo.APIKeyRepo) func(http.Handler) ht
 func AuthMiddlewareWithSessions(j *auth.JWT, apiKeys *repo.APIKeyRepo, sessions *cache.SessionStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h := r.Header.Get("Authorization")
-			if !strings.HasPrefix(h, "Bearer ") {
-				writeMiddlewareError(w, http.StatusUnauthorized, "missing bearer token")
+			tok := extractAuthToken(r)
+			if tok == "" {
+				writeMiddlewareError(w, http.StatusUnauthorized, "missing X-API-Key or Authorization Bearer token")
 				return
 			}
-			tok := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
 
 			if apiKeys != nil && strings.HasPrefix(tok, repo.PlaintextPrefix) {
 				k, err := apiKeys.FindActiveByPlaintext(r.Context(), tok)
@@ -104,16 +61,22 @@ func AuthMiddlewareWithSessions(j *auth.JWT, apiKeys *repo.APIKeyRepo, sessions 
 				}(k.ID)
 
 				claims := &auth.Claims{
-					UserID:    0,
-					Email:     "api-key:" + k.KeyPrefix,
-					Role:      "member",
-					TokenType: auth.TokenTypeAPIKey,
-					AccountID: k.AccountID,
+					UserID:         0,
+					Email:          "api-key:" + k.KeyPrefix,
+					Role:           "member",
+					TokenType:      auth.TokenTypeAPIKey,
+					AccountID:      k.AccountID,
+					APIKeyScopes:   k.Scopes,
+					APIKeyReadOnly: k.ReadOnly,
 				}
 				next.ServeHTTP(w, r.WithContext(auth.WithClaims(r.Context(), claims)))
 				return
 			}
 
+			if j == nil {
+				writeMiddlewareError(w, http.StatusUnauthorized, "invalid token")
+				return
+			}
 			claims, err := j.Parse(tok)
 			if err != nil {
 				writeMiddlewareError(w, http.StatusUnauthorized, "invalid token")

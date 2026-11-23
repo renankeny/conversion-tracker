@@ -10,6 +10,7 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/geoip"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
@@ -24,6 +25,7 @@ type Events struct {
 	queue       *queue.Enqueuer
 	urls        *util.URLMapper
 	crmRepo            *repo.CRMRepo
+	notify             *notify.Service
 	rdb                *redis.Client
 	trackingTargetHost string
 	recentDedup        sync.Map // fallback local caso o Redis esteja temporariamente indisponível
@@ -43,6 +45,10 @@ func NewEvents(
 
 func (h *Events) SetRedis(rdb *redis.Client) {
 	h.rdb = rdb
+}
+
+func (h *Events) SetNotify(n *notify.Service) {
+	h.notify = n
 }
 
 func (h *Events) SetTrackingTargetHost(host string) {

@@ -31,14 +31,39 @@ func ClaimsFrom(ctx context.Context) (*Claims, bool) {
 }
 
 type Claims struct {
-	UserID      int64          `json:"uid"`
-	Email       string         `json:"email"`
-	Role        string         `json:"role,omitempty"`
-	TokenType   string         `json:"typ,omitempty"`
-	AccountID   int64          `json:"account_id,omitempty"`
-	ParentID    *int64         `json:"parent_id,omitempty"`
-	Permissions map[string]any `json:"permissions,omitempty"`
+	UserID         int64          `json:"uid"`
+	Email          string         `json:"email"`
+	Role           string         `json:"role,omitempty"`
+	TokenType      string         `json:"typ,omitempty"`
+	AccountID      int64          `json:"account_id,omitempty"`
+	ParentID       *int64         `json:"parent_id,omitempty"`
+	Permissions    map[string]any `json:"permissions,omitempty"`
+	APIKeyScopes   []string       `json:"ak_scopes,omitempty"`
+	APIKeyReadOnly bool           `json:"ak_ro,omitempty"`
 	jwt.RegisteredClaims
+}
+
+// HasAPIScope valida se uma credencial S2S/MCP possui acesso ao módulo e modo (leitura vs escrita).
+// Para sessões humanas autenticadas retorna sempre true (tratadas pelas regras de role humanas).
+func (c *Claims) HasAPIScope(scope string, isWrite bool) bool {
+	if c == nil {
+		return false
+	}
+	if !c.IsAPIKey() {
+		return true
+	}
+	if isWrite && c.APIKeyReadOnly {
+		return false
+	}
+	if scope == "" || len(c.APIKeyScopes) == 0 {
+		return true
+	}
+	for _, s := range c.APIKeyScopes {
+		if s == "*" || s == scope {
+			return true
+		}
+	}
+	return false
 }
 
 // IsAPIKey retorna true quando a requisição foi autenticada por uma chave S2S (`trk_*`).

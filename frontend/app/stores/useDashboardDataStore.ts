@@ -10,6 +10,7 @@ import type {
   PanelAudit,
   PreviousPeriodMetrics,
   SourceBreakdown,
+  TrackableLinksOverview,
   TrafficQualityStats,
 } from '#shared/types'
 import type { GeoStat } from '~/utils/geoCoordinates'
@@ -33,6 +34,7 @@ export const useDashboardDataStore = defineStore('dashboardData', () => {
   const recentPurchases = ref<GroupedEvent[]>([])
   const geoData = ref<GeoStat[]>([])
   const totalRevenue = ref(0)
+  const trackableLinks = ref<TrackableLinksOverview | null>(null)
 
   const metaInsights = ref<AdPlatformLiveInsights | null>(null)
   const googleInsights = ref<AdPlatformLiveInsights | null>(null)
@@ -63,6 +65,7 @@ export const useDashboardDataStore = defineStore('dashboardData', () => {
     recentPurchases.value = []
     geoData.value = []
     totalRevenue.value = 0
+    trackableLinks.value = null
     clearAds()
   }
 
@@ -83,6 +86,7 @@ export const useDashboardDataStore = defineStore('dashboardData', () => {
     recentPurchases,
     geoData,
     totalRevenue,
+    trackableLinks,
     metaInsights,
     googleInsights,
     metaCreatives,

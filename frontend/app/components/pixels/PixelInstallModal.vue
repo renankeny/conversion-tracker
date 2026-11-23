@@ -9,6 +9,10 @@
     <div v-if="pixel" class="install-content">
       <div class="tabs">
         <button type="button" class="tab" :class="{ active: tab === 'script' }" @click="tab = 'script'">Script</button>
+        <button type="button" class="tab" :class="{ active: tab === 'links' }" @click="tab = 'links'">
+          Links WhatsApp
+          <span v-if="linksCount > 0" class="badge-pill">{{ linksCount }}</span>
+        </button>
         <button type="button" class="tab" :class="{ active: tab === 'events' }" @click="tab = 'events'">Eventos &amp; Teste</button>
       </div>
 
@@ -60,6 +64,13 @@
         </div>
       </div>
 
+      <PixelTrackableLinksSection
+        v-show="tab === 'links'"
+        :pixel="pixel"
+        :can-edit="canEdit"
+        @count-updated="linksCount = $event"
+      />
+
       <PixelTestEventSection
         v-show="tab === 'events'"
         :pixel="pixel"
@@ -91,6 +102,7 @@
 import { Copy, Check } from 'lucide-vue-next'
 import ConfirmModal from '~/components/ConfirmModal.vue'
 import PixelTestEventSection from '~/components/pixels/PixelTestEventSection.vue'
+import PixelTrackableLinksSection from '~/components/pixels/links/PixelTrackableLinksSection.vue'
 import { buildPixelSnippet } from '~/utils/apiOrigin'
 import { errorMessage } from '~/utils/errorMessage'
 import type { Pixel } from '#shared/types'
@@ -114,7 +126,8 @@ const config = useRuntimeConfig()
 const toast = useToast()
 const pixelsApi = usePixels()
 
-const tab = ref<'script' | 'events'>('script')
+const tab = ref<'script' | 'links' | 'events'>('script')
+const linksCount = ref(0)
 const currentToken = computed(() => props.pixel?.public_token || '')
 const snippet = computed(() =>
   props.pixel

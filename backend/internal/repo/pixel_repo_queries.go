@@ -148,6 +148,7 @@ func scanPixel(row rowScanner) (*domain.Pixel, error) {
 		&p.GA4MeasurementID, &p.GA4APISecret, &p.MetaPermanentToken, &p.MetaAdAccountID, &p.MetaAccountID,
 		&dashCfgJSON, &p.DashboardShareToken,
 		&p.AggregationEnabled, &p.AggregationWindowMinutes,
+		&p.SalesGoalEnabled, &p.SalesGoalType, &p.SalesGoalTarget,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

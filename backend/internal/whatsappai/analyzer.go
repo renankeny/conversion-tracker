@@ -9,6 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/storage"
 )
@@ -22,6 +23,7 @@ type Analyzer struct {
 	MetaAcc  *repo.MetaAccountRepo
 	Storage  *storage.MediaStorage
 	Enqueuer EventEnqueuer
+	Notify   *notify.Service
 	Redis    *redis.Client
 }
 

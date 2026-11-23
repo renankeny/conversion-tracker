@@ -2,7 +2,7 @@
   <div class="lead-col-notes">
     <h4 class="box-subtitle">Histórico & Anotações</h4>
 
-    <div class="add-note-box">
+    <div v-if="!readOnly" class="add-note-box">
       <textarea
         :value="newNoteContent"
         class="note-textarea"
@@ -37,6 +37,7 @@
         <div class="note-meta">
           <span class="note-date">{{ timeAgo(note.created_at) }}</span>
           <button
+            v-if="!readOnly"
             type="button"
             class="delete-note-btn"
             title="Excluir anotação"
@@ -59,6 +60,7 @@ defineProps<{
   notes: CrmNote[]
   newNoteContent: string
   isAddingNote: boolean
+  readOnly?: boolean
 }>()
 
 const emit = defineEmits<{

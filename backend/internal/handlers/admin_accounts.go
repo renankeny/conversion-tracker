@@ -11,17 +11,21 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
 // AdminAccounts gerencia o CRUD de empresas (multi-tenant).
 type AdminAccounts struct {
-	repo *repo.AccountRepo
+	repo   *repo.AccountRepo
+	notify *notify.Service
 }
 
 func NewAdminAccounts(r *repo.AccountRepo) *AdminAccounts {
 	return &AdminAccounts{repo: r}
 }
+
+func (h *AdminAccounts) SetNotify(n *notify.Service) { h.notify = n }
 
 type accountInput struct {
 	Name                       string `json:"name"`
@@ -122,6 +126,7 @@ func (h *AdminAccounts) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "create error: "+err.Error())
 		return
 	}
+	emitCompanyLifecycleNotification(h.notify, a.ID, a.Name, true)
 	writeJSON(w, http.StatusCreated, a)
 }
 
@@ -223,9 +228,15 @@ func (h *AdminAccounts) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	existing, _ := h.repo.FindByID(r.Context(), id)
 	if err := h.repo.Delete(r.Context(), id); err != nil {
 		writeError(w, http.StatusBadRequest, "erro ao remover empresa: "+err.Error())
 		return
 	}
+	deletedName := "#" + strconv.FormatInt(id, 10)
+	if existing != nil && existing.Name != "" {
+		deletedName = existing.Name
+	}
+	emitCompanyLifecycleNotification(h.notify, id, deletedName, false)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -2,12 +2,10 @@ import type {
   APIKeysListResponse,
   CreateAPIKeyInput,
   CreateAPIKeyResponse,
+  UpdateAPIKeyInput,
+  UpdateAPIKeyResponse,
 } from '#shared/types'
 
-// useAPIKeys encapsula CRUD dos tokens server-to-server.
-//
-// Members só veem/criam keys da própria conta. Owners podem operar em
-// qualquer conta passando account_id no create.
 export const useAPIKeys = () => {
   const api = useAPI()
 
@@ -17,10 +15,14 @@ export const useAPIKeys = () => {
   const create = (input: CreateAPIKeyInput): Promise<CreateAPIKeyResponse> =>
     api.post<CreateAPIKeyResponse>('/admin/api-keys', input)
 
-  // Revoke marca como revogada — não apaga a row (preserva histórico
-  // last_used_at). É idempotente.
+  const update = (id: number, input: UpdateAPIKeyInput): Promise<UpdateAPIKeyResponse> =>
+    api.put<UpdateAPIKeyResponse>(`/admin/api-keys/${id}`, input)
+
+  const regenerate = (id: number): Promise<CreateAPIKeyResponse> =>
+    api.post<CreateAPIKeyResponse>(`/admin/api-keys/${id}/regenerate`, {})
+
   const revoke = (id: number): Promise<void> =>
     api.delete<void>(`/admin/api-keys/${id}`)
 
-  return { list, create, revoke }
+  return { list, create, update, regenerate, revoke }
 }

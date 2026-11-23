@@ -54,6 +54,7 @@ const pixelColumns = `id, name, label, public_token, pixel_ids, access_tokens, t
 		ga4_measurement_id, ga4_api_secret, meta_permanent_token, meta_ad_account_id, meta_account_id,
 		dashboard_config, dashboard_share_token,
 		aggregation_enabled, aggregation_window_minutes,
+		sales_goal_enabled, sales_goal_type, sales_goal_target,
 		created_at, updated_at`
 
 func encryptSlice(items []string) ([]string, error) {
@@ -106,6 +107,14 @@ func (r *PixelRepo) Create(ctx context.Context, p *domain.Pixel) error {
 	if p.AggregationWindowMinutes <= 0 {
 		p.AggregationWindowMinutes = 10
 	}
+	p.SalesGoalType = domain.NormalizeSalesGoalType(p.SalesGoalType)
+	if p.SalesGoalTarget < 0 {
+		p.SalesGoalTarget = 0
+	}
+	dashCfgJSON, err := json.Marshal(p.DashboardConfig)
+	if err != nil {
+		return fmt.Errorf("marshal dashboard_config: %w", err)
+	}
 
 	const q = `INSERT INTO pixels (name, label, public_token, pixel_ids, access_tokens, test_codes,
 	                               domains, tracker_config, enabled, tracking_host, account_id,
@@ -114,8 +123,9 @@ func (r *PixelRepo) Create(ctx context.Context, p *domain.Pixel) error {
 	                               google_ads_conversion_action_id, google_ads_refresh_token,
 	                               google_ads_oauth_email, google_ads_account_id,
 	                               ga4_measurement_id, ga4_api_secret, meta_permanent_token, meta_ad_account_id, meta_account_id,
-	                               aggregation_enabled, aggregation_window_minutes)
-	           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+	                               aggregation_enabled, aggregation_window_minutes,
+	                               sales_goal_enabled, sales_goal_type, sales_goal_target, dashboard_config)
+	           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
 	           RETURNING id, created_at, updated_at`
 	return r.pool.QueryRow(ctx, q,
 		p.Name, p.Label, p.PublicToken, nilIfNil(p.PixelIDs), nilIfNil(encAccessTokens), nilIfNil(p.TestCodes),
@@ -126,6 +136,7 @@ func (r *PixelRepo) Create(ctx context.Context, p *domain.Pixel) error {
 		p.GoogleAdsOAuthEmail, p.GoogleAdsAccountID,
 		p.GA4MeasurementID, encGA4Secret, encMetaPermanentToken, p.MetaAdAccountID, p.MetaAccountID,
 		p.AggregationEnabled, p.AggregationWindowMinutes,
+		p.SalesGoalEnabled, p.SalesGoalType, p.SalesGoalTarget, dashCfgJSON,
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -134,8 +145,16 @@ func (r *PixelRepo) Update(ctx context.Context, p *domain.Pixel) error {
 	if err != nil {
 		return fmt.Errorf("marshal tracker_config: %w", err)
 	}
+	dashCfgJSON, err := json.Marshal(p.DashboardConfig)
+	if err != nil {
+		return fmt.Errorf("marshal dashboard_config: %w", err)
+	}
 	if p.AggregationWindowMinutes <= 0 {
 		p.AggregationWindowMinutes = 10
+	}
+	p.SalesGoalType = domain.NormalizeSalesGoalType(p.SalesGoalType)
+	if p.SalesGoalTarget < 0 {
+		p.SalesGoalTarget = 0
 	}
 	encAccessTokens, encTikTokTokens, encGA4Secret, encMetaPermanentToken, err := encryptPixelSecrets(p)
 	if err != nil {
@@ -150,6 +169,7 @@ func (r *PixelRepo) Update(ctx context.Context, p *domain.Pixel) error {
 	               ga4_measurement_id=$17, ga4_api_secret=$18, meta_permanent_token=$19, meta_ad_account_id=$20, meta_account_id=$21,
 	               aggregation_enabled=$22, aggregation_window_minutes=$23,
 	               account_id=$24,
+	               sales_goal_enabled=$26, sales_goal_type=$27, sales_goal_target=$28, dashboard_config=$29,
 	               updated_at=NOW()
 	           WHERE id=$25
 	           RETURNING updated_at`
@@ -162,6 +182,7 @@ func (r *PixelRepo) Update(ctx context.Context, p *domain.Pixel) error {
 		p.AggregationEnabled, p.AggregationWindowMinutes,
 		p.AccountID,
 		p.ID,
+		p.SalesGoalEnabled, p.SalesGoalType, p.SalesGoalTarget, dashCfgJSON,
 	).Scan(&p.UpdatedAt)
 }
 

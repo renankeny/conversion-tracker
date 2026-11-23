@@ -6,7 +6,7 @@ import type { MetaCreativeInsight } from '~/composables/useDashboard'
 import type {
   AdPlatformLiveInsights, CounterSummaryResponse, CounterSeriesResponse,
   DashboardConfig, DashboardHeatmap, GoogleKeywordInsight, GroupedEvent,
-  PanelAudit, PreviousPeriodMetrics, SourceBreakdown, TrafficQualityStats,
+  PanelAudit, PreviousPeriodMetrics, PublicSalesGoal, SourceBreakdown, TrackableLinksOverview, TrafficQualityStats,
 } from '#shared/types'
 
 const ADS_CACHE_TTL_MS = 120_000
@@ -26,7 +26,7 @@ export const usePublicDashboardFetch = (token: string) => {
   const customFrom = ref('')
   const customTo = ref('')
   const trafficSource = ref<DashboardTrafficSource>('all')
-  const privacyMode = ref(false)
+  const privacyMode = useState<boolean>(`client-portal-privacy:${token}`, () => false)
 
   const dateRange = computed(() => computeSaoPauloRange(period.value, customFrom.value, customTo.value))
   const granularity = computed<'hour' | 'day'>(() => (period.value === 'today' || period.value === 'yesterday' ? 'hour' : 'day'))
@@ -43,6 +43,7 @@ export const usePublicDashboardFetch = (token: string) => {
   const pixelLabel = ref('')
   const currency = ref('BRL')
   const dashboardConfig = ref<DashboardConfig | null>(null)
+  const publicSalesGoal = ref<PublicSalesGoal | null>(null)
 
   const summaryData = ref<CounterSummaryResponse | null>(null)
   const seriesData = ref<CounterSeriesResponse | null>(null)
@@ -54,6 +55,7 @@ export const usePublicDashboardFetch = (token: string) => {
   const panelAudit = ref<PanelAudit | null>(null)
   const previousPeriod = ref<PreviousPeriodMetrics | null>(null)
   const heatmap = ref<DashboardHeatmap | null>(null)
+  const trackableLinks = ref<TrackableLinksOverview | null>(null)
   const metaInsights = ref<AdPlatformLiveInsights | null>(null)
   const googleInsights = ref<AdPlatformLiveInsights | null>(null)
   const metaCreatives = ref<MetaCreativeInsight[]>([])
@@ -82,6 +84,7 @@ export const usePublicDashboardFetch = (token: string) => {
       pixelLabel.value = res.pixel_label
       currency.value = res.currency || 'BRL'
       dashboardConfig.value = res.dashboard_config
+      publicSalesGoal.value = res.sales_goal || null
       metaLoaded.value = true
       loadError.value = null
     } catch (err: unknown) { handleApiError(err) }
@@ -100,13 +103,14 @@ export const usePublicDashboardFetch = (token: string) => {
     try {
       const { from, to } = dateRange.value
       const ts = trafficSource.value
-      const [summary, series, purchases, geo, geoPurchases, revenue] = await Promise.all([
+      const [summary, series, purchases, geo, geoPurchases, revenue, linksRes] = await Promise.all([
         api.summary({ from, to, traffic_source: ts }, ac.signal),
         api.series({ from, to, granularity: granularity.value, traffic_source: ts }, ac.signal),
         api.purchases({ from, to, traffic_source: ts }, ac.signal),
         api.geo({ from, to, traffic_source: ts }, ac.signal),
         api.geoByEvent({ from, to, event: 'Purchase', traffic_source: ts }, ac.signal),
         api.revenue({ from, to, traffic_source: ts }, ac.signal),
+        api.trackableLinks({ from, to }, ac.signal).catch(() => null),
       ])
       if (seq !== coreSeq || ac.signal.aborted) return
 
@@ -114,6 +118,7 @@ export const usePublicDashboardFetch = (token: string) => {
       seriesData.value = series
       recentPurchases.value = purchases.data || []
       totalRevenue.value = revenue.total_revenue ?? 0
+      trackableLinks.value = linksRes
       trafficQuality.value = revenue.traffic_quality
       sourceBreakdown.value = revenue.source_breakdown || null
       panelAudit.value = revenue.panel_audit || null
@@ -216,9 +221,9 @@ export const usePublicDashboardFetch = (token: string) => {
 
   return {
     period, customFrom, customTo, trafficSource, privacyMode, dateRange, granularity,
-    loading, isRefreshing, adsLoading, notFound, metaLoaded, loadError, pixelLabel, currency, dashboardConfig,
+    loading, isRefreshing, adsLoading, notFound, metaLoaded, loadError, pixelLabel, currency, dashboardConfig, publicSalesGoal,
     summaryData, seriesData, recentPurchases, geoData, totalRevenue, trafficQuality,
-    sourceBreakdown, panelAudit, previousPeriod, heatmap, metaInsights, googleInsights,
+    sourceBreakdown, panelAudit, previousPeriod, heatmap, trackableLinks, metaInsights, googleInsights,
     metaCreatives, googleKeywords, refresh, retryLoad,
   }
 }

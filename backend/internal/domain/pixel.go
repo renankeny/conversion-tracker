@@ -86,8 +86,20 @@ type Pixel struct {
 	AggregationEnabled       bool `json:"aggregation_enabled"`
 	AggregationWindowMinutes int  `json:"aggregation_window_minutes"`
 
+	// Meta de Vendas por Pixel ("revenue" = valor financeiro | "count" = quantidade de vendas)
+	SalesGoalEnabled bool    `json:"sales_goal_enabled"`
+	SalesGoalType    string  `json:"sales_goal_type"`
+	SalesGoalTarget  float64 `json:"sales_goal_target"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func NormalizeSalesGoalType(t string) string {
+	if t == "count" {
+		return "count"
+	}
+	return "revenue"
 }
 
 func (p Pixel) HasTikTok() bool {
@@ -135,6 +147,9 @@ func (p Pixel) PublicView() map[string]any {
 		"dashboard_share_token":      p.DashboardShareToken,
 		"aggregation_enabled":        p.AggregationEnabled,
 		"aggregation_window_minutes": p.AggregationWindowMinutes,
+		"sales_goal_enabled":         p.SalesGoalEnabled,
+		"sales_goal_type":            NormalizeSalesGoalType(p.SalesGoalType),
+		"sales_goal_target":          p.SalesGoalTarget,
 		"created_at":                 p.CreatedAt,
 		"updated_at":                 p.UpdatedAt,
 	}

@@ -2,12 +2,15 @@ package auth
 
 import "context"
 
-// CanEditPixels verifica se o usuário autenticado tem permissão humana para editar pixels.
-// Chaves de API S2S nunca podem mutar configurações de pixels.
+// CanEditPixels verifica se o ator autenticado pode criar/editar pixels e links rastreáveis
+// dentro do escopo estrito da sua própria empresa.
 func CanEditPixels(ctx context.Context) bool {
 	c, ok := ClaimsFrom(ctx)
-	if !ok || c == nil || c.IsAPIKey() {
+	if !ok || c == nil {
 		return false
+	}
+	if c.IsAPIKey() {
+		return c.AccountID > 0 && c.HasAPIScope("pixels", true)
 	}
 	if c.IsOwner() || c.Role == "admin" || c.Role == "manager" {
 		return true

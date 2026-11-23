@@ -15,13 +15,19 @@ import (
 )
 
 type PublicDashboard struct {
-	pixels   *repo.PixelRepo
-	stats    *repo.StatsRepo
-	counters *repo.EventCounterRepo
-	sent     *repo.SentEventRepo
-	metaH    *AdminDashboardMeta
-	googleH  *AdminDashboardGoogle
-	qcache   *cache.QueryCache
+	pixels       *repo.PixelRepo
+	stats        *repo.StatsRepo
+	counters     *repo.EventCounterRepo
+	sent         *repo.SentEventRepo
+	links        *repo.TrackableLinkRepo
+	publicAPIURL string
+	jwtSecret    string
+	metaH        *AdminDashboardMeta
+	googleH      *AdminDashboardGoogle
+	crmH         *AdminCRM
+	whatsapp     *repo.WhatsAppRepo
+	aiRepo       *repo.WhatsAppAIRepo
+	qcache       *cache.QueryCache
 }
 
 func NewPublicDashboard(pixels *repo.PixelRepo, stats *repo.StatsRepo, counters *repo.EventCounterRepo, sent *repo.SentEventRepo) *PublicDashboard {
@@ -82,6 +88,11 @@ func (h *PublicDashboard) Meta(w http.ResponseWriter, r *http.Request) {
 		"pixel_label":      firstNonEmpty(p.Label, p.Name),
 		"currency":         firstNonEmpty(p.TrackerConfig.ProductCurrency, "BRL"),
 		"dashboard_config": p.DashboardConfig,
+		"sales_goal": map[string]any{
+			"enabled": p.SalesGoalEnabled && p.SalesGoalTarget > 0 && p.DashboardConfig.IsPublicSalesGoalEnabled(),
+			"type":    domain.NormalizeSalesGoalType(p.SalesGoalType),
+			"target":  p.SalesGoalTarget,
+		},
 	})
 }
 

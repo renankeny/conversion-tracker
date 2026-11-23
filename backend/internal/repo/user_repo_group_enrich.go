@@ -8,15 +8,8 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 )
 
-// enrichTrackedUserGroupFields consolida em memória os cookies de plataforma,
-// click IDs e UTMs entre todas as sessões (tracked_users) da mesma pessoa
-// (mesmo group_id ou mesmo telefone/e-mail na conta), sem sobrescrever as
-// linhas individuais de sessão no banco.
-//
-// Regra de precedência:
-//   - Click IDs, cookies e last_utm_*: vence o valor não-vazio mais recente (updated_at DESC).
-//   - first_utm_* e first_url: vence o valor não-vazio mais antigo (created_at ASC).
-//   - PII/Geo: preenche apenas campos vazios em u.
+// enrichTrackedUserGroupFields consolida em memória cookies, click IDs, UTMs e
+// trackable_link_id entre sessões da mesma pessoa (group_id ou telefone/e-mail).
 func enrichTrackedUserGroupFields(ctx context.Context, pool *pgxpool.Pool, u *domain.TrackedUser) {
 	if pool == nil || u == nil {
 		return
@@ -155,6 +148,15 @@ func applyConsolidatedGroupMembers(u *domain.TrackedUser, members []*domain.Trac
 	fillEmpty(&u.State, func(m *domain.TrackedUser) string { return m.State })
 	fillEmpty(&u.City, func(m *domain.TrackedUser) string { return m.City })
 	fillEmpty(&u.PostalCode, func(m *domain.TrackedUser) string { return m.PostalCode })
+	if u.TrackableLinkID == nil {
+		for _, m := range members {
+			if m.TrackableLinkID != nil {
+				idCopy := *m.TrackableLinkID
+				u.TrackableLinkID = &idCopy
+				break
+			}
+		}
+	}
 }
 
 // enrichCRMLeadsGroupFields consolida em lote (1 query única) os click IDs,

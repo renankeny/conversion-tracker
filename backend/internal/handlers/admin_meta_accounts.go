@@ -3,18 +3,17 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/metaoauth"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
@@ -24,6 +23,7 @@ type AdminMetaAccounts struct {
 	client      *metaoauth.Client
 	oauth       metaoauth.Config
 	state       *cache.OAuthStateStore
+	notify      *notify.Service
 	rdb         *redis.Client
 	frontHost   string
 	metaPartner string
@@ -51,6 +51,8 @@ func (h *AdminMetaAccounts) SetPixels(pixels *repo.PixelRepo) {
 func (h *AdminMetaAccounts) SetPartnerAgent(partner string) {
 	h.metaPartner = partner
 }
+
+func (h *AdminMetaAccounts) SetNotify(n *notify.Service) { h.notify = n }
 
 func (h *AdminMetaAccounts) invalidateAccountCaches(ctx context.Context, accountID, metaAccountID int64) {
 	if h.pixels != nil && metaAccountID > 0 {
@@ -160,6 +162,7 @@ func (h *AdminMetaAccounts) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.invalidateAccountCaches(r.Context(), a.AccountID, a.ID)
+	emitResourceLifecycleNotification(h.notify, a.AccountID, domain.NotifMetaAccountLifecycle, "Conta Meta Ads Criada", fmt.Sprintf("A conexão \"%s\" foi adicionada às integrações da Meta Ads.", a.Name), "/integracoes/meta-ads")
 	writeJSON(w, http.StatusCreated, a.PublicView())
 }
 
@@ -215,30 +218,6 @@ func (h *AdminMetaAccounts) Delete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "erro ao excluir conta Meta Ads")
 		return
 	}
+	emitResourceLifecycleNotification(h.notify, a.AccountID, domain.NotifMetaAccountLifecycle, "Conta Meta Ads Removida", fmt.Sprintf("A conexão \"%s\" foi excluída das integrações da Meta Ads.", a.Name), "/integracoes/meta-ads")
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
-
-func (h *AdminMetaAccounts) loadAuthorizedAccount(w http.ResponseWriter, r *http.Request) (*domain.MetaAccount, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "ID inválido")
-		return nil, false
-	}
-	a, err := h.accounts.FindByID(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, repo.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "conta Meta Ads não encontrada")
-			return nil, false
-		}
-		writeError(w, http.StatusInternalServerError, "erro ao carregar conta Meta Ads")
-		return nil, false
-	}
-	scope := TenantFromContext(r.Context())
-	if !scope.IsOwner && a.AccountID != scope.AccountID {
-		writeError(w, http.StatusForbidden, "sem acesso a esta conta")
-		return nil, false
-	}
-	return a, true
-}
-
-func stringTrim(s string) string { return strings.TrimSpace(s) }

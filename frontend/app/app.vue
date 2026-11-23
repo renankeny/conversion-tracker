@@ -86,11 +86,16 @@ useHead({
     'data-theme': computed(() => theme.value),
     style: ssrInlineStyle,
   },
-  link: computed(() =>
-    branding.value.favicon_url
-      ? [{ rel: 'icon', href: branding.value.favicon_url }]
-      : [{ rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' }]
-  ),
+  meta: [
+    { name: 'apple-mobile-web-app-capable', content: 'yes' },
+    { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+  ],
+  link: computed(() => [
+    { rel: 'manifest', href: '/manifest.webmanifest' },
+    ...(branding.value.favicon_url
+      ? [{ rel: 'icon', href: branding.value.favicon_url }, { rel: 'apple-touch-icon', href: branding.value.favicon_url }]
+      : [{ rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' }, { rel: 'apple-touch-icon', href: '/pwa-icon.svg' }]),
+  ]),
   style: [{ id: 'whitelabel-ssr-vars', innerHTML: ssrCssVars }],
 })
 

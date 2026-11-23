@@ -220,8 +220,8 @@ func New(deps Deps) (*Server, error) {
 		rateLimiter:         rateLimiter,
 		calibrator:          cal,
 	}
-	attachWhatsAppHandlers(&rh, deps, rdb, queryCache, whatsappRepo, pixels, users, crmRepo, metaAccountRepo)
-
+	notifySvc := attachNotificationHandlers(&rh, deps, rdb)
+	attachWhatsAppHandlers(&rh, deps, rdb, queryCache, whatsappRepo, pixels, users, crmRepo, metaAccountRepo, notifySvc)
 	registerRoutes(r, deps, rh)
 	return &Server{
 		cfg: deps.Cfg, router: r, hub: hub, calibrator: cal,

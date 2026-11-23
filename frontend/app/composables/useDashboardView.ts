@@ -3,11 +3,11 @@ import { useDashboardStore } from '~/stores/useDashboardStore'
 import { useDashboardFetch } from '~/composables/useDashboardFetch'
 import {
   EVENT_CATALOG, FULL_CARD_CATALOG, ALL_CARD_IDS, DEFAULT_ENABLED_CARDS, CATALOG_IDS,
-  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon, resolvePanelLeads,
+  DEFAULT_FUNNEL_EVENTS, catalogById, computeCardMetricValue, resolveCardIcon, resolvePanelLeads, resolvePanelPurchases,
   type CardFormat, type DashboardMetricsContext, type EventCatalogEntry,
 } from '~/utils/dashboardEventCatalog'
 import { computeCardRichDetails, type CardRichDetails } from '~/utils/dashboardCardDetails'
-import type { CounterSummaryRow, DashboardConfig, GroupedEvent } from '#shared/types'
+import type { CounterSummaryRow, DashboardConfig, GroupedEvent, SalesGoalType } from '#shared/types'
 
 export interface DashboardVisibleCard extends CardRichDetails {
   id: string
@@ -38,7 +38,7 @@ export const useDashboardView = () => {
   const {
     loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, sourceBreakdown,
     panelAudit, previousPeriod, heatmap, metaInsights, googleInsights, metaCreatives,
-    googleKeywords, recentPurchases, geoData, totalRevenue, refresh,
+    googleKeywords, recentPurchases, geoData, totalRevenue, trackableLinks, refresh,
   } = useDashboardFetch(selectedPixel)
 
   const purchaseModalOpen = ref(false)
@@ -117,6 +117,15 @@ export const useDashboardView = () => {
   }))
 
   const panelLeadsTotal = computed(() => resolvePanelLeads(metricsCtx.value))
+  const periodLabel = computed(() => PERIOD_LABELS[dashboardStore.period] || 'Hoje')
+
+  const salesGoal = computed(() => {
+    const p = selectedPixelObj.value
+    if (!p?.sales_goal_enabled || !p.sales_goal_target || p.sales_goal_target <= 0) return null
+    const type: SalesGoalType = p.sales_goal_type === 'count' ? 'count' : 'revenue'
+    const current = type === 'count' ? resolvePanelPurchases(metricsCtx.value) : totalRevenue.value
+    return { type, target: p.sales_goal_target, current }
+  })
 
   const visibleCards = computed<DashboardVisibleCard[]>(() => {
     const cards: DashboardVisibleCard[] = []
@@ -143,7 +152,9 @@ export const useDashboardView = () => {
 
   const saveDashboardConfig = async (patch: Partial<DashboardConfig>) => {
     if (!selectedPixelObj.value) return null
+    const existingCfg = selectedPixelObj.value.dashboard_config || {}
     const res = await pixelsApi.updateDashboardConfig(selectedPixelObj.value.id, {
+      ...existingCfg,
       enabled_cards: enabledCardIds.value, card_order: cardOrder.value,
       enabled_funnel_events: enabledFunnelEvents.value, funnel_order: funnelOrder.value,
       event_labels: eventLabelOverrides.value, ...patch,
@@ -176,9 +187,9 @@ export const useDashboardView = () => {
   }
 
   return {
-    dashboardStore, loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, heatmap, filteredSeriesPoints,
+    dashboardStore, loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, heatmap, trackableLinks, filteredSeriesPoints,
     metaCreatives, googleKeywords, recentPurchases, geoData, purchaseModalOpen, purchaseSelected, onPurchaseSelect,
-    headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, selectedPixelObj, activeCurrency, panelLeadsTotal,
+    headerSubtitle, chartSubtitle, funnelSubtitle, purchasesSubtitle, periodLabel, selectedPixelObj, activeCurrency, panelLeadsTotal, salesGoal,
     hasCustomCardPrefs, cardsEditorOpen, savingCardsPrefs, enabledCardIds, cardOrder, cardPickerOptions, visibleCards,
     onSaveCards, onResetCardsDefault, funnelEditorOpen, savingFunnelPrefs, enabledFunnelEvents, funnelOrder,
     funnelPickerOptions, funnelSteps, onSaveFunnelEvents, eventLabelOverrides, refresh,

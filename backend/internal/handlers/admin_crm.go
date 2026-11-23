@@ -13,6 +13,7 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
+	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/queue"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
@@ -27,6 +28,7 @@ type AdminCRM struct {
 	whatsapp   *repo.WhatsAppRepo
 	metaAcc    *repo.MetaAccountRepo
 	sentEvents *repo.SentEventRepo
+	notify     *notify.Service
 	rdb        *redis.Client
 }
 
@@ -45,6 +47,7 @@ func (h *AdminCRM) SetWhatsAppRepo(wa *repo.WhatsAppRepo) {
 
 func (h *AdminCRM) SetMetaAccountRepo(m *repo.MetaAccountRepo) { h.metaAcc = m }
 func (h *AdminCRM) SetSentEventRepo(s *repo.SentEventRepo)     { h.sentEvents = s }
+func (h *AdminCRM) SetNotify(n *notify.Service)                { h.notify = n }
 func (h *AdminCRM) SetRedis(rdb *redis.Client)                 { h.rdb = rdb }
 
 func (h *AdminCRM) notifyCRMUpdated(ctx context.Context, accountID int64, action string) {

@@ -31,9 +31,10 @@ type LiveEvent struct {
 }
 
 type customRedisEvent struct {
-	AccountID int64           `json:"account_id"`
-	Type      string          `json:"type"`
-	Data      json.RawMessage `json:"data"`
+	AccountID    int64           `json:"account_id"`
+	TargetUserID int64           `json:"target_user_id,omitempty"`
+	Type         string          `json:"type"`
+	Data         json.RawMessage `json:"data"`
 }
 
 type wsEnvelope struct {
@@ -186,60 +187,5 @@ func (h *Hub) runSession(ctx context.Context) (reconnect bool) {
 			h.broadcast(e)
 		}
 	}
-}
-
-func (h *Hub) broadcast(e LiveEvent) {
-	if e.AccountID <= 0 {
-		return
-	}
-	out, err := json.Marshal(wsEnvelope{Type: "new_event", Data: e})
-	if err != nil {
-		return
-	}
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	for c := range h.clients {
-		if c.AccountID > 0 {
-			if c.AccountID != e.AccountID {
-				continue
-			}
-		} else if !c.IsOwner {
-			continue
-		}
-		if c.PixelFilter != "" && c.PixelFilter != e.PixelName {
-			continue
-		}
-		select {
-		case c.Send <- out:
-		default:
-			slog.Warn("wshub: slow client, dropping message", "account_id", e.AccountID, "event", e.EventName)
-		}
-	}
-}
-
-func (h *Hub) broadcastCustom(ce customRedisEvent) {
-	if ce.AccountID <= 0 {
-		return
-	}
-	out, err := json.Marshal(wsEnvelope{Type: ce.Type, Data: ce.Data})
-	if err != nil {
-		return
-	}
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	for c := range h.clients {
-		if c.AccountID > 0 {
-			if c.AccountID != ce.AccountID {
-				continue
-			}
-		} else if !c.IsOwner {
-			continue
-		}
-		select {
-		case c.Send <- out:
-		default:
-		}
-	}
+	// broadcast e broadcastCustom em broadcast.go
 }

@@ -3,13 +3,43 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
+	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
+
+func (h *AdminMetaAccounts) loadAuthorizedAccount(w http.ResponseWriter, r *http.Request) (*domain.MetaAccount, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "ID inválido")
+		return nil, false
+	}
+	a, err := h.accounts.FindByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "conta Meta Ads não encontrada")
+			return nil, false
+		}
+		writeError(w, http.StatusInternalServerError, "erro ao carregar conta Meta Ads")
+		return nil, false
+	}
+	scope := TenantFromContext(r.Context())
+	if !scope.IsOwner && a.AccountID != scope.AccountID {
+		writeError(w, http.StatusForbidden, "sem acesso a esta conta")
+		return nil, false
+	}
+	return a, true
+}
+
+func stringTrim(s string) string { return strings.TrimSpace(s) }
 
 func (h *AdminMetaAccounts) maybeBackfillPicture(ctx context.Context, a *domain.MetaAccount) {
 	if !a.IsConnected() || a.EffectivePictureURL() != "" || h.client == nil {

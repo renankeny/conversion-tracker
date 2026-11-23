@@ -103,11 +103,14 @@ func extractForwardedClientIP(r *http.Request) string {
 
 func buildCORS(cfg *config.Config, set *util.DomainSet) func(http.Handler) http.Handler {
 	adminOrigin := normalizeOrigin(cfg.AppURL)
+	allowedHeaders := []string{"Authorization", "X-API-Key", "Content-Type", "Accept", "X-Account-ID", "Mcp-Session-Id"}
+	exposedHeaders := []string{"Mcp-Session-Id"}
 	if !cfg.StrictCORS {
 		return cors.Handler(cors.Options{
 			AllowOriginFunc:  func(_ *http.Request, _ string) bool { return true },
 			AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-			AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Account-ID"},
+			AllowedHeaders:   allowedHeaders,
+			ExposedHeaders:   exposedHeaders,
 			AllowCredentials: true,
 			MaxAge:           300,
 		})
@@ -120,7 +123,8 @@ func buildCORS(cfg *config.Config, set *util.DomainSet) func(http.Handler) http.
 			return set != nil && set.AllowOrigin(origin)
 		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Account-ID"},
+		AllowedHeaders:   allowedHeaders,
+		ExposedHeaders:   exposedHeaders,
 		AllowCredentials: true,
 		MaxAge:           300,
 	})

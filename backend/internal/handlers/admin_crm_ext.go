@@ -218,6 +218,13 @@ func (h *AdminCRM) APICreateLead(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if prevStageID == nil {
+		who := strings.TrimSpace(firstName + " " + lastName)
+		if who == "" {
+			who = util.FirstNonEmpty(phone, email)
+		}
+		emitLeadNotification(h.notify, accountID, trackedUser.ExternalID, who, req.PixelName, "CRM")
+	}
 	h.notifyCRMUpdated(ctx, accountID, "lead_created")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":  true,

@@ -81,11 +81,18 @@ func (h *Events) upsertTrackedUser(
 	err := h.users.Upsert(ctx, tu)
 	h.linkIdentityBestEffort(ctx, accountID, tu)
 
-	if err == nil && req.EventType == domain.EventLead && tu.ID > 0 && crmEnabled {
-		_ = h.crmRepo.EnsureDefaultStages(ctx, accountID)
-		if firstStage, errStage := h.crmRepo.GetFirstStage(ctx, accountID); errStage == nil && firstStage != nil {
-			if ensureErr := h.crmRepo.EnsureLead(ctx, accountID, tu.ID, firstStage.ID); ensureErr == nil && h.rdb != nil {
-				wshub.PublishCustom(ctx, h.rdb, accountID, "crm_updated", map[string]any{"action": "lead_ensured"})
+	if err == nil && req.EventType == domain.EventLead && tu.ID > 0 {
+		leadWho := strings.TrimSpace(req.FirstName + " " + req.LastName)
+		if leadWho == "" {
+			leadWho = util.FirstNonEmpty(phone, email)
+		}
+		emitLeadNotification(h.notify, accountID, req.UserID, leadWho, pixelName, "Landing Page")
+		if crmEnabled {
+			_ = h.crmRepo.EnsureDefaultStages(ctx, accountID)
+			if firstStage, errStage := h.crmRepo.GetFirstStage(ctx, accountID); errStage == nil && firstStage != nil {
+				if ensureErr := h.crmRepo.EnsureLead(ctx, accountID, tu.ID, firstStage.ID); ensureErr == nil && h.rdb != nil {
+					wshub.PublishCustom(ctx, h.rdb, accountID, "crm_updated", map[string]any{"action": "lead_ensured"})
+				}
 			}
 		}
 	}

@@ -64,11 +64,16 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		doneTargets = make(map[string]bool)
 	}
 
-	hasAnyConfiguredChannel := len(pixel.PixelIDs) > 0 || pixel.HasTikTok() ||
-		pixel.HasGoogleAds() || in.OverrideGadsAccountID != nil || in.OverrideGadsActionID != "" ||
-		(pixel.GA4MeasurementID != "" && pixel.GA4APISecret != "")
+	allowMeta := isChannelAllowed(in.AllowedChannels, "meta")
+	allowTikTok := isChannelAllowed(in.AllowedChannels, "tiktok")
+	allowGads := isChannelAllowed(in.AllowedChannels, "google_ads")
+	allowGA4 := isChannelAllowed(in.AllowedChannels, "ga4")
 
-	if len(pixel.PixelIDs) > 0 && deps.Meta != nil && !alreadySent["meta"] {
+	hasAnyConfiguredChannel := (allowMeta && len(pixel.PixelIDs) > 0) || (allowTikTok && pixel.HasTikTok()) ||
+		(allowGads && (pixel.HasGoogleAds() || in.OverrideGadsAccountID != nil || in.OverrideGadsActionID != "")) ||
+		(allowGA4 && pixel.GA4MeasurementID != "" && pixel.GA4APISecret != "")
+
+	if allowMeta && len(pixel.PixelIDs) > 0 && deps.Meta != nil && !alreadySent["meta"] {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -76,7 +81,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 			metaResults, metaPausedSkip = dispatchMetaWithOAuthFallback(ctx, deps, pixel, in, func(pid string) bool { return doneTargets["meta:"+pid] })
 		}()
 	}
-	if pixel.HasTikTok() && deps.TikTok != nil && !alreadySent["tiktok"] {
+	if allowTikTok && pixel.HasTikTok() && deps.TikTok != nil && !alreadySent["tiktok"] {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -86,7 +91,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 			tiktokResults = deps.TikTok.SendFiltered(ctx, &sub, in, func(pid string) bool { return doneTargets["tiktok:"+pid] })
 		}()
 	}
-	if (pixel.HasGoogleAds() || in.OverrideGadsAccountID != nil || in.OverrideGadsActionID != "") &&
+	if allowGads && (pixel.HasGoogleAds() || in.OverrideGadsAccountID != nil || in.OverrideGadsActionID != "") &&
 		deps.GoogleAds != nil && deps.GoogleAdsAcc != nil && !alreadySent["google_ads"] {
 		wg.Add(1)
 		go func() {
@@ -95,7 +100,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 			googleAdsResults = dispatchGoogleAds(ctx, deps, pixel, in, doneTargets)
 		}()
 	}
-	if pixel.GA4MeasurementID != "" && pixel.GA4APISecret != "" && in.GA4ClientID != "" &&
+	if allowGA4 && pixel.GA4MeasurementID != "" && pixel.GA4APISecret != "" && in.GA4ClientID != "" &&
 		deps.GA4 != nil && !alreadySent["ga4"] && !doneTargets["ga4:"+pixel.GA4MeasurementID] {
 		hasGA4 = true
 		wg.Add(1)
@@ -173,6 +178,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 	if deps.Redis != nil && storeFullPayload && len(results) > 0 {
 		cache.BumpDashboardVersion(ctx, deps.Redis, pixel.AccountID)
 	}
+	emitDispatchNotifications(ctx, deps, pixel, in, results, hasErr, retryCount)
 
 	if deps.Redis != nil && len(results) > 0 && (retryCount == 0 || !hasErr) {
 		status := "sent"

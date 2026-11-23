@@ -24,7 +24,7 @@
 
         <div class="lead-modal-quick-actions">
           <BaseButton
-            v-if="trackedUser"
+            v-if="trackedUser && !publicToken"
             variant="outline"
             size="sm"
             class="journey-btn"
@@ -48,11 +48,13 @@
               type="number"
               label="Valor da Negociação (R$)"
               placeholder="0.00"
+              :disabled="readOnly"
               @update:model-value="leadEdit.value = $event === '' ? 0 : Number($event)"
             />
             <BaseDropdown
               v-model="leadEdit.stage_id"
               label="Etapa do Funil"
+              :disabled="readOnly"
               :options="stages.map((st) => ({ value: st.id, label: st.name }))"
             />
           </div>
@@ -61,12 +63,12 @@
         <div class="info-card-box">
           <h4 class="box-subtitle">Dados do Contato</h4>
           <div class="form-grid-2">
-            <BaseInput v-model="leadEdit.first_name" label="Nome" placeholder="Primeiro nome" />
-            <BaseInput v-model="leadEdit.last_name" label="Sobrenome" placeholder="Sobrenome" />
+            <BaseInput v-model="leadEdit.first_name" label="Nome" placeholder="Primeiro nome" :disabled="readOnly" />
+            <BaseInput v-model="leadEdit.last_name" label="Sobrenome" placeholder="Sobrenome" :disabled="readOnly" />
           </div>
           <div class="form-grid-2 mt-half">
-            <BaseInput v-model="leadEdit.email" type="email" label="E-mail" placeholder="cliente@email.com" />
-            <BaseInput v-model="leadEdit.phone" label="Telefone / WhatsApp" placeholder="(11) 99999-9999" />
+            <BaseInput v-model="leadEdit.email" type="email" label="E-mail" placeholder="cliente@email.com" :disabled="readOnly" />
+            <BaseInput v-model="leadEdit.phone" label="Telefone / WhatsApp" placeholder="(11) 99999-9999" :disabled="readOnly" />
           </div>
         </div>
 
@@ -74,7 +76,8 @@
           :tracked-user="trackedUser"
           :tags="leadEdit.tags"
           :all-tags="allTags"
-          :can-manage-tags="canDeleteLeads"
+          :can-manage-tags="canDeleteLeads && !readOnly"
+          :read-only="readOnly"
           :selected-tag-to-add="selectedTagToAdd"
           @update:selected-tag-to-add="emit('update:selectedTagToAdd', $event)"
           @create-tag="emit('create-tag')"
@@ -87,6 +90,8 @@
       <CrmLeadRightPanel
         :lead-id="leadId"
         :tracked-user-id="trackedUser?.id"
+        :public-token="publicToken"
+        :read-only="readOnly"
         :notes="leadEdit.notes"
         :new-note-content="newNoteContent"
         :is-adding-note="isAddingNote"
@@ -99,7 +104,7 @@
     <template v-if="leadId" #footer>
       <div class="lead-footer-bar">
         <BaseButton
-          v-if="canDeleteLeads"
+          v-if="canDeleteLeads && !readOnly"
           variant="ghost"
           size="sm"
           class="delete-lead-btn"
@@ -108,7 +113,10 @@
           Excluir este Lead
         </BaseButton>
         <div v-else />
-        <BaseButton variant="primary" :loading="isSavingLead" @click="emit('save-lead')">
+        <BaseButton v-if="readOnly" variant="outline" @click="emit('update:modelValue', false)">
+          Fechar
+        </BaseButton>
+        <BaseButton v-else variant="primary" :loading="isSavingLead" @click="emit('save-lead')">
           Salvar Alterações
         </BaseButton>
       </div>
@@ -135,8 +143,12 @@ withDefaults(defineProps<{
   isSavingLead: boolean
   isAddingNote: boolean
   canDeleteLeads?: boolean
+  readOnly?: boolean
+  publicToken?: string | null
 }>(), {
   canDeleteLeads: true,
+  readOnly: false,
+  publicToken: null,
 })
 
 const emit = defineEmits<{

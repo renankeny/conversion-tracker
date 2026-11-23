@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
@@ -211,5 +213,6 @@ func (h *AdminPixels) Delete(w http.ResponseWriter, r *http.Request) {
 	h.refreshDomains(r.Context())
 	h.repo.InvalidateCache(r.Context(), existing.Name, existing.PublicToken, existing.DashboardShareToken)
 	h.repo.BumpDashboardCache(r.Context(), existing.AccountID)
+	emitResourceLifecycleNotification(h.notify, existing.AccountID, domain.NotifPixelLifecycle, "Pixel Removido", fmt.Sprintf("O pixel \"%s\" foi excluído da empresa.", firstNonEmpty(existing.Label, existing.Name)), "/integracoes/pixels")
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -92,7 +92,16 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		}
 	}
 
-	if hasPortal || trackedUser == nil {
+	assistedUser, assistedOrigin, matchedClick, matchedLinkID := resolveAssistedTrackableLinkLead(
+		ctx, deps, inst, existingChat, parsed, protocolCode, phone, lidDigits,
+	)
+	if assistedUser != nil {
+		trackedUser = assistedUser
+		if assistedOrigin != "" {
+			originType = assistedOrigin
+		}
+		hasPortal = true
+	} else if hasPortal || trackedUser == nil {
 		u, portalOrigin := resolveOrCreatePortalLead(ctx, deps, inst, parsed, protocolCode, phone, lidDigits)
 		if u != nil {
 			trackedUser = u
@@ -108,25 +117,9 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	if trackedUser == nil {
 		return nil
 	}
+	effLinkID := resolveEffectiveTrackableLinkID(matchedClick, matchedLinkID, existingChat, trackedUser)
 
-	if phone != "" && trackedUser.Phone == "" {
-		trackedUser.Phone = phone
-		_ = deps.Users.Upsert(ctx, trackedUser)
-	}
-
-	if !parsed.IsFromMe {
-		if rawEmail := util.ExtractEmail(parsed.Content); rawEmail != "" {
-			if trackedUser.Email == "" || trackedUser.Email != rawEmail {
-				trackedUser.Email = rawEmail
-				_ = deps.Users.UpdateEmail(ctx, trackedUser.ID, rawEmail)
-				_, _ = deps.Users.ResolveAndLink(ctx, trackedUser.AccountID, trackedUser.ExternalID, trackedUser.Phone, rawEmail)
-				slog.Info("enriched tracked user with email from received whatsapp message",
-					"tracked_user_id", trackedUser.ID,
-					"email", rawEmail,
-				)
-			}
-		}
-	}
+	contactName, contactPtr := enrichInboundWhatsAppContact(ctx, deps, existingChat, parsed, trackedUser, phone)
 
 	var crmLeadID *int64
 	if inst.AutoCreateCRMLead && deps.CRM != nil {
@@ -135,22 +128,6 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		}
 	} else if existingChat != nil {
 		crmLeadID = existingChat.CRMLeadID
-	}
-
-	contactName := ""
-	if !parsed.IsFromMe {
-		contactName = parsed.PushName
-	} else if existingChat != nil && existingChat.ContactName != nil && *existingChat.ContactName != "" {
-		contactName = *existingChat.ContactName
-	} else if trackedUser.FirstName != "" {
-		contactName = trackedUser.FirstName
-		if trackedUser.LastName != "" {
-			contactName += " " + trackedUser.LastName
-		}
-	}
-	var contactPtr *string
-	if contactName != "" {
-		contactPtr = &contactName
 	}
 
 	effCtwaClid := parsed.CtwaClid
@@ -164,7 +141,7 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 
 	chatRow := &domain.WhatsAppChat{
 		AccountID: inst.AccountID, InstanceID: inst.ID, RemoteJid: remoteJID,
-		TrackedUserID: &trackedUser.ID, CRMLeadID: crmLeadID, Phone: phone, LidJid: lidJID,
+		TrackedUserID: &trackedUser.ID, CRMLeadID: crmLeadID, TrackableLinkID: effLinkID, Phone: phone, LidJid: lidJID,
 		PushName: contactName, ContactName: contactPtr, OriginType: originType,
 		CtwaClid: effCtwaClid, SourceID: effSourceID, SourceApp: parsed.SourceApp,
 		AdThumbnailURL: parsed.AdThumbnailURL, LastMessageTime: parsed.Timestamp,
@@ -201,6 +178,9 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		slog.Warn("save whatsapp message failed", "msg_id", parsed.MessageID, "err", err)
 		return nil
 	}
+	if inserted {
+		_ = deps.WhatsApp.RefreshChatSLAMetrics(ctx, chatID)
+	}
 	retryCount, _ := asynq.GetRetryCount(ctx)
 	if !inserted && retryCount == 0 {
 		return nil
@@ -210,6 +190,8 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		if err := maybeDispatchCTWALeadSubmitted(ctx, deps, inst, ctwaPixel, trackedUser, chatID, phone, effSourceID, effCtwaClid, ctwaPageID, !parsed.IsFromMe); err != nil {
 			return err
 		}
+	} else if effLinkID != nil {
+		finalizeTrackableLinkFirstMessage(ctx, deps, inst, matchedClick, effLinkID, trackedUser, chatID, phone, parsed.IsFromMe)
 	}
 
 	if err := evaluateAttendantTriggers(ctx, deps, inst, trackedUser, chatID, phone, parsed.MessageID, parsed.Content, parsed.IsFromMe); err != nil {
@@ -221,6 +203,7 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	if existingChat == nil || hasPortal {
 		cache.BumpDashboardVersion(ctx, deps.Redis, inst.AccountID)
 	}
+	maybeNotifyNewWhatsAppLead(deps, inst, existingChat, parsed.IsFromMe, trackedUser, contactName, phone, originType)
 	wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_message", map[string]any{
 		"chat_id": chatID, "tracked_user_id": trackedUser.ID, "crm_lead_id": crmLeadID, "message": dbMsg,
 	})
