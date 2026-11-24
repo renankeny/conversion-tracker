@@ -7,6 +7,7 @@ import type {
   EventFilters,
   GoogleKeywordInsight,
   GroupedEventsResponse,
+  MonthlyGoalMetrics,
   PanelAudit,
   PreviousPeriodMetrics,
   SourceBreakdown,
@@ -44,6 +45,7 @@ export const useDashboard = () => {
       panel_audit?: PanelAudit
       previous_period?: PreviousPeriodMetrics
       heatmap?: DashboardHeatmap
+      monthly_goal?: MonthlyGoalMetrics
     }>('/admin/stats' + buildQuery(filters), { signal })
   }
 

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -11,9 +10,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
-	"github.com/renankeny/conversion-tracker/backend/internal/evolution"
-	"github.com/renankeny/conversion-tracker/backend/internal/queue"
-	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/uazapi"
 )
 
@@ -64,10 +60,7 @@ func (h *AdminWhatsAppInstances) Update(w http.ResponseWriter, r *http.Request) 
 			inst.InstanceToken = strings.TrimSpace(in.InstanceToken)
 		}
 	}
-	inst.PurchaseTrigger = strings.TrimSpace(in.PurchaseTrigger)
-	inst.LeadTrigger = strings.TrimSpace(in.LeadTrigger)
-	inst.CustomEventName = strings.TrimSpace(in.CustomEventName)
-	inst.CustomEventTrigger = strings.TrimSpace(in.CustomEventTrigger)
+	applyInstanceTriggersInput(inst, in)
 	if in.AutoCreateCRMLead != nil {
 		inst.AutoCreateCRMLead = *in.AutoCreateCRMLead
 	}
@@ -96,115 +89,24 @@ func (h *AdminWhatsAppInstances) Update(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, inst)
 }
 
-func syncInstanceLiveStatus(ctx context.Context, r *repo.WhatsAppRepo, inst *domain.WhatsAppInstance, publicAPIURL string) error {
-	if inst.IsExternalUazapi() {
-		if inst.ExternalAPIURL == "" || inst.InstanceToken == "" {
-			return nil
+func applyInstanceTriggersInput(inst *domain.WhatsAppInstance, in instanceUpsertInput) {
+	if in.AverageTicket != nil {
+		if *in.AverageTicket > 0 {
+			inst.AverageTicket = *in.AverageTicket
+		} else {
+			inst.AverageTicket = 0
 		}
-		uazCli := uazapi.New(inst.ExternalAPIURL, inst.InstanceToken)
-		if publicAPIURL != "" && inst.WebhookSecret != "" {
-			whURL := buildProviderWebhookURL(publicAPIURL, inst.Provider, inst.WebhookSecret)
-			_ = uazCli.ConfigureWebhook(ctx, whURL, inst.WebhookSecret)
-		}
-		st, err := uazCli.GetStatus(ctx)
-		if err != nil {
-			return err
-		}
-		if st.Connected {
-			ownerBare := queue.NormalizeBareJID(st.OwnerJID)
-			if ownerBare == "" {
-				ownerBare = inst.OwnerJID
-			}
-			profName := st.ProfileName
-			if profName == "" {
-				profName = inst.ProfileName
-			}
-			profPic := st.ProfilePicURL
-			if profPic == "" {
-				profPic = inst.ProfilePicURL
-			}
-			_ = r.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, profName, profPic)
-			inst.ConnectionStatus = "OPEN"
-			inst.OwnerJID = ownerBare
-			inst.ProfileName = profName
-			inst.ProfilePicURL = profPic
-			return nil
-		}
-		status := "CLOSED"
-		if st.Status == "connecting" || st.Qrcode != "" {
-			status = "CONNECTING"
-		}
-		_ = r.ResetInstanceSession(ctx, inst.ID, status)
-		inst.ConnectionStatus = status
-		inst.OwnerJID = ""
-		inst.ProfileName = ""
-		inst.ProfilePicURL = ""
-		return nil
 	}
-
-	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	st, err := cli.GetStatus(ctx, inst.InstanceToken)
-	if err != nil {
-		return err
+	if in.EventTriggers != nil {
+		inst.EventTriggers = domain.NormalizeWhatsAppEventTriggers(*in.EventTriggers)
+		domain.SyncLegacyTriggerColumns(inst)
+		return
 	}
-
-	target := inst.EvolutionUUID
-	if target == "" {
-		target = inst.InstanceName
-	}
-	info, _ := cli.GetInfo(ctx, target)
-
-	isLoggedIn := st.LoggedIn || (info != nil && info.Connected)
-	isConnected := st.Connected && isLoggedIn
-
-	if isConnected {
-		ownerBare := queue.NormalizeBareJID(st.MyJID)
-		if ownerBare == "" && info != nil && info.JID != "" {
-			ownerBare = queue.NormalizeBareJID(info.JID)
-		}
-		if ownerBare == "" {
-			ownerBare = inst.OwnerJID
-		}
-		profName := strings.TrimSpace(st.Name)
-		if info != nil && strings.TrimSpace(info.ProfileName) != "" {
-			profName = strings.TrimSpace(info.ProfileName)
-		}
-		if profName == "" {
-			profName = inst.ProfileName
-		}
-		profPic := ""
-		if info != nil && strings.TrimSpace(info.ProfilePicURL) != "" {
-			profPic = strings.TrimSpace(info.ProfilePicURL)
-		}
-		if profPic == "" && ownerBare != "" {
-			profPic = cli.GetUserAvatar(ctx, inst.InstanceToken, ownerBare)
-		}
-		if profPic == "" {
-			profPic = inst.ProfilePicURL
-		}
-
-		_ = r.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, profName, profPic)
-		inst.ConnectionStatus = "OPEN"
-		inst.OwnerJID = ownerBare
-		inst.ProfileName = profName
-		inst.ProfilePicURL = profPic
-		return nil
-	}
-
-	if isLoggedIn && !st.Connected {
-		_ = r.UpdateInstanceStatus(ctx, inst.ID, "DISCONNECTED")
-		inst.ConnectionStatus = "DISCONNECTED"
-		return nil
-	}
-
-	status := "CLOSED"
-	if st.Connected || (info != nil && info.Qrcode != "") {
-		status = "CONNECTING"
-	}
-	_ = r.ResetInstanceSession(ctx, inst.ID, status)
-	inst.ConnectionStatus = status
-	inst.OwnerJID = ""
-	inst.ProfileName = ""
-	inst.ProfilePicURL = ""
-	return nil
+	inst.PurchaseTrigger = strings.TrimSpace(in.PurchaseTrigger)
+	inst.LeadTrigger = strings.TrimSpace(in.LeadTrigger)
+	inst.CustomEventName = strings.TrimSpace(in.CustomEventName)
+	inst.CustomEventTrigger = strings.TrimSpace(in.CustomEventTrigger)
+	inst.EventTriggers = domain.LegacyTriggersToEventTriggers(
+		inst.PurchaseTrigger, inst.LeadTrigger, inst.CustomEventName, inst.CustomEventTrigger,
+	)
 }

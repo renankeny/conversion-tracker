@@ -10,7 +10,7 @@
       <div class="tabs">
         <button type="button" class="tab" :class="{ active: tab === 'script' }" @click="tab = 'script'">Script</button>
         <button type="button" class="tab" :class="{ active: tab === 'links' }" @click="tab = 'links'">
-          Links WhatsApp
+          Links Rastreáveis
           <span v-if="linksCount > 0" class="badge-pill">{{ linksCount }}</span>
         </button>
         <button type="button" class="tab" :class="{ active: tab === 'events' }" @click="tab = 'events'">Eventos &amp; Teste</button>

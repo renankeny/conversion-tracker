@@ -38,6 +38,7 @@ func makeWhatsAppEventHandler(deps Deps) func(context.Context, *asynq.Task) erro
 
 		switch payload.Event {
 		case "Message", "SendMessage":
+			clearPendingWhatsAppDisconnect(ctx, deps.Redis, inst.ID)
 			parsed, err := ParseEvolutionMessageEvent(payload.Data)
 			if err != nil || parsed == nil {
 				return nil
@@ -76,6 +77,10 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	existingChat, err := deps.WhatsApp.FindExistingChatForContact(ctx, inst.ID, remoteJID, phone, lidJID)
 	if err != nil {
 		return fmt.Errorf("find existing chat: %w", err)
+	}
+	if existingChat != nil && !parsed.HasMsgAdReferral {
+		parsed.CtwaClid = ""
+		parsed.SourceID = ""
 	}
 
 	protocolCode := ExtractProtocolCode(parsed.Content)

@@ -14,6 +14,8 @@ import (
 )
 
 func handleEvolutionConnected(ctx context.Context, deps Deps, inst *domain.WhatsAppInstance, raw json.RawMessage) {
+	clearPendingWhatsAppDisconnect(ctx, deps.Redis, inst.ID)
+
 	var d struct {
 		JID      string `json:"jid"`
 		PushName string `json:"pushName"`
@@ -23,23 +25,43 @@ func handleEvolutionConnected(ctx context.Context, deps Deps, inst *domain.Whats
 	profName := strings.TrimSpace(d.PushName)
 	profPic := ""
 
-	if inst.ServerURL != "" && inst.InstanceToken != "" {
+	needStatus := (ownerBare == "" && inst.OwnerJID == "") || (profName == "" && inst.ProfileName == "")
+	needAvatar := strings.TrimSpace(inst.ProfilePicURL) == ""
+	if inst.ServerURL != "" && inst.InstanceToken != "" && (needStatus || needAvatar) {
 		cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-		if st, err := cli.GetStatus(ctx, inst.InstanceToken); err == nil && st != nil {
-			if ownerBare == "" && st.MyJID != "" {
-				ownerBare = NormalizeBareJID(st.MyJID)
-			}
-			if profName == "" && st.Name != "" {
-				profName = strings.TrimSpace(st.Name)
+		if needStatus {
+			if st, err := cli.GetStatus(ctx, inst.InstanceToken); err == nil && st != nil {
+				if ownerBare == "" && st.MyJID != "" {
+					ownerBare = NormalizeBareJID(st.MyJID)
+				}
+				if profName == "" && st.Name != "" {
+					profName = strings.TrimSpace(st.Name)
+				}
 			}
 		}
-		if ownerBare != "" {
-			profPic = cli.GetUserAvatar(ctx, inst.InstanceToken, ownerBare)
+		effOwner := ownerBare
+		if effOwner == "" {
+			effOwner = inst.OwnerJID
 		}
+		if needAvatar && effOwner != "" {
+			profPic = cli.GetUserAvatar(ctx, inst.InstanceToken, effOwner)
+		}
+	}
+	if ownerBare == "" {
+		ownerBare = inst.OwnerJID
+	}
+	if profName == "" {
+		profName = inst.ProfileName
+	}
+	if profPic == "" {
+		profPic = inst.ProfilePicURL
 	}
 
 	wasOpen := strings.EqualFold(inst.ConnectionStatus, "OPEN")
-	_ = deps.WhatsApp.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, profName, profPic)
+	if deps.WhatsApp != nil {
+		_ = deps.WhatsApp.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, profName, profPic)
+	}
+	inst.ConnectionStatus = "OPEN"
 	wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
 		"instance_id":     inst.ID,
 		"status":          "OPEN",
@@ -53,6 +75,8 @@ func handleEvolutionConnected(ctx context.Context, deps Deps, inst *domain.Whats
 }
 
 func handleEvolutionProfile(ctx context.Context, deps Deps, inst *domain.WhatsAppInstance, raw json.RawMessage) {
+	clearPendingWhatsAppDisconnect(ctx, deps.Redis, inst.ID)
+
 	var d struct {
 		JID           string `json:"jid"`
 		ProfileName   string `json:"profileName"`
@@ -60,13 +84,27 @@ func handleEvolutionProfile(ctx context.Context, deps Deps, inst *domain.WhatsAp
 	}
 	if json.Unmarshal(raw, &d) == nil {
 		ownerBare := NormalizeBareJID(d.JID)
-		_ = deps.WhatsApp.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, d.ProfileName, d.ProfilePicURL)
+		if ownerBare == "" {
+			ownerBare = inst.OwnerJID
+		}
+		profName := strings.TrimSpace(d.ProfileName)
+		if profName == "" {
+			profName = inst.ProfileName
+		}
+		profPic := strings.TrimSpace(d.ProfilePicURL)
+		if profPic == "" {
+			profPic = inst.ProfilePicURL
+		}
+		if deps.WhatsApp != nil {
+			_ = deps.WhatsApp.UpdateInstanceOwnerAndProfile(ctx, inst.ID, "OPEN", ownerBare, profName, profPic)
+		}
+		inst.ConnectionStatus = "OPEN"
 		wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
 			"instance_id":     inst.ID,
 			"status":          "OPEN",
 			"owner_jid":       ownerBare,
-			"profile_name":    strings.TrimSpace(d.ProfileName),
-			"profile_pic_url": strings.TrimSpace(d.ProfilePicURL),
+			"profile_name":    profName,
+			"profile_pic_url": profPic,
 		})
 	}
 }
@@ -178,22 +216,7 @@ func HandleWhatsAppLifecycleEvent(ctx context.Context, deps Deps, inst *domain.W
 		handleEvolutionProfile(ctx, deps, inst, data)
 		return true
 	case "Disconnected", "LoggedOut", "ConnectFailure", "TemporaryBan":
-		wasOpen := strings.EqualFold(inst.ConnectionStatus, "OPEN")
-		status := "DISCONNECTED"
-		if event == "LoggedOut" {
-			status = "CLOSED"
-			_ = deps.WhatsApp.ResetInstanceSession(ctx, inst.ID, status)
-		} else {
-			_ = deps.WhatsApp.UpdateInstanceStatus(ctx, inst.ID, status)
-		}
-		wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "whatsapp_status", map[string]any{
-			"instance_id": inst.ID,
-			"status":      status,
-			"event":       event,
-		})
-		if wasOpen {
-			notifyWhatsAppStateChange(deps, inst, false)
-		}
+		handleEvolutionDisconnectSignal(ctx, deps, inst, event, data)
 		return true
 	case "QRCode":
 		var qr struct {

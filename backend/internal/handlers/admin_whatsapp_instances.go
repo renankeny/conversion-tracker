@@ -94,7 +94,7 @@ func (h *AdminWhatsAppInstances) List(w http.ResponseWriter, r *http.Request) {
 			_ = h.repo.EnsureInstanceShareToken(r.Context(), instances[i].ID, tok)
 			instances[i].ShareToken = &tok
 		}
-		if instances[i].ConnectionStatus == "CONNECTING" || (instances[i].ConnectionStatus == "OPEN" && (instances[i].OwnerJID == "" || instances[i].ProfilePicURL == "")) {
+		if instances[i].ConnectionStatus == "CONNECTING" || (instances[i].ConnectionStatus == "OPEN" && instances[i].OwnerJID == "") {
 			_ = syncInstanceLiveStatus(r.Context(), h.repo, &instances[i], h.publicAPIURL)
 		}
 		h.decorateInstance(&instances[i])
@@ -109,11 +109,13 @@ type instanceUpsertInput struct {
 	ExternalAPIURL     string `json:"external_api_url"`
 	Currency           string `json:"currency"`
 	InstanceToken      string `json:"instance_token"`
-	PurchaseTrigger    string `json:"purchase_trigger"`
-	LeadTrigger        string `json:"lead_trigger"`
-	CustomEventName    string `json:"custom_event_name"`
-	CustomEventTrigger string `json:"custom_event_trigger"`
-	AutoCreateCRMLead      *bool  `json:"auto_create_crm_lead"`
+	PurchaseTrigger        string                        `json:"purchase_trigger"`
+	LeadTrigger            string                        `json:"lead_trigger"`
+	CustomEventName        string                        `json:"custom_event_name"`
+	CustomEventTrigger     string                         `json:"custom_event_trigger"`
+	EventTriggers          *[]domain.WhatsAppEventTrigger `json:"event_triggers"`
+	AverageTicket          *float64                       `json:"average_ticket"`
+	AutoCreateCRMLead      *bool                          `json:"auto_create_crm_lead"`
 	DefaultCRMStageID      *int64 `json:"default_crm_stage_id"`
 	CtwaMinInboundMessages *int   `json:"ctwa_min_inbound_messages"`
 	Enabled                *bool  `json:"enabled"`
@@ -208,6 +210,7 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 		CtwaMinInboundMessages: ctwaMin,
 		Enabled:                true,
 	}
+	applyInstanceTriggersInput(inst, in)
 
 	if err := h.repo.CreateInstance(ctx, inst); err != nil {
 		if provider == domain.WhatsAppProviderEvolutionGo && srvID > 0 {

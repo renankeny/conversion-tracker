@@ -30,6 +30,7 @@ func parseStatsFilter(r *http.Request) (repo.StatsFilter, error) {
 	f := repo.StatsFilter{
 		PixelName:     q.Get("pixel"),
 		TrafficSource: q.Get("traffic_source"),
+		GoalMonth:     q.Get("goal_month"),
 		AccountID:     TenantFromContext(r.Context()).AccountID,
 		From:          now.AddDate(0, 0, -30),
 		To:            now,

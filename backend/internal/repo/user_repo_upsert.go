@@ -41,7 +41,7 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 		$13,$14,$15,$16,
 		$17,$18,$19,$20,$21,$43,
 		$22,$23,$24,$25,$26,
-		$22,$23,$24,$25,$26,
+		COALESCE(NULLIF($45, ''), $22),COALESCE(NULLIF($46, ''), $23),COALESCE(NULLIF($47, ''), $24),COALESCE(NULLIF($48, ''), $25),COALESCE(NULLIF($49, ''), $26),
 		$28,$29,$30,$31,$32,$33,
 		$34,$35,$44,
 		$36,$37,NOW(),
@@ -75,11 +75,11 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 		first_utm_campaign = CASE WHEN tracked_users.first_utm_campaign = '' THEN EXCLUDED.first_utm_campaign ELSE tracked_users.first_utm_campaign END,
 		first_utm_content  = CASE WHEN tracked_users.first_utm_content = '' THEN EXCLUDED.first_utm_content ELSE tracked_users.first_utm_content END,
 		first_utm_term     = CASE WHEN tracked_users.first_utm_term = '' THEN EXCLUDED.first_utm_term ELSE tracked_users.first_utm_term END,
-		last_utm_source   = COALESCE(NULLIF(EXCLUDED.last_utm_source, ''),   tracked_users.last_utm_source),
-		last_utm_medium   = COALESCE(NULLIF(EXCLUDED.last_utm_medium, ''),   tracked_users.last_utm_medium),
-		last_utm_campaign = COALESCE(NULLIF(EXCLUDED.last_utm_campaign, ''), tracked_users.last_utm_campaign),
-		last_utm_content  = COALESCE(NULLIF(EXCLUDED.last_utm_content, ''),  tracked_users.last_utm_content),
-		last_utm_term     = COALESCE(NULLIF(EXCLUDED.last_utm_term, ''),     tracked_users.last_utm_term),
+		last_utm_source   = COALESCE(NULLIF($45, ''), tracked_users.last_utm_source),
+		last_utm_medium   = COALESCE(NULLIF($46, ''), tracked_users.last_utm_medium),
+		last_utm_campaign = COALESCE(NULLIF($47, ''), tracked_users.last_utm_campaign),
+		last_utm_content  = COALESCE(NULLIF($48, ''), tracked_users.last_utm_content),
+		last_utm_term     = COALESCE(NULLIF($49, ''), tracked_users.last_utm_term),
 		ctwa_clid         = COALESCE(NULLIF(EXCLUDED.ctwa_clid, ''),     tracked_users.ctwa_clid),
 		wa_chat_id        = COALESCE(NULLIF(EXCLUDED.wa_chat_id, ''),    tracked_users.wa_chat_id),
 		wa_name           = COALESCE(NULLIF(EXCLUDED.wa_name, ''),      tracked_users.wa_name),
@@ -138,6 +138,7 @@ func (r *UserRepo) Upsert(ctx context.Context, u *domain.TrackedUser) error {
 		u.PageViewCount, u.CheckoutCount,
 		u.Referrer, trafficType, trafficScore, trafficCategory, trafficRules,
 		firstURL, u.TrackableLinkID,
+		util.StripUserIDFromUTM(u.LastUTMSource), u.LastUTMMedium, u.LastUTMCampaign, u.LastUTMContent, u.LastUTMTerm,
 	).Scan(&u.ID)
 }
 

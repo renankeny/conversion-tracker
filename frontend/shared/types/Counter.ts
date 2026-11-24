@@ -37,5 +37,6 @@ export interface CounterFilters {
   pixel?: string
   event?: string
   traffic_source?: string
+  goal_month?: string
   granularity?: 'hour' | 'day'
 }

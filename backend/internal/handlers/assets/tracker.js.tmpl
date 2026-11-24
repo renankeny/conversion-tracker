@@ -844,8 +844,11 @@
 
   function setButtonsURLs() {
     var rawKey = TF_CONFIG.product_checkout || "";
-    if (!rawKey) return;
-    var checkoutKeys = rawKey.split(",").map(function (k) { return k.trim().toLowerCase(); }).filter(Boolean);
+    var checkoutKeys = rawKey ? rawKey.split(",").map(function (k) { return k.trim().toLowerCase(); }).filter(Boolean) : [];
+    var builtInDomains = ["onixpayments.com.br", "onixpay.com.br"];
+    for (var d = 0; d < builtInDomains.length; d++) {
+      if (checkoutKeys.indexOf(builtInDomains[d]) === -1) checkoutKeys.push(builtInDomains[d]);
+    }
     if (checkoutKeys.length === 0) return;
 
     var origin = TF_CONFIG.utm_origin_param || "utm_source";

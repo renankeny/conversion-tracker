@@ -35,6 +35,11 @@ export interface WhatsAppServerHealth {
 
 export type WhatsAppProvider = 'evolution_go' | 'api_premium' | 'uazapi'
 
+export interface WhatsAppEventTrigger {
+  event_name: string
+  trigger: string
+}
+
 export interface WhatsAppInstance {
   id: number
   account_id: number
@@ -58,6 +63,8 @@ export interface WhatsAppInstance {
   lead_trigger: string
   custom_event_name: string
   custom_event_trigger: string
+  event_triggers?: WhatsAppEventTrigger[]
+  average_ticket?: number
   auto_create_crm_lead: boolean
   default_crm_stage_id?: number | null
   ctwa_min_inbound_messages?: number
@@ -77,6 +84,8 @@ export interface WhatsAppInstanceInput {
   lead_trigger?: string
   custom_event_name?: string
   custom_event_trigger?: string
+  event_triggers?: WhatsAppEventTrigger[]
+  average_ticket?: number
   auto_create_crm_lead?: boolean
   default_crm_stage_id?: number | null
   ctwa_min_inbound_messages?: number

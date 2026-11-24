@@ -103,10 +103,11 @@ type pixelInput struct {
 	AggregationWindowMinutes *int  `json:"aggregation_window_minutes"`
 
 	// Meta de Vendas por Pixel + visibilidade no Portal do Cliente
-	SalesGoalEnabled    *bool    `json:"sales_goal_enabled"`
-	SalesGoalType       *string  `json:"sales_goal_type"`
-	SalesGoalTarget     *float64 `json:"sales_goal_target"`
-	PublicShowSalesGoal *bool    `json:"public_show_sales_goal"`
+	SalesGoalEnabled    *bool              `json:"sales_goal_enabled"`
+	SalesGoalType       *string            `json:"sales_goal_type"`
+	SalesGoalTarget     *float64           `json:"sales_goal_target"`
+	SalesGoalMonths     map[string]float64 `json:"sales_goal_months"`
+	PublicShowSalesGoal *bool              `json:"public_show_sales_goal"`
 }
 
 func (h *AdminPixels) List(w http.ResponseWriter, r *http.Request) {

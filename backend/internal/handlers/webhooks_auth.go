@@ -67,6 +67,8 @@ func collectRequestTokenCandidates(r *http.Request, payloadCandidates []string) 
 		r.Header.Get("X-Greenn-Token"),
 		r.Header.Get("X-Eduzz-Token"),
 		r.Header.Get("X-Pepper-Token"),
+		r.Header.Get("X-Onix-Token"),
+		r.Header.Get("X-Onixpay-Token"),
 		r.Header.Get("X-Api-Key"),
 		stripAuthPrefix(r.Header.Get("Authorization")),
 	}

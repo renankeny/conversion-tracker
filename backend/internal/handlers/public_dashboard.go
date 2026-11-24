@@ -89,9 +89,10 @@ func (h *PublicDashboard) Meta(w http.ResponseWriter, r *http.Request) {
 		"currency":         firstNonEmpty(p.TrackerConfig.ProductCurrency, "BRL"),
 		"dashboard_config": p.DashboardConfig,
 		"sales_goal": map[string]any{
-			"enabled": p.SalesGoalEnabled && p.SalesGoalTarget > 0 && p.DashboardConfig.IsPublicSalesGoalEnabled(),
+			"enabled": p.SalesGoalEnabled && (p.SalesGoalTarget > 0 || len(p.SalesGoalMonths) > 0) && p.DashboardConfig.IsPublicSalesGoalEnabled(),
 			"type":    domain.NormalizeSalesGoalType(p.SalesGoalType),
 			"target":  p.SalesGoalTarget,
+			"months":  domain.NormalizeSalesGoalMonths(p.SalesGoalMonths),
 		},
 	})
 }
@@ -196,9 +197,10 @@ func (h *PublicDashboard) Revenue(w http.ResponseWriter, r *http.Request) {
 	}
 	from, to := parsePublicRange(r)
 	src := r.URL.Query().Get("traffic_source")
+	goalMonth := r.URL.Query().Get("goal_month")
 	h.writeCached(w, r, "revenue", p, to, func(ctx context.Context) (any, error) {
 		overview, err := h.stats.Overview(ctx, repo.StatsFilter{
-			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src,
+			From: from, To: to, PixelName: p.Name, AccountID: p.AccountID, TrafficSource: src, GoalMonth: goalMonth,
 		})
 		if err != nil {
 			return nil, err
@@ -210,6 +212,7 @@ func (h *PublicDashboard) Revenue(w http.ResponseWriter, r *http.Request) {
 			"panel_audit":      overview.PanelAudit,
 			"previous_period":  overview.PreviousPeriod,
 			"heatmap":          overview.Heatmap,
+			"monthly_goal":     overview.MonthlyGoal,
 		}, nil
 	})
 }

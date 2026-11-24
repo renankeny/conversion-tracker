@@ -3,15 +3,10 @@ package queue
 import (
 	"context"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
-	"unicode"
 
-	"golang.org/x/text/runes"
-	"golang.org/x/text/transform"
-	"golang.org/x/text/unicode/norm"
-
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
@@ -26,17 +21,34 @@ func evaluateAttendantTriggers(
 	phone, waMessageID, content string,
 	isFromMe bool,
 ) error {
-	if !isFromMe || strings.TrimSpace(content) == "" || deps.Enqueuer == nil || u == nil {
+	if !isFromMe || strings.TrimSpace(content) == "" || deps.Enqueuer == nil || u == nil || inst == nil {
 		return nil
 	}
 
-	matchedPurchase, isPurchase := matchPhraseTriggerWithTerm(inst.PurchaseTrigger, content)
-	matchedLead, isLead := matchPhraseTriggerWithTerm(inst.LeadTrigger, content)
-	matchedCustom, isCustom := "", false
-	if strings.TrimSpace(inst.CustomEventName) != "" {
-		matchedCustom, isCustom = matchPhraseTriggerWithTerm(inst.CustomEventTrigger, content)
+	type triggerMatch struct {
+		eventName string
+		phrase    string
+		allowBare bool
 	}
-	if !isPurchase && !isLead && !isCustom {
+	var rawMatches []triggerMatch
+	for _, rule := range inst.EffectiveEventTriggers() {
+		evName := strings.TrimSpace(rule.EventName)
+		if evName == "" || domain.IsInternalEvent(evName) {
+			continue
+		}
+		if matchedPhrase, ok := matchPhraseTriggerWithTerm(rule.Trigger, content); ok {
+			isLeadLike := strings.EqualFold(evName, domain.EventLead) ||
+				strings.EqualFold(evName, domain.EventLeadSubmitted) ||
+				strings.EqualFold(evName, domain.EventQualifiedLead) ||
+				strings.EqualFold(evName, domain.EventContact)
+			rawMatches = append(rawMatches, triggerMatch{
+				eventName: evName,
+				phrase:    matchedPhrase,
+				allowBare: !isLeadLike,
+			})
+		}
+	}
+	if len(rawMatches) == 0 {
 		return nil
 	}
 
@@ -83,37 +95,26 @@ func evaluateAttendantTriggers(
 		actionSource = "system_generated"
 	}
 
-	type triggerMatch struct {
-		eventName string
-		phrase    string
-		allowBare bool
-	}
-	var matches []triggerMatch
-	if isPurchase {
-		matches = append(matches, triggerMatch{eventName: domain.EventPurchase, phrase: matchedPurchase, allowBare: true})
-	}
-	if isLead {
-		leadEv := domain.EventLead
-		if actionSource == "business_messaging" {
-			leadEv = domain.EventLeadSubmitted
-		}
-		matches = append(matches, triggerMatch{eventName: leadEv, phrase: matchedLead, allowBare: false})
-	}
-	if isCustom {
-		matches = append(matches, triggerMatch{eventName: strings.TrimSpace(inst.CustomEventName), phrase: matchedCustom, allowBare: true})
-	}
-
+	seenEvents := make(map[string]bool, len(rawMatches))
 	var firstErr error
-	for _, tm := range matches {
+
+	for _, tm := range rawMatches {
+		if actionSource == "business_messaging" && strings.EqualFold(tm.eventName, domain.EventLead) {
+			tm.eventName = domain.EventLeadSubmitted
+		}
+		if strings.EqualFold(tm.eventName, domain.EventPurchase) {
+			tm.eventName = domain.EventPurchase
+		}
+		evKey := strings.ToLower(tm.eventName)
+		if seenEvents[evKey] {
+			continue
+		}
+		seenEvents[evKey] = true
+
 		eventID := waMessageID + ":" + tm.eventName
 		if deps.SentEvents != nil {
 			if exists, _ := deps.SentEvents.ExistsSent(ctx, pixel.AccountID, eventID, pixel.Name, ""); exists {
 				continue
-			}
-			if tm.eventName == domain.EventLead || tm.eventName == domain.EventLeadSubmitted || tm.eventName == domain.EventQualifiedLead {
-				if already, _ := deps.SentEvents.HasLeadConversionSent(ctx, pixel.AccountID, u.ID, u.ExternalID, pixel.Name); already {
-					continue
-				}
 			}
 		}
 
@@ -127,6 +128,10 @@ func evaluateAttendantTriggers(
 					valPtr = &crmVal
 				}
 			}
+			if valPtr == nil && inst.AverageTicket > 0 {
+				avg := inst.AverageTicket
+				valPtr = &avg
+			}
 			if valPtr == nil && len(pixel.TrackerConfig.ProductValue) > 0 && pixel.TrackerConfig.ProductValue[0] > 0 {
 				pv := pixel.TrackerConfig.ProductValue[0]
 				valPtr = &pv
@@ -138,24 +143,44 @@ func evaluateAttendantTriggers(
 				slog.Warn("skipping whatsapp trigger Purchase without positive value", "pixel_name", pixel.Name, "chat_id", chatID)
 				continue
 			}
-			if deps.SentEvents != nil {
-				if dup, _ := deps.SentEvents.HasMatchingPurchaseSent(ctx, pixel.AccountID, u.ID, u.ExternalID, pixel.Name, *valPtr, time.Now()); dup {
-					if deps.CRM != nil && u.ID > 0 {
-						if leadID, synced := deps.CRM.SyncOrCreateLeadOnPurchase(ctx, inst.AccountID, u.ID, *valPtr, false); synced && deps.Redis != nil {
-							wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{"action": "whatsapp_trigger_synced", "lead_id": leadID, "event": tm.eventName})
-						}
-					}
-					continue
-				}
+			now := time.Now()
+			dupInFlight := cache.HasInFlightMatchingPurchase(ctx, deps.Redis, pixel.AccountID, pixel.Name, u.GroupID, u.ID, u.ExternalID, util.FirstNonEmpty(phone, u.Phone), u.Email, "", true, *valPtr, now)
+			dupDB := false
+			if !dupInFlight && deps.SentEvents != nil {
+				dupDB, _ = deps.SentEvents.HasMatchingPurchaseSent(ctx, pixel.AccountID, u.ID, u.ExternalID, pixel.Name, *valPtr, now)
 			}
+			if dupInFlight || dupDB {
+				if deps.CRM != nil && u.ID > 0 {
+					if leadID, synced := deps.CRM.SyncOrCreateLeadOnPurchase(ctx, inst.AccountID, u.ID, *valPtr, false); synced && deps.Redis != nil {
+						wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{"action": "whatsapp_trigger_synced", "lead_id": leadID, "event": tm.eventName})
+					}
+				}
+				continue
+			}
+			cache.RecordInFlightPurchase(ctx, deps.Redis, pixel.AccountID, pixel.Name, u.GroupID, u.ID, u.ExternalID, util.FirstNonEmpty(phone, u.Phone), u.Email, cache.InFlightPurchase{
+				EventID: eventID, IsNonOrder: true, Value: *valPtr,
+			})
 			if deps.CRM != nil && u.ID > 0 {
 				if leadID, synced := deps.CRM.SyncOrCreateLeadOnPurchase(ctx, inst.AccountID, u.ID, *valPtr, true); synced && deps.Redis != nil {
 					wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{"action": "whatsapp_trigger_synced", "lead_id": leadID, "event": tm.eventName})
 				}
 			}
-		} else if deps.CRM != nil && u.ID > 0 {
-			if leadID, synced := deps.CRM.SyncLeadFromEventTrigger(ctx, inst.AccountID, u.ID, tm.eventName, valPtr); synced && deps.Redis != nil {
-				wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{"action": "whatsapp_trigger_synced", "lead_id": leadID, "event": tm.eventName})
+		} else {
+			if deps.CRM != nil && u.ID > 0 {
+				if leadID, synced := deps.CRM.SyncLeadFromEventTrigger(ctx, inst.AccountID, u.ID, tm.eventName, valPtr); synced && deps.Redis != nil {
+					wshub.PublishCustom(ctx, deps.Redis, inst.AccountID, "crm_updated", map[string]any{"action": "whatsapp_trigger_synced", "lead_id": leadID, "event": tm.eventName})
+				}
+			}
+			if deps.SentEvents != nil {
+				if tm.eventName == domain.EventLead || tm.eventName == domain.EventLeadSubmitted || (tm.eventName == domain.EventQualifiedLead && actionSource != "business_messaging") {
+					if already, _ := deps.SentEvents.HasLeadConversionSent(ctx, pixel.AccountID, u.ID, u.ExternalID, pixel.Name); already {
+						continue
+					}
+				} else if tm.eventName == domain.EventQualifiedLead && actionSource == "business_messaging" {
+					if already, _ := deps.SentEvents.ExistsRecentEvent(ctx, pixel.AccountID, pixel.Name, u.ExternalID, domain.EventQualifiedLead, 365*24*time.Hour); already {
+						continue
+					}
+				}
 			}
 		}
 
@@ -177,60 +202,4 @@ func evaluateAttendantTriggers(
 		}
 	}
 	return firstErr
-}
-
-// matchPhraseTriggerWithTerm suporta múltiplos termos separados por vírgula ou ponto-e-vírgula,
-// ignorando maiúsculas/minúsculas e acentuação e escapando metacaracteres de regex.
-func matchPhraseTriggerWithTerm(trigger, text string) (string, bool) {
-	trigger = strings.TrimSpace(trigger)
-	text = strings.TrimSpace(text)
-	if trigger == "" || text == "" {
-		return "", false
-	}
-
-	normText := foldAccentsLower(text)
-	parts := splitTriggerTerms(trigger)
-
-	for _, rawPart := range parts {
-		part := strings.TrimSpace(rawPart)
-		if part == "" {
-			continue
-		}
-		normPart := foldAccentsLower(part)
-		if normPart != "" && strings.Contains(normText, normPart) {
-			return part, true
-		}
-		if rx, err := regexp.Compile("(?i)" + regexp.QuoteMeta(part)); err == nil && rx.MatchString(text) {
-			return part, true
-		}
-	}
-	return "", false
-}
-
-func splitTriggerTerms(s string) []string {
-	rs := []rune(s)
-	var parts []string
-	start := 0
-	for i, r := range rs {
-		isSep := r == ';'
-		if r == ',' {
-			decimalComma := i > 0 && i+1 < len(rs) && unicode.IsDigit(rs[i-1]) && unicode.IsDigit(rs[i+1])
-			isSep = !decimalComma
-		}
-		if isSep {
-			parts = append(parts, string(rs[start:i]))
-			start = i + 1
-		}
-	}
-	parts = append(parts, string(rs[start:]))
-	return parts
-}
-
-func foldAccentsLower(s string) string {
-	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-	res, _, err := transform.String(t, strings.ToLower(s))
-	if err != nil {
-		return strings.ToLower(s)
-	}
-	return res
 }

@@ -2,8 +2,9 @@ package repo
 
 import (
 	"context"
-	"math"
 	"time"
+
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 )
 
 type PriorPurchaseRef struct {
@@ -57,14 +58,15 @@ func (r *WhatsAppAIRepo) HasLeadConversionSent(ctx context.Context, accountID, t
 			  AND pixel_name = $2
 			  AND external_id = ANY($3::text[])
 			  AND event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead')
-			  AND status = 'sent'
+			  AND channel <> 'internal'
+			  AND status IN ('sent', 'queued')
 		)
 	`, accountID, pixelName, extIDs).Scan(&exists)
 	return exists, err
 }
 
 // HasMatchingPurchaseSent evita duplicar uma venda caso o gatilho do atendente,
-// um webhook de gateway (Kiwify/Hotmart/Cakto) ou o Kanban já tenha disparado Purchase.
+// um webhook de gateway (Kiwify/Hotmart/Cakto), pixel web ou o Kanban já tenha disparado Purchase.
 func (r *WhatsAppAIRepo) HasMatchingPurchaseSent(
 	ctx context.Context,
 	accountID, trackedUserID int64,
@@ -79,17 +81,18 @@ func (r *WhatsAppAIRepo) HasMatchingPurchaseSent(
 	if aroundTime.IsZero() {
 		aroundTime = time.Now()
 	}
-	winStart := aroundTime.Add(-24 * time.Hour)
-	winEnd := aroundTime.Add(4 * time.Hour)
+	winStart := aroundTime.Add(-72 * time.Hour)
+	winEnd := aroundTime.Add(12 * time.Hour)
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT purchase_value, created_at
+		SELECT event_id, COALESCE(input_json->>'order_id', ''), purchase_value, created_at
 		FROM sent_events
 		WHERE account_id = $1
 		  AND pixel_name = $2
 		  AND external_id = ANY($3::text[])
 		  AND event_name = 'Purchase'
-		  AND status = 'sent'
+		  AND channel <> 'internal'
+		  AND status IN ('sent', 'queued')
 		  AND created_at >= $4 AND created_at <= $5
 	`, accountID, pixelName, extIDs, winStart, winEnd)
 	if err != nil {
@@ -98,19 +101,13 @@ func (r *WhatsAppAIRepo) HasMatchingPurchaseSent(
 	defer rows.Close()
 
 	for rows.Next() {
+		var evID, storedOrd string
 		var sentVal float64
 		var sentAt time.Time
-		if err := rows.Scan(&sentVal, &sentAt); err != nil {
+		if err := rows.Scan(&evID, &storedOrd, &sentVal, &sentAt); err != nil {
 			continue
 		}
-		if amount > 0 && sentVal > 0 && math.Abs(sentVal-amount) <= 1.00 {
-			return true, nil
-		}
-		diff := sentAt.Sub(aroundTime)
-		if diff < 0 {
-			diff = -diff
-		}
-		if (amount <= 0 || sentVal <= 0) && diff <= 2*time.Hour {
+		if cache.MatchCrossSourcePurchase(evID, storedOrd, sentVal, sentAt, "", true, amount, aroundTime) {
 			return true, nil
 		}
 	}

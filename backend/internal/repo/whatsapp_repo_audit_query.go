@@ -11,24 +11,37 @@ const auditOriginCaseSQL = `
 	CASE
 		WHEN c.origin_type IN ('meta_ads_ctwa', 'meta_ads_lp')
 		  OR COALESCE(c.ctwa_clid, '') <> ''
+		  OR COALESCE(c.source_id, '') <> ''
 		  OR COALESCE(tu.ctwa_clid, '') <> ''
+		  OR COALESCE(tu.wa_ad_id, '') <> ''
 		  OR COALESCE(tu.fbc, '') <> ''
-		  OR LOWER(COALESCE(NULLIF(tu.last_utm_source, ''), tu.first_utm_source, '')) ~ '(facebook|instagram|^fb$|^ig$|meta)'
 		THEN 'meta_ads'
 		WHEN c.origin_type = 'google_ads'
 		  OR COALESCE(tu.gclid, '') <> ''
 		  OR COALESCE(tu.gbraid, '') <> ''
 		  OR COALESCE(tu.wbraid, '') <> ''
-		  OR LOWER(COALESCE(NULLIF(tu.last_utm_source, ''), tu.first_utm_source, '')) ~ '(google|adwords|youtube|gads)'
 		THEN 'google_ads'
 		WHEN c.origin_type = 'tiktok_ads'
 		  OR COALESCE(tu.ttclid, '') <> ''
-		  OR LOWER(COALESCE(NULLIF(tu.last_utm_source, ''), tu.first_utm_source, '')) ~ '(tiktok|^tt$|bytedance)'
 		THEN 'tiktok_ads'
 		WHEN c.origin_type = 'bio_link_organic'
-		  OR c.trackable_link_id IS NOT NULL
-		  OR tu.trackable_link_id IS NOT NULL
+		  OR (
+		    (c.trackable_link_id IS NOT NULL OR tu.trackable_link_id IS NOT NULL)
+		    AND LOWER(TRIM(COALESCE(NULLIF(tu.last_utm_medium, ''), tu.first_utm_medium, ''))) !~ '` + paidUTMMediumRegexSQL + `'
+		  )
 		THEN 'bio_link'
+		WHEN c.origin_type <> 'website_organic'
+		  AND LOWER(TRIM(COALESCE(NULLIF(tu.last_utm_medium, ''), tu.first_utm_medium, ''))) NOT IN ` + organicUTMMediumListSQL + `
+		  AND LOWER(TRIM(COALESCE(NULLIF(tu.last_utm_source, ''), tu.first_utm_source, ''))) ~ '(facebook|instagram|^fb$|^ig$|meta|^an$)'
+		THEN 'meta_ads'
+		WHEN c.origin_type <> 'website_organic'
+		  AND LOWER(TRIM(COALESCE(NULLIF(tu.last_utm_medium, ''), tu.first_utm_medium, ''))) NOT IN ` + organicUTMMediumListSQL + `
+		  AND LOWER(TRIM(COALESCE(NULLIF(tu.last_utm_source, ''), tu.first_utm_source, ''))) ~ '(google|adwords|youtube|gads)'
+		THEN 'google_ads'
+		WHEN c.origin_type <> 'website_organic'
+		  AND LOWER(TRIM(COALESCE(NULLIF(tu.last_utm_medium, ''), tu.first_utm_medium, ''))) NOT IN ` + organicUTMMediumListSQL + `
+		  AND LOWER(TRIM(COALESCE(NULLIF(tu.last_utm_source, ''), tu.first_utm_source, ''))) ~ '(tiktok|^tt$|bytedance)'
+		THEN 'tiktok_ads'
 		ELSE 'site'
 	END
 `

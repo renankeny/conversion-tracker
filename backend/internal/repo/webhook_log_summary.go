@@ -55,7 +55,7 @@ func (r *WebhookLogRepo) SummaryBySource(ctx context.Context, accountID int64) (
 
 	const q = `
 		SELECT LOWER(source) AS src,
-		       COUNT(*) FILTER (WHERE status IN ('queued', 'buffered', 'replayed')) AS accepted,
+		       COUNT(*) FILTER (WHERE status IN ('queued', 'buffered', 'replayed') AND (event_name = 'Purchase' OR event_name = '')) AS accepted,
 		       COUNT(*) FILTER (WHERE status = 'failed') AS failed,
 		       MAX(received_at) AS last_at
 		FROM webhook_logs

@@ -72,6 +72,7 @@ func NewServer(opt asynq.RedisClientOpt, deps Deps, concurrency int) *Server {
 	mux.HandleFunc(TypeProcessAggregatedPurchase, makeProcessAggregatedPurchaseHandler(deps))
 	mux.HandleFunc(TypeWhatsAppEvent, makeWhatsAppEventHandler(deps))
 	mux.HandleFunc(TypeWhatsAppMedia, makeWhatsAppMediaHandler(deps))
+	mux.HandleFunc(TypeWhatsAppVerifyDisconnect, makeWhatsAppVerifyDisconnectHandler(deps))
 	return &Server{srv: srv, mux: mux}
 }
 

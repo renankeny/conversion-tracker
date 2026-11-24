@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
@@ -64,6 +65,48 @@ func webhookEventID(orderID, itemType, productID string) string {
 		return orderID
 	}
 	return orderID + ":" + itemType + ":" + productID
+}
+
+func webhookEventIDForEvent(eventName, orderID, itemType, productID string) string {
+	base := webhookEventID(orderID, itemType, productID)
+	ev := strings.TrimSpace(eventName)
+	if ev == "" || strings.EqualFold(ev, domain.EventPurchase) {
+		return base
+	}
+	return strings.ToLower(ev) + ":" + base
+}
+
+func applyWebhookTrackingEnrichment(user *domain.TrackedUser, in purchaseInput) {
+	if user == nil {
+		return
+	}
+	user.ClientIP = util.FirstNonEmpty(user.ClientIP, strings.TrimSpace(in.ClientIP))
+	user.ClientUserAgent = util.FirstNonEmpty(user.ClientUserAgent, strings.TrimSpace(in.ClientUserAgent))
+	user.Country = util.FirstNonEmpty(user.Country, strings.TrimSpace(in.Country))
+	user.State = util.FirstNonEmpty(user.State, strings.TrimSpace(in.State))
+	user.City = util.FirstNonEmpty(user.City, strings.TrimSpace(in.City))
+	user.PostalCode = util.FirstNonEmpty(user.PostalCode, strings.TrimSpace(in.PostalCode))
+	user.GCLID = util.FirstNonEmpty(user.GCLID, strings.TrimSpace(in.GCLID))
+	user.TTClid = util.FirstNonEmpty(user.TTClid, strings.TrimSpace(in.TTClid))
+	if srcURL := strings.TrimSpace(in.SourceURL); srcURL != "" {
+		user.URL = util.FirstNonEmpty(user.URL, srcURL)
+		user.FirstURL = util.FirstNonEmpty(user.FirstURL, srcURL)
+	}
+	cleanSrc := util.StripUserIDFromUTM(in.UTMSource)
+	cleanMed := util.StripUserIDFromUTM(in.UTMMedium)
+	cleanCmp := util.StripUserIDFromUTM(in.UTMCampaign)
+	cleanCnt := util.StripUserIDFromUTM(in.UTMContent)
+	cleanTrm := util.StripUserIDFromUTM(in.UTMTerm)
+	user.FirstUTMSource = util.FirstNonEmpty(user.FirstUTMSource, cleanSrc)
+	user.FirstUTMMedium = util.FirstNonEmpty(user.FirstUTMMedium, cleanMed)
+	user.FirstUTMCampaign = util.FirstNonEmpty(user.FirstUTMCampaign, cleanCmp)
+	user.FirstUTMContent = util.FirstNonEmpty(user.FirstUTMContent, cleanCnt)
+	user.FirstUTMTerm = util.FirstNonEmpty(user.FirstUTMTerm, cleanTrm)
+	user.LastUTMSource = util.FirstNonEmpty(user.LastUTMSource, cleanSrc)
+	user.LastUTMMedium = util.FirstNonEmpty(user.LastUTMMedium, cleanMed)
+	user.LastUTMCampaign = util.FirstNonEmpty(user.LastUTMCampaign, cleanCmp)
+	user.LastUTMContent = util.FirstNonEmpty(user.LastUTMContent, cleanCnt)
+	user.LastUTMTerm = util.FirstNonEmpty(user.LastUTMTerm, cleanTrm)
 }
 
 // ctwaAttribution decide se a venda vai como business_messaging (CTWA), website ou system_generated.

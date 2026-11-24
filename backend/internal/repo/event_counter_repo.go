@@ -69,12 +69,19 @@ type SummaryFilters struct {
 
 // SummaryByEvent agrega por evento dentro do intervalo.
 func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters) ([]SummaryRow, error) {
+	evExprSrc := "e.event_name"
+	evExprPlain := "event_name"
+	if f.EventName == "" {
+		evExprSrc = "CASE WHEN e.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead') THEN 'Lead' ELSE e.event_name END"
+		evExprPlain = "CASE WHEN event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead') THEN 'Lead' ELSE event_name END"
+	}
+
 	if f.TrafficSource != "" && f.TrafficSource != "all" {
 		q := `
-			SELECT e.event_name,
-			       COUNT(DISTINCT e.event_id) AS total,
-			       COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.event_id END) AS sent,
-			       COUNT(DISTINCT CASE WHEN e.status = 'failed' THEN e.event_id END) AS failed
+			SELECT ` + evExprSrc + ` AS norm_event,
+			       COUNT(DISTINCT e.pixel_name || ':' || e.event_id) AS total,
+			       COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.pixel_name || ':' || e.event_id END) AS sent,
+			       COUNT(DISTINCT CASE WHEN e.status = 'failed' THEN e.pixel_name || ':' || e.event_id END) AS failed
 			FROM sent_events e
 			JOIN tracked_users u ON e.external_id = u.external_id AND e.account_id = u.account_id
 			WHERE e.status <> 'contested'
@@ -109,7 +116,7 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 		if srcCond := trafficSourceUserCond(f.TrafficSource, "u."); srcCond != "" {
 			q += " AND " + srcCond
 		}
-		q += " GROUP BY e.event_name ORDER BY total DESC"
+		q += " GROUP BY norm_event ORDER BY total DESC"
 
 		rows, err := r.pool.Query(ctx, q, args...)
 		if err != nil {
@@ -159,10 +166,10 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 		WHERE event_name IN ('PageView', 'ViewContent')
 	`
 	q2 := `
-		SELECT event_name,
-		       COUNT(DISTINCT event_id) AS total,
-		       COUNT(DISTINCT CASE WHEN status = 'sent' THEN event_id END) AS sent,
-		       COUNT(DISTINCT CASE WHEN status = 'failed' THEN event_id END) AS failed
+		SELECT ` + evExprPlain + ` AS event_name,
+		       COUNT(DISTINCT pixel_name || ':' || event_id) AS total,
+		       COUNT(DISTINCT CASE WHEN status = 'sent' THEN pixel_name || ':' || event_id END) AS sent,
+		       COUNT(DISTINCT CASE WHEN status = 'failed' THEN pixel_name || ':' || event_id END) AS failed
 		FROM sent_events
 		WHERE event_name NOT IN ('PageView', 'ViewContent')
 		  AND status <> 'contested'
@@ -203,7 +210,7 @@ func (r *EventCounterRepo) SummaryByEvent(ctx context.Context, f SummaryFilters)
 	}
 
 	q1 += " GROUP BY event_name"
-	q2 += " GROUP BY event_name"
+	q2 += " GROUP BY 1"
 
 	q := q1 + " UNION ALL " + q2 + " ORDER BY total DESC"
 	rows, err := r.pool.Query(ctx, q, args...)

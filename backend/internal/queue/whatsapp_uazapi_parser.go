@@ -198,14 +198,14 @@ func ParseUazapiMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage, e
 
 	extractUazapiContentAndContext(env.Message.Content, out)
 	if !env.Message.FromMe {
-		if out.CtwaClid == "" {
+		if out.CtwaClid == "" && isValidUazapiCtwaClid(env.Chat.LeadField10) {
 			out.CtwaClid = strings.TrimSpace(env.Chat.LeadField10)
 		}
-		if out.SourceID == "" {
+		if out.SourceID == "" && isValidUazapiLeadAdSourceID(env.Chat.LeadField11, out.CtwaClid, env.Chat.LeadField12) {
 			out.SourceID = strings.TrimSpace(env.Chat.LeadField11)
 		}
-		if out.SourceApp == "" {
-			out.SourceApp = strings.ToLower(strings.TrimSpace(env.Chat.LeadField12))
+		if out.SourceApp == "" && (out.CtwaClid != "" || out.SourceID != "") {
+			out.SourceApp = normalizeAdSourceApp(env.Chat.LeadField12)
 		}
 	}
 	if out.Content == "" && !out.HasMedia && out.CtwaClid == "" && out.SourceID == "" {

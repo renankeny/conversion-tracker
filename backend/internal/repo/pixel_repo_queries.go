@@ -138,6 +138,7 @@ func scanPixel(row rowScanner) (*domain.Pixel, error) {
 	var p domain.Pixel
 	var cfgJSON []byte
 	var dashCfgJSON []byte
+	var goalMonthsJSON []byte
 	err := row.Scan(
 		&p.ID, &p.Name, &p.Label, &p.PublicToken, &p.PixelIDs, &p.AccessTokens, &p.TestCodes,
 		&p.Domains, &cfgJSON, &p.Enabled, &p.TrackingHost, &p.AccountID,
@@ -148,7 +149,7 @@ func scanPixel(row rowScanner) (*domain.Pixel, error) {
 		&p.GA4MeasurementID, &p.GA4APISecret, &p.MetaPermanentToken, &p.MetaAdAccountID, &p.MetaAccountID,
 		&dashCfgJSON, &p.DashboardShareToken,
 		&p.AggregationEnabled, &p.AggregationWindowMinutes,
-		&p.SalesGoalEnabled, &p.SalesGoalType, &p.SalesGoalTarget,
+		&p.SalesGoalEnabled, &p.SalesGoalType, &p.SalesGoalTarget, &goalMonthsJSON,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -167,6 +168,10 @@ func scanPixel(row rowScanner) (*domain.Pixel, error) {
 			return nil, fmt.Errorf("unmarshal dashboard_config: %w", err)
 		}
 	}
+	if len(goalMonthsJSON) > 0 {
+		_ = json.Unmarshal(goalMonthsJSON, &p.SalesGoalMonths)
+	}
+	p.SalesGoalMonths = domain.NormalizeSalesGoalMonths(p.SalesGoalMonths)
 
 	// Decrypt
 	hasMetaOAuth := p.MetaAccountID != nil && *p.MetaAccountID > 0

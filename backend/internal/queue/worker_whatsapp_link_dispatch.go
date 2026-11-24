@@ -11,8 +11,6 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
-const recentLinkClickMatchWindow = 2 * time.Minute
-
 func isChannelAllowed(allowed []string, channel string) bool {
 	if len(allowed) == 0 {
 		return true
@@ -25,32 +23,22 @@ func isChannelAllowed(allowed []string, channel string) bool {
 	return false
 }
 
-// resolveAssistedTrackableLinkLead trata dois cenários de Link Rastreável:
-// 1) Protocolo explícito ("Ref: ABC...") -> localiza o clique exato em whatsapp_link_clicks.
-// 2) Lead apagou a frase pré-preenchida e mandou "Oi" -> verifica se existe exatamente 1 clique
-//    humano não consumido nos últimos 2 minutos para a mesma instância WhatsApp.
+// resolveAssistedTrackableLinkLead vincula o clique do Link Rastreável estritamente
+// quando a mensagem recebida do lead contém o código de protocolo válido registrado.
 func resolveAssistedTrackableLinkLead(
 	ctx context.Context,
 	deps Deps,
 	inst *domain.WhatsAppInstance,
-	existingChat *domain.WhatsAppChat,
+	_ *domain.WhatsAppChat,
 	parsed *ParsedWhatsAppMessage,
 	protocolCode, phone, lidDigits string,
 ) (*domain.TrackedUser, string, *domain.TrackableLinkClick, *int64) {
-	if deps.TrackableLinks == nil {
+	if deps.TrackableLinks == nil || parsed == nil || parsed.IsFromMe || protocolCode == "" {
 		return nil, "", nil, nil
 	}
 
-	var click *domain.TrackableLinkClick
-	if protocolCode != "" {
-		if c, err := deps.TrackableLinks.FindClickByProtocol(ctx, inst.AccountID, protocolCode); err == nil && c != nil {
-			click = c
-		}
-	} else if !parsed.IsFromMe && existingChat == nil && parsed.CtwaClid == "" && parsed.SourceID == "" {
-		click = deps.TrackableLinks.FindUnambiguousRecentClickForInstance(ctx, inst.ID, recentLinkClickMatchWindow)
-	}
-
-	if click == nil {
+	click, err := deps.TrackableLinks.FindClickByProtocol(ctx, inst.AccountID, protocolCode)
+	if err != nil || click == nil {
 		return nil, "", nil, nil
 	}
 
@@ -63,7 +51,7 @@ func resolveAssistedTrackableLinkLead(
 		u, _ = deps.Users.FindByProtocolByAccount(ctx, click.ProtocolCode, inst.AccountID)
 	}
 	if u == nil {
-		return nil, "", click, &linkIDCopy
+		return nil, "", nil, nil
 	}
 
 	first, last := splitFullName(parsed.PushName)

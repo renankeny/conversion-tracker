@@ -9,6 +9,7 @@ import type {
   DashboardHeatmap,
   GoogleKeywordInsight,
   GroupedEventsResponse,
+  MonthlyGoalMetrics,
   PanelAudit,
   PreviousPeriodMetrics,
   PublicSalesGoal,
@@ -21,6 +22,7 @@ export interface PublicDashboardFilters {
   from: string
   to: string
   traffic_source?: DashboardTrafficSource
+  goal_month?: string
 }
 
 const buildPublicQuery = (params: Record<string, string | undefined>): string => {
@@ -94,8 +96,9 @@ export const usePublicDashboard = (token: string) => {
       panel_audit?: PanelAudit
       previous_period?: PreviousPeriodMetrics
       heatmap?: DashboardHeatmap
+      monthly_goal?: MonthlyGoalMetrics
     }>(
-      `${base}/revenue${buildPublicQuery({ from: f.from, to: f.to, traffic_source: f.traffic_source })}`,
+      `${base}/revenue${buildPublicQuery({ from: f.from, to: f.to, traffic_source: f.traffic_source, goal_month: f.goal_month })}`,
       { signal },
     )
 

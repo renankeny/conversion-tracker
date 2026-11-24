@@ -6,6 +6,11 @@ import {
   type DashboardMetricsContext,
 } from '~/utils/dashboardEventCatalog'
 import { computeCardRichDetails } from '~/utils/dashboardCardDetails'
+import {
+  formatGoalMonthLabel,
+  resolveDashboardGoalMonth,
+  resolveSalesGoalTargetForMonth,
+} from '~/utils/salesGoalMonths'
 import type { DashboardVisibleCard } from '~/composables/useDashboardView'
 import type { CounterSummaryRow, GroupedEvent } from '#shared/types'
 
@@ -19,7 +24,7 @@ export const usePublicDashboardView = (token: string) => {
   const {
     period, customFrom, customTo, trafficSource, privacyMode, dateRange, granularity,
     loading, isRefreshing, adsLoading, notFound, metaLoaded, loadError, pixelLabel, currency, dashboardConfig, publicSalesGoal,
-    summaryData, seriesData, recentPurchases, geoData, totalRevenue, trafficQuality,
+    summaryData, seriesData, recentPurchases, geoData, totalRevenue, monthlyGoal, trafficQuality,
     sourceBreakdown, panelAudit, previousPeriod, heatmap, trackableLinks, metaInsights, googleInsights,
     metaCreatives, googleKeywords, refresh, retryLoad,
   } = usePublicDashboardFetch(token)
@@ -62,9 +67,15 @@ export const usePublicDashboardView = (token: string) => {
 
   const salesGoal = computed(() => {
     const g = publicSalesGoal.value
-    if (!g?.enabled || !g.target || g.target <= 0) return null
-    const current = g.type === 'count' ? resolvePanelPurchases(metricsCtx.value) : totalRevenue.value
-    return { type: g.type, target: g.target, current }
+    if (!g?.enabled) return null
+    const goalMonth = resolveDashboardGoalMonth(period.value, customFrom.value, customTo.value)
+    const target = resolveSalesGoalTargetForMonth(g.target, g.months, goalMonth)
+    if (target <= 0) return null
+    const mg = monthlyGoal.value
+    const current = mg && mg.month === goalMonth
+      ? (g.type === 'count' ? mg.purchases : mg.revenue)
+      : (g.type === 'count' ? resolvePanelPurchases(metricsCtx.value) : totalRevenue.value)
+    return { type: g.type, target, current, periodLabel: formatGoalMonthLabel(goalMonth, true) }
   })
 
   const visibleCards = computed<DashboardVisibleCard[]>(() => {

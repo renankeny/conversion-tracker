@@ -49,6 +49,7 @@
       v-model:enabled="form.sales_goal_enabled"
       v-model:goal-type="form.sales_goal_type"
       v-model:target="form.sales_goal_target"
+      v-model:goal-months="form.sales_goal_months"
       v-model:show-on-public-link="form.public_show_sales_goal"
       :currency="form.tracker_config?.product_currency || 'BRL'"
       :error="salesGoalError"
@@ -76,6 +77,7 @@ interface BasicFormState {
   sales_goal_enabled: boolean
   sales_goal_type: SalesGoalType
   sales_goal_target: number
+  sales_goal_months: Record<string, number>
   public_show_sales_goal: boolean
   tracker_config?: TrackerConfig
 }

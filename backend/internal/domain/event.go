@@ -145,8 +145,9 @@ type SendEventInput struct {
 	OverrideGadsActionID  string `json:"override_gads_action_id,omitempty"`
 
 	// Agrupamento de Conversões (Order Bump & Upsell)
-	Gateway         string           `json:"gateway,omitempty"`   // gateway de origem (ex: "hotmart", "kiwify")
-	ItemType        string           `json:"item_type,omitempty"` // "main", "order_bump", "upsell"
+	CustomerGroupKey string           `json:"customer_group_key,omitempty"`
+	Gateway          string           `json:"gateway,omitempty"`   // gateway de origem (ex: "hotmart", "kiwify")
+	ItemType         string           `json:"item_type,omitempty"` // "main", "order_bump", "upsell"
 	AggregatedCount int              `json:"aggregated_count,omitempty"`
 	AggregatedItems []AggregatedItem `json:"aggregated_items,omitempty"`
 

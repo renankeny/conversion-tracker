@@ -48,6 +48,45 @@ func TestClassifyPortalOrigin(t *testing.T) {
 			t.Fatalf("expected %q, got %q", domain.WhatsAppOriginMetaCTWA, got)
 		}
 	})
+
+	t.Run("google organic search is never misclassified as google ads", func(t *testing.T) {
+		u := &domain.TrackedUser{
+			FirstUTMSource:   "google",
+			FirstUTMMedium:   "organic",
+			FirstUTMCampaign: "(organic)",
+			LastUTMSource:    "google",
+			LastUTMMedium:    "organic",
+			LastUTMCampaign:  "(organic)",
+		}
+		if got := ClassifyPortalOrigin("", "", u); got != domain.WhatsAppOriginWebsiteOrganic {
+			t.Fatalf("expected %q, got %q", domain.WhatsAppOriginWebsiteOrganic, got)
+		}
+	})
+
+	t.Run("instagram bio trackable link without paid medium stays bio_link_organic", func(t *testing.T) {
+		linkID := int64(77)
+		u := &domain.TrackedUser{
+			TrackableLinkID:  &linkID,
+			FirstUTMSource:   "instagram",
+			FirstUTMMedium:   "bio",
+			FirstUTMCampaign: "link-da-bio",
+			LastUTMSource:    "instagram",
+			LastUTMMedium:    "bio",
+			LastUTMCampaign:  "link-da-bio",
+		}
+		if got := ClassifyPortalOrigin("", "", u); got != domain.WhatsAppOriginBioLinkOrganic {
+			t.Fatalf("expected %q, got %q", domain.WhatsAppOriginBioLinkOrganic, got)
+		}
+	})
+
+	t.Run("medium containing substring ad like cadastro is not treated as paid", func(t *testing.T) {
+		if isPaidMedium("cadastro") || isPaidMedium("lead") || isPaidMedium("afiliado") {
+			t.Fatal("expected non-paid words containing 'ad' to return false")
+		}
+		if !isPaidMedium("cpc") || !isPaidMedium("paid_social") || !isPaidMedium("trafego_pago") {
+			t.Fatal("expected paid mediums to return true")
+		}
+	})
 }
 
 func TestResolveMessagePortalFields(t *testing.T) {

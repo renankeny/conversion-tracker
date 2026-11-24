@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
@@ -52,6 +53,12 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 	}
 
 	isLeadEv := targetEvent == domain.EventLead || targetEvent == domain.EventLeadSubmitted || targetEvent == domain.EventQualifiedLead
+	if targetEvent == domain.EventPurchase {
+		if cache.HasInFlightMatchingPurchase(ctx, h.rdb, accountID, pixelName, tu.GroupID, tu.ID, tu.ExternalID, tu.Phone, tu.Email, "", true, eventVal, time.Now()) {
+			slog.Info("skipping duplicate crm Purchase already in-flight", "pixel", pixelName, "lead_id", leadID)
+			return
+		}
+	}
 	if h.sentEvents != nil {
 		if isLeadEv {
 			if already, _ := h.sentEvents.HasLeadConversionSent(ctx, accountID, tu.ID, tu.ExternalID, pixelName); already {
@@ -161,6 +168,11 @@ func (h *AdminCRM) dispatchCRMStageTrigger(
 	if err := h.queue.EnqueueSendEvent(ctx, in); err != nil {
 		slog.Error("dispatch crm stage trigger enqueue failed", "err", err, "pixel", pixelName, "event", targetEvent)
 	} else {
+		if targetEvent == domain.EventPurchase {
+			cache.RecordInFlightPurchase(ctx, h.rdb, accountID, pixelName, tu.GroupID, tu.ID, tu.ExternalID, tu.Phone, tu.Email, cache.InFlightPurchase{
+				EventID: in.EventID, IsNonOrder: true, Value: eventVal,
+			})
+		}
 		slog.Info("dispatch crm stage trigger enqueued ok", "pixel", pixelName, "event", targetEvent, "event_id", in.EventID)
 	}
 }

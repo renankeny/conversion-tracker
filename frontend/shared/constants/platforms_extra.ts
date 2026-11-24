@@ -178,5 +178,21 @@ export const PLATFORMS_EXTRA: PlatformDef[] = [
     ],
     notes: 'Lê valor líquido de purchase.price.price e parâmetros UTM de purchase.origin.',
   },
+  {
+    id: 'onixpay',
+    name: 'Onix Pay',
+    description: 'Gateway e checkout digital de alta conversão para PIX, cartão e infoprodutos.',
+    webhookPath: '/webhooks/onixpay',
+    brandColor: '#6366F1',
+    logoUrl: '/img/platforms/onixpay.svg',
+    events: ['TRANSACTION_PAID', 'TRANSACTION_CREATED'],
+    setupSteps: [
+      'No painel Onix Pay, acesse Integrações / Webhooks',
+      'Clique em "Adicionar Webhook" e cole a URL de Webhook acima',
+      'Marque os eventos "TRANSACTION_PAID" (venda paga) e "TRANSACTION_CREATED" (pagamento gerado)',
+      'Opcional: copie o Token do webhook gerado na Onix Pay e salve no campo de segurança abaixo',
+    ],
+    notes: 'Registra pagamento gerado (AddPaymentInfo) em TRANSACTION_CREATED preservando fbc/fbp/UTMs/IP de trackProps e confirma a venda (Purchase) em TRANSACTION_PAID.',
+  },
 ]
 

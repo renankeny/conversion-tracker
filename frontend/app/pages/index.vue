@@ -15,7 +15,7 @@
       :target="salesGoal.target"
       :current="salesGoal.current"
       :currency="activeCurrency"
-      :period-label="periodLabel"
+      :period-label="salesGoal.periodLabel"
       :blurred="dashboardStore.privacyMode"
     />
 

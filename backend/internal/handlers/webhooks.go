@@ -127,6 +127,22 @@ type purchaseInput struct {
 	IsUpsell    bool
 	OfferType   string // "main", "order_bump", "upsell"
 
+	// Contexto técnico e de atribuição opcional enviado pelo checkout (ex: Onix Pay trackProps)
+	ClientIP        string
+	ClientUserAgent string
+	Country         string
+	State           string
+	City            string
+	PostalCode      string
+	SourceURL       string
+	UTMSource       string
+	UTMMedium       string
+	UTMCampaign     string
+	UTMContent      string
+	UTMTerm         string
+	GCLID           string
+	TTClid          string
+
 	// Fallback por PixelQuery (ex: ?pixel=slug ou ?token=xyz na URL do webhook)
 	PixelQuery string
 

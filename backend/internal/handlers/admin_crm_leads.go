@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -34,6 +37,16 @@ func (h *AdminCRM) MoveLead(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid payload")
 		return
+	}
+
+	if h.rdb != nil {
+		lockKey := fmt.Sprintf("lock:crm_move:%d:%d", accountID, leadID)
+		if ok, lerr := h.rdb.SetNX(ctx, lockKey, "1", 8*time.Second).Result(); lerr == nil && !ok {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		} else if lerr == nil {
+			defer h.rdb.Del(context.Background(), lockKey)
+		}
 	}
 
 	lead, err := h.crmRepo.GetLeadByID(ctx, leadID, accountID)

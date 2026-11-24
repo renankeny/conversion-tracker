@@ -99,11 +99,13 @@ type WhatsAppInstance struct {
 	ProfilePicURL      string    `json:"profile_pic_url"`
 	ShareToken         *string   `json:"share_token,omitempty"`
 	ConnectionStatus   string    `json:"connection_status"`
-	PurchaseTrigger    string    `json:"purchase_trigger"`
-	LeadTrigger        string    `json:"lead_trigger"`
-	CustomEventName    string    `json:"custom_event_name"`
-	CustomEventTrigger string    `json:"custom_event_trigger"`
-	AutoCreateCRMLead      bool      `json:"auto_create_crm_lead"`
+	PurchaseTrigger        string                 `json:"purchase_trigger"`
+	LeadTrigger            string                 `json:"lead_trigger"`
+	CustomEventName        string                 `json:"custom_event_name"`
+	CustomEventTrigger     string                 `json:"custom_event_trigger"`
+	EventTriggers          []WhatsAppEventTrigger `json:"event_triggers"`
+	AverageTicket          float64                `json:"average_ticket"`
+	AutoCreateCRMLead      bool                   `json:"auto_create_crm_lead"`
 	DefaultCRMStageID      *int64    `json:"default_crm_stage_id"`
 	CtwaMinInboundMessages int       `json:"ctwa_min_inbound_messages"`
 	Enabled                bool      `json:"enabled"`

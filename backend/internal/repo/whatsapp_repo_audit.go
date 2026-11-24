@@ -17,7 +17,7 @@ const auditEnrichedFromSQL = `
 	JOIN tracked_users tu ON tu.id = c.tracked_user_id
 	LEFT JOIN crm_leads cl ON cl.id = COALESCE(
 		c.crm_lead_id,
-		(SELECT l2.id FROM crm_leads l2 WHERE l2.account_id = i.account_id AND l2.tracked_user_id = tu.id LIMIT 1)
+		(SELECT l2.id FROM crm_leads l2 WHERE l2.account_id = i.account_id AND (l2.tracked_user_id = tu.id OR (tu.group_id IS NOT NULL AND l2.group_id = tu.group_id)) ORDER BY l2.updated_at DESC LIMIT 1)
 	)
 	LEFT JOIN crm_stages cs ON cs.id = cl.stage_id
 	LEFT JOIN whatsapp_trackable_links tl ON tl.id = COALESCE(c.trackable_link_id, tu.trackable_link_id)
@@ -127,14 +127,26 @@ func (r *WhatsAppRepo) ListAuditConversations(ctx context.Context, f domain.Conv
 		)
 	`
 
+	wonSubWhere := "WHERE e2.is_won = TRUE"
+	if originFilterSQL != "" {
+		wonSubWhere = strings.Replace(originFilterSQL, "WHERE origin_category", "WHERE e2.is_won = TRUE AND e2.origin_category", 1)
+	}
+
 	kpiSQL := cteSQL + `
 		SELECT
 			COUNT(*)::INT,
 			COUNT(*) FILTER (WHERE sla_status IN ('unanswered', 'waiting_reply'))::INT,
 			COUNT(*) FILTER (WHERE sla_status = 'unanswered')::INT,
 			ROUND(AVG(first_response_sec))::INT,
-			COUNT(*) FILTER (WHERE is_won = TRUE)::INT,
-			COALESCE(SUM(lead_value) FILTER (WHERE is_won = TRUE), 0)
+			COUNT(DISTINCT COALESCE(crm_lead_id, -chat_id)) FILTER (WHERE is_won = TRUE)::INT,
+			COALESCE((
+				SELECT SUM(w.lead_value) FROM (
+					SELECT DISTINCT ON (COALESCE(e2.crm_lead_id, -e2.chat_id)) e2.lead_value
+					FROM enriched e2
+					` + wonSubWhere + `
+					ORDER BY COALESCE(e2.crm_lead_id, -e2.chat_id), e2.lead_value DESC
+				) w
+			), 0)
 		FROM enriched
 	` + originFilterSQL
 	if err := r.db.QueryRow(ctx, kpiSQL, finalArgs...).Scan(

@@ -112,6 +112,9 @@ func applyOptionalPixelFields(p *domain.Pixel, in pixelInput) {
 		}
 		p.SalesGoalTarget = val
 	}
+	if in.SalesGoalTarget != nil || in.SalesGoalMonths != nil {
+		domain.SyncPixelSalesGoalMonths(p, in.SalesGoalMonths)
+	}
 	if in.PublicShowSalesGoal != nil {
 		v := *in.PublicShowSalesGoal
 		p.DashboardConfig.PublicShowSalesGoal = &v

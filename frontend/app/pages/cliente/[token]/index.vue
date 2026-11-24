@@ -39,7 +39,7 @@
       :target="salesGoal.target"
       :current="salesGoal.current"
       :currency="currency"
-      :period-label="periodLabel"
+      :period-label="salesGoal.periodLabel"
       :blurred="privacyMode"
     />
 

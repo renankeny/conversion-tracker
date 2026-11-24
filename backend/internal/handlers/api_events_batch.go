@@ -158,11 +158,20 @@ func (h *APIEvents) processEvent(
 
 	tu := h.upsertTrackedUserAPI(ctx, req, pixel.Name, accountID, clientIP, clientUA, mappedURL, country, state, city, postal, email, phone)
 	var tuID int64
+	var tuGroupID *int64
 	if tu != nil {
 		tuID = tu.ID
+		tuGroupID = tu.GroupID
 	}
-	if req.EventName == domain.EventPurchase && h.sentEvents != nil {
-		if dup, _ := h.sentEvents.HasDuplicateExternalPurchase(ctx, accountID, tuID, req.ExternalID, pixel.Name, req.OrderID, *valPtr, time.Now()); dup {
+	if req.EventName == domain.EventPurchase {
+		ord := strings.TrimSpace(req.OrderID)
+		now := time.Now()
+		dupInFlight := cache.HasInFlightMatchingPurchase(ctx, h.rdb, accountID, pixel.Name, tuGroupID, tuID, req.ExternalID, phone, email, ord, ord == "", *valPtr, now)
+		dupDB := false
+		if !dupInFlight && h.sentEvents != nil {
+			dupDB, _ = h.sentEvents.HasDuplicateExternalPurchase(ctx, accountID, tuID, req.ExternalID, pixel.Name, ord, *valPtr, now)
+		}
+		if dupInFlight || dupDB {
 			if h.crmRepo != nil && tuID > 0 {
 				if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, accountID, tuID, *valPtr, false); synced && h.rdb != nil {
 					wshub.PublishCustom(ctx, h.rdb, accountID, "crm_updated", map[string]any{"action": "api_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
@@ -170,6 +179,9 @@ func (h *APIEvents) processEvent(
 			}
 			return map[string]any{"queued": false, "deduplicated": true, "event_id": eventID}, http.StatusOK, ""
 		}
+		cache.RecordInFlightPurchase(ctx, h.rdb, accountID, pixel.Name, tuGroupID, tuID, req.ExternalID, phone, email, cache.InFlightPurchase{
+			EventID: eventID, OrderID: ord, IsNonOrder: ord == "", Value: *valPtr,
+		})
 	}
 	if h.crmRepo != nil && tuID > 0 {
 		switch req.EventName {

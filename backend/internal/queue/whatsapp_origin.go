@@ -14,18 +14,20 @@ func ClassifyPortalOrigin(ctwaClid, sourceID string, u *domain.TrackedUser) stri
 		return domain.WhatsAppOriginWebsiteOrganic
 	}
 
+	isFromTrackableLink := u.TrackableLinkID != nil && *u.TrackableLinkID > 0
+
 	// Prioriza o último toque pago quando a pessoa interagiu com mais de uma rede ao longo do tempo
-	if isGoogleSource(u.LastUTMSource) && (u.GCLID != "" || u.GBraid != "" || u.WBraid != "" || isPaidMedium(u.LastUTMMedium) || u.LastUTMCampaign != "") {
+	if isGoogleSource(u.LastUTMSource) && (u.GCLID != "" || u.GBraid != "" || u.WBraid != "" || isPaidMedium(u.LastUTMMedium) || (!isFromTrackableLink && !isOrganicMedium(u.LastUTMMedium) && (isAdsOnlyGoogleSource(u.LastUTMSource) || u.LastUTMCampaign != ""))) {
 		return domain.WhatsAppOriginGoogleAds
 	}
-	if isTikTokSource(u.LastUTMSource) && (u.TTClid != "" || isPaidMedium(u.LastUTMMedium) || u.LastUTMCampaign != "") {
+	if isTikTokSource(u.LastUTMSource) && (u.TTClid != "" || isPaidMedium(u.LastUTMMedium) || (!isFromTrackableLink && !isOrganicMedium(u.LastUTMMedium) && u.LastUTMCampaign != "")) {
 		return domain.WhatsAppOriginTikTokAds
 	}
-	if isMetaSource(u.LastUTMSource) && (u.FBC != "" || isPaidMedium(u.LastUTMMedium) || u.LastUTMCampaign != "") {
+	if isMetaSource(u.LastUTMSource) && (u.FBC != "" || isPaidMedium(u.LastUTMMedium) || (!isFromTrackableLink && !isOrganicMedium(u.LastUTMMedium) && (isAdsOnlyMetaSource(u.LastUTMSource) || u.LastUTMCampaign != ""))) {
 		return domain.WhatsAppOriginMetaLP
 	}
 
-	if u.CtwaClid != "" {
+	if u.CtwaClid != "" || u.WaAdID != "" {
 		return domain.WhatsAppOriginMetaCTWA
 	}
 	if u.GCLID != "" || u.GBraid != "" || u.WBraid != "" || isPaidGoogleUTM(u.FirstUTMSource, u.FirstUTMMedium) || isPaidGoogleUTM(u.LastUTMSource, u.LastUTMMedium) {
@@ -37,7 +39,7 @@ func ClassifyPortalOrigin(ctwaClid, sourceID string, u *domain.TrackedUser) stri
 	if u.FBC != "" || isPaidMetaUTM(u.FirstUTMSource, u.FirstUTMMedium) || isPaidMetaUTM(u.LastUTMSource, u.LastUTMMedium) {
 		return domain.WhatsAppOriginMetaLP
 	}
-	if isBioLinkSession(u) {
+	if isFromTrackableLink || isBioLinkSession(u) {
 		return domain.WhatsAppOriginBioLinkOrganic
 	}
 	return domain.WhatsAppOriginWebsiteOrganic
@@ -48,34 +50,61 @@ func isPaidMedium(med string) bool {
 	if m == "" {
 		return false
 	}
-	return m == "cpc" || m == "ppc" || m == "paid" || m == "ads" || m == "cpm" || m == "paid_social" || m == "pmax" || strings.Contains(m, "ad") || strings.Contains(m, "pago") || strings.Contains(m, "trafego")
+	switch m {
+	case "cpc", "ppc", "paid", "ads", "ad", "cpm", "cpa", "paid_social", "paidsocial",
+		"paid-social", "social_paid", "pmax", "display", "remarketing", "retargeting",
+		"ctwa", "sponsored", "impulsionar", "impulsionamento", "trafego_pago", "trafego-pago":
+		return true
+	}
+	return strings.Contains(m, "pago") || strings.HasPrefix(m, "paid_") || strings.HasSuffix(m, "_ads")
+}
+
+func isOrganicMedium(med string) bool {
+	switch strings.ToLower(strings.TrimSpace(med)) {
+	case "organic", "organico", "orgânico", "social", "social-network", "social_organic",
+		"referral", "referencia", "bio", "link_rastreavel", "linktree", "perfil",
+		"qr", "qrcode", "direct", "direto", "none", "(none)", "email", "newsletter", "seo":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAdsOnlyMetaSource(src string) bool {
+	s := strings.ToLower(strings.TrimSpace(src))
+	return s == "meta_ads" || s == "facebook_ads" || s == "fb_ads" || s == "ig_ads" || s == "instagram_ads" || s == "an"
+}
+
+func isAdsOnlyGoogleSource(src string) bool {
+	s := strings.ToLower(strings.TrimSpace(src))
+	return s == "adwords" || s == "gads" || s == "google_ads" || s == "googleads"
 }
 
 func isMetaSource(src string) bool {
 	s := strings.ToLower(strings.TrimSpace(src))
-	return s == "facebook" || s == "fb" || s == "instagram" || s == "ig" || s == "meta" || strings.Contains(s, "facebook") || strings.Contains(s, "instagram")
+	return s == "facebook" || s == "fb" || s == "instagram" || s == "ig" || s == "meta" || isAdsOnlyMetaSource(s) || strings.Contains(s, "facebook") || strings.Contains(s, "instagram")
 }
 
 func isGoogleSource(src string) bool {
 	s := strings.ToLower(strings.TrimSpace(src))
-	return s == "google" || s == "adwords" || s == "youtube" || s == "gads" || strings.Contains(s, "google") || strings.Contains(s, "adwords")
+	return s == "google" || s == "youtube" || isAdsOnlyGoogleSource(s) || strings.Contains(s, "google") || strings.Contains(s, "adwords")
 }
 
 func isTikTokSource(src string) bool {
 	s := strings.ToLower(strings.TrimSpace(src))
-	return s == "tiktok" || s == "tt" || strings.Contains(s, "tiktok") || strings.Contains(s, "bytedance")
+	return s == "tiktok" || s == "tt" || s == "tiktok_ads" || strings.Contains(s, "tiktok") || strings.Contains(s, "bytedance")
 }
 
 func isPaidMetaUTM(src, med string) bool {
-	return isMetaSource(src) && isPaidMedium(med)
+	return isAdsOnlyMetaSource(src) || (isMetaSource(src) && isPaidMedium(med))
 }
 
 func isPaidGoogleUTM(src, med string) bool {
-	return isGoogleSource(src) && isPaidMedium(med)
+	return isAdsOnlyGoogleSource(src) || (isGoogleSource(src) && isPaidMedium(med))
 }
 
 func isPaidTikTokUTM(src, med string) bool {
-	return isTikTokSource(src) && isPaidMedium(med)
+	return strings.EqualFold(strings.TrimSpace(src), "tiktok_ads") || (isTikTokSource(src) && isPaidMedium(med))
 }
 
 func isBioLinkSession(u *domain.TrackedUser) bool {
@@ -83,7 +112,7 @@ func isBioLinkSession(u *domain.TrackedUser) bool {
 		return false
 	}
 	med := strings.ToLower(u.FirstUTMMedium + " " + u.LastUTMMedium + " " + u.FirstUTMSource + " " + u.LastUTMSource)
-	if strings.Contains(med, "bio") || strings.Contains(med, "linktree") || strings.Contains(med, "perfil") {
+	if strings.Contains(med, "bio") || strings.Contains(med, "linktree") || strings.Contains(med, "perfil") || strings.Contains(med, "link_rastreavel") {
 		return true
 	}
 	urls := strings.ToLower(u.FirstURL + " " + u.URL + " " + u.Referrer)

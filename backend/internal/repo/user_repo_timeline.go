@@ -2,11 +2,8 @@ package repo
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"strings"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 )
@@ -136,13 +133,16 @@ func (r *UserRepo) ResolveAndLink(ctx context.Context, accountID int64, external
 
 	// Grupos já existentes entre os batidos.
 	groupSet := map[int64]bool{}
+	matchedUserIDs := make([]int64, 0, len(matches))
 	for _, m := range matches {
+		matchedUserIDs = append(matchedUserIDs, m.ID)
 		if m.GroupID != nil {
 			groupSet[*m.GroupID] = true
 		}
 	}
 
 	var canonicalGroupID int64
+	involvedGroups := make([]int64, 0, len(groupSet)+1)
 	switch len(groupSet) {
 	case 0:
 		if err := tx.QueryRow(ctx,
@@ -150,9 +150,11 @@ func (r *UserRepo) ResolveAndLink(ctx context.Context, accountID int64, external
 		).Scan(&canonicalGroupID); err != nil {
 			return nil, err
 		}
+		involvedGroups = append(involvedGroups, canonicalGroupID)
 	case 1:
 		for gid := range groupSet {
 			canonicalGroupID = gid
+			involvedGroups = append(involvedGroups, gid)
 		}
 	default:
 		ids := make([]int64, 0, len(groupSet))
@@ -161,19 +163,24 @@ func (r *UserRepo) ResolveAndLink(ctx context.Context, accountID int64, external
 		}
 		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 		canonicalGroupID = ids[0]
-		for _, losingGroupID := range ids[1:] {
-			if err := mergeGroupCRMLeads(ctx, tx, accountID, canonicalGroupID, losingGroupID); err != nil {
-				return nil, err
-			}
-			if _, err := tx.Exec(ctx, `UPDATE tracked_users SET group_id = $1 WHERE group_id = $2`, canonicalGroupID, losingGroupID); err != nil {
-				return nil, err
-			}
-			if _, err := tx.Exec(ctx, `UPDATE crm_leads SET group_id = $1 WHERE group_id = $2`, canonicalGroupID, losingGroupID); err != nil {
-				return nil, err
-			}
-			if _, err := tx.Exec(ctx, `DELETE FROM groups WHERE id = $1`, losingGroupID); err != nil {
-				return nil, err
-			}
+		involvedGroups = append(involvedGroups, ids...)
+	}
+
+	if err := consolidateGroupCRMLeads(ctx, tx, accountID, canonicalGroupID, matchedUserIDs, involvedGroups); err != nil {
+		return nil, err
+	}
+	for _, gid := range involvedGroups {
+		if gid == canonicalGroupID {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `UPDATE tracked_users SET group_id = $1 WHERE group_id = $2`, canonicalGroupID, gid); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE crm_leads SET group_id = $1 WHERE group_id = $2`, canonicalGroupID, gid); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM groups WHERE id = $1`, gid); err != nil {
+			return nil, err
 		}
 	}
 
@@ -195,42 +202,4 @@ func (r *UserRepo) ResolveAndLink(ctx context.Context, accountID int64, external
 	result.GroupID = &canonicalGroupID
 	enrichTrackedUserGroupFields(ctx, r.pool, result)
 	return result, nil
-}
-
-// mergeGroupCRMLeads resolve a colisão rara de dois grupos que já tinham,
-// cada um, seu próprio card no kanban antes de serem ligados: mantém o de
-// stage mais avançado (maior order_index da coluna) e remove o outro. Sem
-// colisão (só um dos dois grupos tem card, ou nenhum), não faz nada — o
-// UPDATE de group_id feito depois por ResolveAndLink já resolve sozinho.
-func mergeGroupCRMLeads(ctx context.Context, tx pgx.Tx, accountID, canonicalGroupID, losingGroupID int64) error {
-	findLead := func(groupID int64) (id int64, order int, found bool, err error) {
-		err = tx.QueryRow(ctx, `
-			SELECT cl.id, COALESCE(cs.order_index, -1)
-			FROM crm_leads cl LEFT JOIN crm_stages cs ON cs.id = cl.stage_id
-			WHERE cl.account_id = $1 AND cl.group_id = $2
-		`, accountID, groupID).Scan(&id, &order)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, 0, false, nil
-		}
-		return id, order, err == nil, err
-	}
-
-	canonicalID, canonicalOrder, canonicalFound, err := findLead(canonicalGroupID)
-	if err != nil {
-		return err
-	}
-	losingID, losingOrder, losingFound, err := findLead(losingGroupID)
-	if err != nil {
-		return err
-	}
-	if !canonicalFound || !losingFound {
-		return nil // sem colisão — no máximo um card entre os dois grupos
-	}
-
-	loserID := canonicalID
-	if losingOrder > canonicalOrder {
-		loserID = losingID
-	}
-	_, err = tx.Exec(ctx, `DELETE FROM crm_leads WHERE id = $1`, loserID)
-	return err
 }

@@ -54,6 +54,7 @@ var supportedCheckoutPlatforms = map[string]struct{}{
 	"vega":       {},
 	"yampi":      {},
 	"pagtrust":   {},
+	"onixpay":    {},
 }
 
 // IsSupportedCheckoutPlatform valida se o slug corresponde a um checkout homologado.

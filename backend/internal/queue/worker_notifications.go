@@ -118,7 +118,7 @@ func notifyWhatsAppStateChange(deps Deps, inst *domain.WhatsAppInstance, nowConn
 		Body:        fmt.Sprintf("A conexão \"%s\" (%s) %s.", inst.Name, prov, verb),
 		ActionURL:   "/integracoes/whatsapp",
 		CooldownKey: fmt.Sprintf("wa_conn:%d:%s", inst.ID, stateKey),
-		CooldownTTL: 20 * time.Second,
+		CooldownTTL: 5 * time.Minute,
 	})
 }
 

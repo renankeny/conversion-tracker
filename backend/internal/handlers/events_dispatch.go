@@ -96,6 +96,9 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 	eventID := req.EventID
 	if eventID == "" && req.EventType == domain.EventPurchase {
 		eventID = strings.TrimSpace(util.FirstNonEmpty(req.OrderID, req.OrderIDAlt))
+		if eventID == "" {
+			eventID = "web_pur:" + util.GenerateID10()
+		}
 	}
 	if eventID == "" {
 		eventID = util.GenerateID10()
@@ -159,20 +162,32 @@ func (h *Events) handle(w http.ResponseWriter, r *http.Request, req sendRequest)
 		}
 		orderID := strings.TrimSpace(util.FirstNonEmpty(req.OrderID, req.OrderIDAlt))
 		var tuID int64
+		var tuGroupID *int64
 		if tu, err := h.users.FindByExternalIDByAccount(ctx, req.UserID, pixel.AccountID); err == nil && tu != nil {
 			tuID = tu.ID
+			tuGroupID = tu.GroupID
 		}
-		if h.sentEvents != nil {
-			if dup, _ := h.sentEvents.HasDuplicateExternalPurchase(ctx, pixel.AccountID, tuID, req.UserID, pixel.Name, orderID, *valPtr, time.Now()); dup {
-				if h.crmRepo != nil && tuID > 0 {
-					if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, pixel.AccountID, tuID, *valPtr, false); synced && h.rdb != nil {
-						wshub.PublishCustom(ctx, h.rdb, pixel.AccountID, "crm_updated", map[string]any{"action": "web_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
-					}
+		now := time.Now()
+		dupInFlight := cache.HasInFlightMatchingPurchase(
+			ctx, h.rdb, pixel.AccountID, pixel.Name, tuGroupID, tuID,
+			req.UserID, phone, email, orderID, orderID == "", *valPtr, now,
+		)
+		dupDB := false
+		if !dupInFlight && h.sentEvents != nil {
+			dupDB, _ = h.sentEvents.HasDuplicateExternalPurchase(ctx, pixel.AccountID, tuID, req.UserID, pixel.Name, orderID, *valPtr, now)
+		}
+		if dupInFlight || dupDB {
+			if h.crmRepo != nil && tuID > 0 {
+				if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, pixel.AccountID, tuID, *valPtr, false); synced && h.rdb != nil {
+					wshub.PublishCustom(ctx, h.rdb, pixel.AccountID, "crm_updated", map[string]any{"action": "web_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
 				}
-				writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true, "event_id": eventID})
-				return
 			}
+			writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true, "event_id": eventID})
+			return
 		}
+		cache.RecordInFlightPurchase(ctx, h.rdb, pixel.AccountID, pixel.Name, tuGroupID, tuID, req.UserID, phone, email, cache.InFlightPurchase{
+			EventID: eventID, OrderID: orderID, IsNonOrder: orderID == "", Value: *valPtr,
+		})
 		if h.crmRepo != nil && tuID > 0 {
 			if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, pixel.AccountID, tuID, *valPtr, true); synced && h.rdb != nil {
 				wshub.PublishCustom(ctx, h.rdb, pixel.AccountID, "crm_updated", map[string]any{"action": "web_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})

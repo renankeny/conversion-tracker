@@ -2,9 +2,10 @@ package repo
 
 import (
 	"context"
-	"math"
 	"strings"
 	"time"
+
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 )
 
 func (r *SentEventRepo) groupExternalIDsForUser(ctx context.Context, accountID, trackedUserID int64, fallbackExtID string) []string {
@@ -46,7 +47,7 @@ func (r *SentEventRepo) groupExternalIDsForUser(ctx context.Context, accountID, 
 	return ids
 }
 
-// HasLeadConversionSent verifica se Lead, LeadSubmitted ou QualifiedLead já foi enviado
+// HasLeadConversionSent verifica se Lead, LeadSubmitted ou QualifiedLead já foi enviado ou enfileirado
 // por qualquer fonte (CTWA 1ª/3ª msg, frase-gatilho, IA, pixel web ou CRM) para a pessoa.
 func (r *SentEventRepo) HasLeadConversionSent(ctx context.Context, accountID, trackedUserID int64, externalID, pixelName string) (bool, error) {
 	extIDs := r.groupExternalIDsForUser(ctx, accountID, trackedUserID, externalID)
@@ -62,13 +63,18 @@ func (r *SentEventRepo) HasLeadConversionSent(ctx context.Context, accountID, tr
 			  AND external_id = ANY($3::text[])
 			  AND event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead')
 			  AND channel <> 'internal'
-			  AND status = 'sent'
+			  AND status IN ('sent', 'queued')
 		)
 	`, accountID, pixelName, extIDs).Scan(&exists)
 	return exists, err
 }
 
-// HasMatchingPurchaseSent evita duplicar uma venda caso webhook, gatilho, IA ou Kanban já tenha enviado Purchase.
+// IsNonOrderPurchaseEventID identifica vendas sem order_id real de gateway.
+func IsNonOrderPurchaseEventID(eventID string) bool {
+	return cache.IsNonOrderPurchaseEventID(eventID)
+}
+
+// HasMatchingPurchaseSent evita duplicar uma venda disparada por fontes sem order_id (CRM, IA, Gatilho, Manual).
 func (r *SentEventRepo) HasMatchingPurchaseSent(
 	ctx context.Context,
 	accountID, trackedUserID int64,
@@ -76,67 +82,12 @@ func (r *SentEventRepo) HasMatchingPurchaseSent(
 	amount float64,
 	aroundTime time.Time,
 ) (bool, error) {
-	extIDs := r.groupExternalIDsForUser(ctx, accountID, trackedUserID, externalID)
-	if len(extIDs) == 0 || pixelName == "" {
-		return false, nil
-	}
-	if aroundTime.IsZero() {
-		aroundTime = time.Now()
-	}
-	winStart := aroundTime.Add(-24 * time.Hour)
-	winEnd := aroundTime.Add(4 * time.Hour)
-
-	rows, err := r.pool.Query(ctx, `
-		SELECT purchase_value, created_at
-		FROM sent_events
-		WHERE account_id = $1
-		  AND pixel_name = $2
-		  AND external_id = ANY($3::text[])
-		  AND event_name = 'Purchase'
-		  AND channel <> 'internal'
-		  AND status = 'sent'
-		  AND created_at >= $4 AND created_at <= $5
-	`, accountID, pixelName, extIDs, winStart, winEnd)
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var sentVal float64
-		var sentAt time.Time
-		if err := rows.Scan(&sentVal, &sentAt); err != nil {
-			continue
-		}
-		if amount > 0 && sentVal > 0 && math.Abs(sentVal-amount) <= 1.00 {
-			return true, nil
-		}
-		diff := sentAt.Sub(aroundTime)
-		if diff < 0 {
-			diff = -diff
-		}
-		if (amount <= 0 || sentVal <= 0) && diff <= 2*time.Hour {
-			return true, nil
-		}
-	}
-	return false, rows.Err()
+	return r.HasDuplicateExternalPurchase(ctx, accountID, trackedUserID, externalID, pixelName, "", amount, aroundTime)
 }
 
-// IsNonOrderPurchaseEventID identifica vendas disparadas pelo CRM, IA, gatilho de frase ou confirmação manual,
-// permitindo impedir reenvio duplicado caso o Webhook/API chegue logo depois para a mesma venda.
-func IsNonOrderPurchaseEventID(eventID string) bool {
-	id := strings.TrimSpace(eventID)
-	return strings.HasPrefix(id, "crm_pur:") ||
-		strings.HasPrefix(id, "crm:") ||
-		strings.HasPrefix(id, "ai_sale:") ||
-		strings.HasPrefix(id, "wpp_manual_") ||
-		strings.HasPrefix(id, "pur_") ||
-		strings.HasSuffix(id, ":Purchase")
-}
-
-// HasDuplicateExternalPurchase verifica se uma venda recebida via Webhook, API ou Tracker Web já foi
-// enviada anteriormente (pelo mesmo order_id, sem order_id após outra venda igual, ou após baixa manual no CRM/IA/WhatsApp),
-// preservando compras reais distintas quando houver dois order_ids de checkout diferentes.
+// HasDuplicateExternalPurchase verifica se uma venda recebida via Webhook, API, Tracker Web, CRM ou IA
+// já foi enviada/enfileirada anteriormente para o mesmo comprador/grupo, preservando compras distintas
+// quando ambos os eventos possuem order_ids reais de checkout diferentes.
 func (r *SentEventRepo) HasDuplicateExternalPurchase(
 	ctx context.Context,
 	accountID, trackedUserID int64,
@@ -151,19 +102,20 @@ func (r *SentEventRepo) HasDuplicateExternalPurchase(
 	if aroundTime.IsZero() {
 		aroundTime = time.Now()
 	}
-	winStart := aroundTime.Add(-24 * time.Hour)
-	winEnd := aroundTime.Add(4 * time.Hour)
+	winStart := aroundTime.Add(-72 * time.Hour)
+	winEnd := aroundTime.Add(12 * time.Hour)
 	orderNorm := strings.TrimSpace(incomingOrderID)
+	incomingIsNonOrder := orderNorm == "" || IsNonOrderPurchaseEventID(orderNorm)
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT event_id, purchase_value
+		SELECT event_id, COALESCE(input_json->>'order_id', ''), purchase_value, created_at
 		FROM sent_events
 		WHERE account_id = $1
 		  AND pixel_name = $2
 		  AND external_id = ANY($3::text[])
 		  AND event_name = 'Purchase'
 		  AND channel <> 'internal'
-		  AND status = 'sent'
+		  AND status IN ('sent', 'queued')
 		  AND created_at >= $4 AND created_at <= $5
 	`, accountID, pixelName, extIDs, winStart, winEnd)
 	if err != nil {
@@ -172,19 +124,13 @@ func (r *SentEventRepo) HasDuplicateExternalPurchase(
 	defer rows.Close()
 
 	for rows.Next() {
-		var evID string
+		var evID, storedOrd string
 		var sentVal float64
-		if err := rows.Scan(&evID, &sentVal); err != nil {
+		var sentAt time.Time
+		if err := rows.Scan(&evID, &storedOrd, &sentVal, &sentAt); err != nil {
 			continue
 		}
-		if orderNorm != "" && strings.EqualFold(strings.TrimSpace(evID), orderNorm) {
-			return true, nil
-		}
-		sameVal := amount > 0 && sentVal > 0 && math.Abs(sentVal-amount) <= 1.00
-		if !sameVal {
-			continue
-		}
-		if orderNorm == "" || IsNonOrderPurchaseEventID(evID) {
+		if cache.MatchCrossSourcePurchase(evID, storedOrd, sentVal, sentAt, orderNorm, incomingIsNonOrder, amount, aroundTime) {
 			return true, nil
 		}
 	}

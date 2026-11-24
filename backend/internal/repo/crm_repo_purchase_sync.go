@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"math"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -40,9 +41,60 @@ func (r *CRMRepo) ResolvePurchaseStageID(ctx context.Context, accountID int64) i
 	return stageID
 }
 
-// SyncOrCreateLeadOnPurchase move o card existente para a coluna de Vendas com o valor,
+// ConfirmedPurchaseLTV retorna a quantidade de vendas distintas já enviadas ('sent') em sent_events
+// e a soma real de LTV desse comprador/grupo, impedindo somar duas vezes estimativas manuais do card.
+func (r *CRMRepo) ConfirmedPurchaseLTV(ctx context.Context, accountID, trackedUserID int64) (int, float64) {
+	if accountID <= 0 || trackedUserID <= 0 {
+		return 0, 0
+	}
+	var cnt int
+	var total float64
+	_ = r.pool.QueryRow(ctx, `
+		SELECT COUNT(*), COALESCE(SUM(t.max_val), 0)
+		FROM (
+			SELECT MAX(se.purchase_value) AS max_val
+			FROM sent_events se
+			WHERE se.account_id = $1
+			  AND se.event_name = 'Purchase'
+			  AND se.channel <> 'internal'
+			  AND se.status = 'sent'
+			  AND se.external_id IN (
+				SELECT u.external_id FROM tracked_users u
+				WHERE u.account_id = $1
+				  AND u.external_id <> ''
+				  AND (
+					u.id = $2
+					OR (u.group_id IS NOT NULL AND u.group_id = (SELECT group_id FROM tracked_users WHERE id = $2 AND account_id = $1))
+				  )
+			  )
+			GROUP BY se.pixel_name, se.event_id
+		) t
+	`, accountID, trackedUserID).Scan(&cnt, &total)
+	return cnt, total
+}
+
+func (r *CRMRepo) ComputeNextPurchaseLeadValue(
+	ctx context.Context,
+	accountID, trackedUserID int64,
+	curValue, saleValue float64,
+	accumulateNewPurchase bool,
+) float64 {
+	if saleValue <= 0 {
+		return curValue
+	}
+	priorCount, priorTotal := r.ConfirmedPurchaseLTV(ctx, accountID, trackedUserID)
+	if priorCount == 0 {
+		// 1ª venda real: substitui eventual valor manual estimado no card em vez de somar 2x.
+		return saleValue
+	}
+	if accumulateNewPurchase {
+		return priorTotal + saleValue
+	}
+	return math.Max(priorTotal, saleValue)
+}
+
+// SyncOrCreateLeadOnPurchase move o card existente para a coluna de Vendas com o valor real,
 // ou cria automaticamente o card na coluna de Vendas caso o comprador ainda não estivesse no CRM.
-// Atualiza direto no banco (sem disparar MoveLead HTTP), evitando qualquer reenvio duplicado à Meta.
 func (r *CRMRepo) SyncOrCreateLeadOnPurchase(
 	ctx context.Context,
 	accountID, trackedUserID int64,
@@ -112,16 +164,7 @@ func (r *CRMRepo) SyncOrCreateLeadOnPurchase(
 	}
 
 	alreadyInTarget := curStageID != nil && *curStageID == targetStageID
-	nextVal := curValue
-	if !alreadyInTarget {
-		if val > 0 {
-			nextVal = val
-		}
-	} else if accumulateIfAlreadyWon && val > 0 {
-		nextVal = curValue + val
-	} else if curValue <= 0 && val > 0 {
-		nextVal = val
-	}
+	nextVal := r.ComputeNextPurchaseLeadValue(ctx, accountID, trackedUserID, curValue, val, accumulateIfAlreadyWon)
 
 	if alreadyInTarget && nextVal == curValue {
 		return existingID, false

@@ -2,7 +2,7 @@
   <div class="links-section">
     <div class="top-bar">
       <div class="top-info">
-        <h4 class="sec-title">Links Rastreáveis de WhatsApp</h4>
+        <h4 class="sec-title">Links Rastreáveis</h4>
         <p class="sec-desc">
           Gere links curtos para Bio do Instagram, Stories, YouTube ou anúncios diretos que redirecionam para o WhatsApp conectado e rastreiam cliques, conversas e vendas.
         </p>

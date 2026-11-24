@@ -1,8 +1,11 @@
 package queue
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 )
 
 func TestParseUazapiMessageEvent_RealCTWAPayload(t *testing.T) {
@@ -134,6 +137,44 @@ func TestParseUazapiMessageEvent_IgnoresAPISentAndGroups(t *testing.T) {
 	}`)
 	if parsed, _ := ParseUazapiMessageEvent(groupMsg); parsed != nil {
 		t.Fatal("expected group message to be ignored")
+	}
+}
+
+func TestParseUazapiMessageEvent_RejectsArbitraryCRMLeadFields(t *testing.T) {
+	crmNoise := json.RawMessage(`{
+		"EventType": "messages",
+		"owner": "551832653991",
+		"chat": {
+			"phone": "5518997463184",
+			"wa_chatid": "5518997463184@s.whatsapp.net",
+			"lead_field10": "cliente_organico_vip",
+			"lead_field11": "5518997463184",
+			"lead_field12": "whatsapp"
+		},
+		"message": {
+			"messageid": "MSG_ORG_1",
+			"chatid": "5518997463184@s.whatsapp.net",
+			"fromMe": false,
+			"text": "Oi, vim por indicação de um amigo"
+		}
+	}`)
+	parsed, err := ParseUazapiMessageEvent(crmNoise)
+	if err != nil || parsed == nil {
+		t.Fatalf("expected parsed organic message, got err=%v", err)
+	}
+	if parsed.CtwaClid != "" || parsed.SourceID != "" {
+		t.Fatalf("expected arbitrary CRM lead_field10/11 to be rejected, got clid=%q sid=%q", parsed.CtwaClid, parsed.SourceID)
+	}
+
+	// Sem protocolo e sem CTWA real, resolveOrCreatePortalLead deve ignorar 100%.
+	inst := &domain.WhatsAppInstance{ID: 1, AccountID: 1, PixelID: 1}
+	if u, orig := resolveOrCreatePortalLead(context.Background(), Deps{}, inst, parsed, "", "5518997463184", ""); u != nil || orig != "" {
+		t.Fatalf("expected untracked message without protocol or CTWA to be ignored, got u=%v orig=%q", u, orig)
+	}
+	// Mensagem enviada pelo atendente também nunca pode criar lead no portal.
+	outMsg := &ParsedWhatsAppMessage{MessageID: "OUT1", IsFromMe: true, Content: "Protocolo: ABC1234567"}
+	if u, _ := resolveOrCreatePortalLead(context.Background(), Deps{}, inst, outMsg, "ABC1234567", "5518997463184", ""); u != nil {
+		t.Fatal("expected outbound attendant message to never open a new portal lead")
 	}
 }
 

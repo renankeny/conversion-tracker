@@ -1,9 +1,9 @@
 package repo
 
 const (
-	waChatIsMetaSQL   = `(c.origin_type IN ('meta_ads_ctwa', 'meta_ads_lp') OR (c.origin_type NOT IN ('google_ads', 'tiktok_ads') AND (c.ctwa_clid <> '' OR c.source_id <> '' OR (u.id IS NOT NULL AND ` + metaSourceSQL + `))))`
-	waChatIsGoogleSQL = `(c.origin_type = 'google_ads' OR (c.origin_type NOT IN ('meta_ads_ctwa', 'meta_ads_lp', 'tiktok_ads') AND u.id IS NOT NULL AND ` + googleSourceSQL + `))`
-	waChatIsTikTokSQL = `(c.origin_type = 'tiktok_ads' OR (c.origin_type NOT IN ('meta_ads_ctwa', 'meta_ads_lp', 'google_ads') AND u.id IS NOT NULL AND (u.ttclid <> '' OR u.last_utm_source ILIKE '%tiktok%' OR u.first_utm_source ILIKE '%tiktok%')))`
+	waChatIsMetaSQL   = `(c.origin_type IN ('meta_ads_ctwa', 'meta_ads_lp') OR (c.origin_type NOT IN ('google_ads', 'tiktok_ads', 'bio_link_organic', 'website_organic') AND (c.ctwa_clid <> '' OR c.source_id <> '' OR (u.id IS NOT NULL AND ` + metaSourceSQL + `))))`
+	waChatIsGoogleSQL = `(c.origin_type = 'google_ads' OR (c.origin_type NOT IN ('meta_ads_ctwa', 'meta_ads_lp', 'tiktok_ads', 'bio_link_organic', 'website_organic') AND u.id IS NOT NULL AND ` + googleSourceSQL + `))`
+	waChatIsTikTokSQL = `(c.origin_type = 'tiktok_ads' OR (c.origin_type NOT IN ('meta_ads_ctwa', 'meta_ads_lp', 'google_ads', 'bio_link_organic', 'website_organic') AND u.id IS NOT NULL AND ` + tiktokSourceSQL + `))`
 )
 
 // waChatPeriodEntrySQL avalia se a conversa WhatsApp (alias c) teve entrada legítima

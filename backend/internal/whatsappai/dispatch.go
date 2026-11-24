@@ -7,6 +7,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
+	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
 
 type EventEnqueuer interface {
@@ -106,5 +107,28 @@ func buildAISendEventInput(
 		Value:            value,
 		Currency:         domain.NormalizeWhatsAppCurrency(util.FirstNonEmpty(currency, cand.Currency)),
 		CRMSynced:        true,
+	}
+}
+
+func resolveValidMsgID(msgID, fallbackID int64, msgByID map[int64]*domain.WhatsAppMessage) int64 {
+	if msgID > 0 {
+		if _, ok := msgByID[msgID]; ok {
+			return msgID
+		}
+	}
+	return fallbackID
+}
+
+func (a *Analyzer) publishUpdates(ctx context.Context, accountID int64, ev *domain.WhatsAppAIEvent, crmChanged bool) {
+	if a.Redis == nil {
+		return
+	}
+	wshub.PublishCustom(ctx, a.Redis, accountID, "whatsapp_ai_event", map[string]any{
+		"chat_id": ev.ChatID, "crm_lead_id": ev.CRMLeadID, "tracked_user_id": ev.TrackedUserID, "ai_event": ev,
+	})
+	if crmChanged {
+		wshub.PublishCustom(ctx, a.Redis, accountID, "crm_updated", map[string]any{
+			"action": "whatsapp_ai_synced", "lead_id": ev.CRMLeadID, "event": ev.EventType,
+		})
 	}
 }

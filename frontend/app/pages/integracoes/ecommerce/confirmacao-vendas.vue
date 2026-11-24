@@ -93,9 +93,9 @@
 
     <ConfirmModal
       v-model="confirmModalOpen"
-      title="Confirmar Venda"
-      :message="saleToConfirm ? `Deseja enviar um evento de Compra (Purchase) no valor de ${formatCurrency(saleToConfirm.purchase_value)} para o Facebook?` : ''"
-      confirm-label="Confirmar e Enviar"
+      :title="saleToConfirm?.event_name === 'Purchase' ? 'Reenviar Venda' : 'Confirmar Venda'"
+      :message="saleToConfirm ? (saleToConfirm.event_name === 'Purchase' ? `Deseja reenviar o mesmo evento Purchase (${saleToConfirm.event_id}) no valor de ${formatCurrency(saleToConfirm.purchase_value)} sem duplicar a venda?` : `Deseja confirmar o pagamento e enviar o evento Purchase no valor de ${formatCurrency(saleToConfirm.purchase_value)}?`) : ''"
+      :confirm-label="saleToConfirm?.event_name === 'Purchase' ? 'Reenviar Evento' : 'Confirmar e Enviar'"
       variant="primary"
       :loading="confirming === (saleToConfirm?.event_id || '')"
       @confirm="executeConfirmSale"
@@ -162,9 +162,10 @@ const executeConfirmSale = async () => {
       event_id: sale.event_id,
       pixel_name: sale.pixel_name,
     })
+    const wasAlreadyPurchase = sale.event_name === 'Purchase'
     const target = sales.value.find((s) => s.event_id === sale.event_id)
     if (target) target.event_name = 'Purchase'
-    toast.success('Sucesso', 'Venda confirmada com sucesso! Evento Purchase enviado para a Meta.')
+    toast.success('Sucesso', wasAlreadyPurchase ? 'Evento Purchase reenviado com o mesmo identificador sem duplicar.' : 'Venda confirmada com sucesso! Evento Purchase enviado.')
     confirmModalOpen.value = false
     await fetchSales()
   } catch (err: unknown) {

@@ -28,6 +28,7 @@ func registerWebhookRoutes(r chi.Router, h routeHandlers) {
 		r.Post("/webhooks/kiwify", h.webhooks.Kiwify)
 		r.Post("/webhooks/lastlink", h.webhooks.Lastlink)
 		r.Post("/webhooks/monetizze", h.webhooks.Monetizze)
+		r.Post("/webhooks/onixpay", h.webhooks.OnixPay)
 		r.Post("/webhooks/pagtrust", h.webhooks.PagTrust)
 		r.Post("/webhooks/pepper", h.webhooks.Pepper)
 		r.Post("/webhooks/perfectpay", h.webhooks.PerfectPay)

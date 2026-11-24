@@ -42,38 +42,49 @@ export const useCrmHelpers = () => {
     return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit' }).format(new Date(dateStr))
   }
 
+  const ORGANIC_MEDIUMS = new Set([
+    'organic', 'organico', 'orgânico', 'social', 'social-network', 'social_organic',
+    'referral', 'referencia', 'bio', 'link_rastreavel', 'linktree', 'perfil',
+    'qr', 'qrcode', 'direct', 'direto', 'none', '(none)', 'email', 'newsletter', 'seo',
+  ])
+  const PAID_MEDIUM_REGEX = /^(cpc|ppc|paid|ads|ad|cpm|cpa|paid_social|paidsocial|paid-social|social_paid|pmax|display|remarketing|retargeting|ctwa|sponsored|impulsionar|impulsionamento|trafego_pago|trafego-pago|paid_.*|.*_ads|.*pago.*)$/i
+
   const getOriginBadge = (tu?: Partial<TrackedUser> | null): CrmOriginBadge | null => {
     if (!tu) return null
     const src = cleanUtmValue(tu.last_utm_source || tu.first_utm_source).toLowerCase()
+    const med = cleanUtmValue(tu.last_utm_medium || tu.first_utm_medium).toLowerCase()
+    const isOrganicMed = ORGANIC_MEDIUMS.has(med)
+    const isPaidMed = PAID_MEDIUM_REGEX.test(med)
+    const isBioLink = Boolean(tu.trackable_link_id) && !isPaidMed
 
-    if (tu.ctwa_clid) {
+    if (tu.ctwa_clid || tu.wa_ad_id) {
       return { label: 'Meta CTWA', class: 'origin-meta' }
     }
-    if (
-      src.includes('facebook') ||
-      src.includes('instagram') ||
-      src.includes('meta') ||
-      src === 'fb' ||
-      src === 'ig' ||
-      tu.fbc
-    ) {
+    if (tu.fbc || ['meta_ads', 'facebook_ads', 'fb_ads', 'ig_ads', 'instagram_ads', 'an'].includes(src)) {
       return { label: 'Meta Ads', class: 'origin-meta' }
     }
-    if (
-      src.includes('google') ||
-      src.includes('adwords') ||
-      src.includes('youtube') ||
-      tu.gclid ||
-      tu.wbraid ||
-      tu.gbraid
-    ) {
+    if (tu.gclid || tu.wbraid || tu.gbraid || ['adwords', 'gads', 'google_ads', 'googleads'].includes(src)) {
       return { label: 'Google Ads', class: 'origin-google' }
     }
-    if (src.includes('tiktok') || src === 'tt' || tu.ttclid) {
+    if (tu.ttclid || src === 'tiktok_ads') {
       return { label: 'TikTok', class: 'origin-tiktok' }
     }
-    if (src.includes('direto') || src.includes('direct') || src.includes('organic')) {
-      return { label: 'Direto', class: 'origin-direct' }
+    if (isBioLink || med === 'bio' || med === 'link_rastreavel') {
+      return { label: 'Link na Bio', class: 'origin-other' }
+    }
+    if (!isOrganicMed) {
+      if (src.includes('facebook') || src.includes('instagram') || src.includes('meta') || src === 'fb' || src === 'ig') {
+        return { label: 'Meta Ads', class: 'origin-meta' }
+      }
+      if (src.includes('google') || src.includes('youtube')) {
+        return { label: 'Google Ads', class: 'origin-google' }
+      }
+      if (src.includes('tiktok') || src === 'tt') {
+        return { label: 'TikTok', class: 'origin-tiktok' }
+      }
+    }
+    if (src.includes('direto') || src.includes('direct') || src.includes('organic') || isOrganicMed) {
+      return { label: src && !src.includes('direto') && !src.includes('direct') ? `${src.slice(0, 10)} (Org)` : 'Orgânico', class: 'origin-direct' }
     }
     if (src) {
       return { label: src.slice(0, 14), class: 'origin-other' }

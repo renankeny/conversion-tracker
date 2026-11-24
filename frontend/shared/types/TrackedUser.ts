@@ -1,6 +1,8 @@
 export interface TrackedUser {
   id: number
   account_id?: number
+  group_id?: number | null
+  trackable_link_id?: number | null
   external_id: string
   id_wpp: string
   pixel_name: string

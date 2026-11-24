@@ -68,7 +68,7 @@ func emitWhatsAppStatusNotification(svc *notify.Service, inst *domain.WhatsAppIn
 		Body:        detail + " " + stateVerb + ".",
 		ActionURL:   "/integracoes/whatsapp",
 		CooldownKey: fmt.Sprintf("wa_conn:%d:%s", inst.ID, stateKey),
-		CooldownTTL: 20 * time.Second,
+		CooldownTTL: 5 * time.Minute,
 	})
 }
 

@@ -43,6 +43,7 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 			AccountID: targetAccountID, FirstName: in.FirstName, LastName: in.LastName,
 			Email: in.Email, Phone: in.Phone, FBC: in.FBC, FBP: in.FBP,
 		}
+		applyWebhookTrackingEnrichment(newUser, in)
 		if cerr := h.users.Create(ctx, newUser); cerr != nil {
 			slog.Error("create fallback user from webhook", "err", cerr, "gateway", in.GatewayName)
 		}
@@ -57,6 +58,7 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 	user.Phone = util.FirstNonEmpty(in.Phone, user.Phone)
 	user.FBC = util.FirstNonEmpty(user.FBC, in.FBC)
 	user.FBP = util.FirstNonEmpty(user.FBP, in.FBP)
+	applyWebhookTrackingEnrichment(user, in)
 	if user.PixelName == "" && resolvedQueryPixel != nil {
 		user.PixelName = resolvedQueryPixel.Name
 	}
@@ -93,10 +95,14 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 
 	fbc := util.FirstNonEmpty(user.FBC, in.FBC)
 	fbp := util.FirstNonEmpty(user.FBP, in.FBP)
-	rawURL := util.FirstNonEmpty(user.URL, user.FirstURL)
+	rawURL := util.FirstNonEmpty(user.URL, user.FirstURL, in.SourceURL)
 	sourceURL := ""
 	if rawURL != "" {
-		sourceURL = h.urlMapper.ApplyForAccount(pixel.AccountID, rawURL)
+		if h.urlMapper != nil {
+			sourceURL = h.urlMapper.ApplyForAccount(pixel.AccountID, rawURL)
+		} else {
+			sourceURL = rawURL
+		}
 	}
 
 	itemType := in.OfferType
@@ -109,7 +115,7 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 	}
 	eventID := in.ReplayEventID
 	if eventID == "" {
-		eventID = webhookEventID(in.OrderID, itemType, in.ProductID)
+		eventID = webhookEventIDForEvent(in.EventName, in.OrderID, itemType, in.ProductID)
 	}
 	dedupItemKey := util.FirstNonEmpty(itemType, "main") + ":" + in.ProductID
 	if !in.IsReplay && in.OrderID != "" {
@@ -118,8 +124,17 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 		}
 	}
 
-	if !in.IsReplay && in.EventName == domain.EventPurchase && itemType != "order_bump" && itemType != "upsell" && h.sentEvents != nil {
-		if dup, _ := h.sentEvents.HasDuplicateExternalPurchase(ctx, pixel.AccountID, user.ID, user.ExternalID, pixel.Name, in.OrderID, val, time.Now()); dup {
+	if !in.IsReplay && in.EventName == domain.EventPurchase && itemType != "order_bump" && itemType != "upsell" {
+		now := time.Now()
+		dupInFlight := cache.HasInFlightMatchingPurchase(
+			ctx, h.rdb, pixel.AccountID, pixel.Name, user.GroupID, user.ID,
+			user.ExternalID, user.Phone, user.Email, in.OrderID, in.OrderID == "", val, now,
+		)
+		dupDB := false
+		if !dupInFlight && h.sentEvents != nil {
+			dupDB, _ = h.sentEvents.HasDuplicateExternalPurchase(ctx, pixel.AccountID, user.ID, user.ExternalID, pixel.Name, in.OrderID, val, now)
+		}
+		if dupInFlight || dupDB {
 			if h.crmRepo != nil && user.ID > 0 {
 				if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, pixel.AccountID, user.ID, val, false); synced && h.rdb != nil {
 					wshub.PublishCustom(ctx, h.rdb, pixel.AccountID, "crm_updated", map[string]any{"action": "webhook_purchase_synced", "lead_id": leadID, "event": domain.EventPurchase})
@@ -139,10 +154,18 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 		evTime = util.ClampEventTime(in.ReplayEventTime, time.Now())
 	}
 
+	customerGroupKey := ""
+	if user.GroupID != nil && *user.GroupID > 0 {
+		customerGroupKey = "g:" + strconv.FormatInt(*user.GroupID, 10)
+	} else if user.ID > 0 {
+		customerGroupKey = "u:" + strconv.FormatInt(user.ID, 10)
+	}
+
 	send := domain.SendEventInput{
 		PixelName: pixel.Name, EventName: in.EventName, EventID: eventID, EventTime: evTime,
 		SourceURL: sourceURL, ContentID: util.FirstNonEmpty(in.ProductID, pixel.Name), ContentName: in.ProductName,
 		ContentType: "product", Value: &val, Currency: in.Currency, OrderID: in.OrderID,
+		CustomerGroupKey: customerGroupKey,
 		ItemType: itemType, Gateway: in.GatewayName, ActionSource: actionSource, MessagingChannel: msgChannel,
 		CtwaClid: ctwaClid, PageID: pageID, ExternalID: user.ExternalID, ClientIP: user.ClientIP,
 		ClientUserAgent: user.ClientUserAgent, FBP: fbp, FBC: fbc, Email: user.Email, Phone: user.Phone,
@@ -169,6 +192,11 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 			h.logWebhook(ctx, in, rawInput, pixel.AccountID, pixel.Name, user.ExternalID, "", "failed", "queue error: "+err.Error())
 			return map[string]any{"received": true, "error": "queue error"}, http.StatusInternalServerError
 		}
+	}
+	if !in.IsReplay && in.EventName == domain.EventPurchase {
+		cache.RecordInFlightPurchase(ctx, h.rdb, pixel.AccountID, pixel.Name, user.GroupID, user.ID, user.ExternalID, user.Phone, user.Email, cache.InFlightPurchase{
+			EventID: eventID, OrderID: in.OrderID, IsNonOrder: in.OrderID == "", Value: val,
+		})
 	}
 
 	if h.crmRepo != nil && user.ID > 0 && in.EventName == domain.EventPurchase {

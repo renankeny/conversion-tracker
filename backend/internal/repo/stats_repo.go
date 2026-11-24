@@ -26,6 +26,7 @@ type StatsFilter struct {
 	PixelName     string    // vazio = todos
 	AccountID     int64     // 0 = todos (owner); >0 = filtra (member)
 	TrafficSource string    // all, meta, meta_lp, meta_wpp, google, tiktok
+	GoalMonth     string    // YYYY-MM de referência da Meta Mensal (opcional)
 }
 
 // TrafficQualityStats agrupa métricas de qualidade e auditoria de tráfego.
@@ -53,6 +54,7 @@ type Overview struct {
 	PanelAudit     PanelAudit            `json:"panel_audit"`
 	PreviousPeriod PreviousPeriodMetrics `json:"previous_period"`
 	Heatmap        DashboardHeatmap      `json:"heatmap"`
+	MonthlyGoal    MonthlyGoalMetrics    `json:"monthly_goal"`
 }
 
 // DailyBucket é uma linha da série temporal por dia.
@@ -104,7 +106,7 @@ func (s *StatsRepo) Overview(ctx context.Context, f StatsFilter) (*Overview, err
 		mu.Unlock()
 	}
 
-	wg.Add(5)
+	wg.Add(6)
 	go func() {
 		defer wg.Done()
 		recordErr(s.populateBaseEventStats(ctx, f, out))
@@ -124,6 +126,10 @@ func (s *StatsRepo) Overview(ctx context.Context, f StatsFilter) (*Overview, err
 	go func() {
 		defer wg.Done()
 		s.populatePreviousAndHeatmap(ctx, f, out)
+	}()
+	go func() {
+		defer wg.Done()
+		s.populateMonthlyGoalStats(ctx, f, &out.MonthlyGoal)
 	}()
 	wg.Wait()
 
@@ -164,7 +170,7 @@ func (s *StatsRepo) populateBaseEventStats(ctx context.Context, f StatsFilter, o
 	}
 	where := "WHERE " + strings.Join(conds, " AND ")
 
-	statusQuery := "SELECT e.status, COUNT(DISTINCT e.event_id) FROM " + fromTable + joinClause + " " + where + " GROUP BY e.status"
+	statusQuery := "SELECT e.status, COUNT(DISTINCT e.pixel_name || ':' || e.event_id) FROM " + fromTable + joinClause + " " + where + " GROUP BY e.status"
 	rows, err := s.pool.Query(ctx, statusQuery, args...)
 	if err != nil {
 		return err
@@ -180,7 +186,7 @@ func (s *StatsRepo) populateBaseEventStats(ctx context.Context, f StatsFilter, o
 	}
 	rows.Close()
 
-	eventQuery := "SELECT e.event_name, COUNT(DISTINCT e.event_id) FROM " + fromTable + joinClause + " " + where + " GROUP BY e.event_name ORDER BY 2 DESC"
+	eventQuery := "SELECT CASE WHEN e.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead') THEN 'Lead' ELSE e.event_name END, COUNT(DISTINCT e.pixel_name || ':' || e.event_id) FROM " + fromTable + joinClause + " " + where + " GROUP BY 1 ORDER BY 2 DESC"
 	rows, err = s.pool.Query(ctx, eventQuery, args...)
 	if err != nil {
 		return err
@@ -199,9 +205,9 @@ func (s *StatsRepo) populateBaseEventStats(ctx context.Context, f StatsFilter, o
 
 	dayQuery := `
 		SELECT to_char(date_trunc('day', e.created_at AT TIME ZONE 'America/Sao_Paulo'), 'YYYY-MM-DD') AS day,
-		       COUNT(DISTINCT CASE WHEN e.status='sent'   THEN e.event_id END) AS sent,
-		       COUNT(DISTINCT CASE WHEN e.status='failed' THEN e.event_id END) AS failed,
-		       COUNT(DISTINCT CASE WHEN e.status='queued' THEN e.event_id END) AS queued
+		       COUNT(DISTINCT CASE WHEN e.status='sent'   THEN e.pixel_name || ':' || e.event_id END) AS sent,
+		       COUNT(DISTINCT CASE WHEN e.status='failed' THEN e.pixel_name || ':' || e.event_id END) AS failed,
+		       COUNT(DISTINCT CASE WHEN e.status='queued' THEN e.pixel_name || ':' || e.event_id END) AS queued
 		FROM ` + fromTable + joinClause + ` ` + where + `
 		GROUP BY 1
 		ORDER BY 1 ASC

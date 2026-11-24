@@ -1,12 +1,13 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { computeSaoPauloRange, type DashboardTrafficSource, type PeriodValue } from '~/stores/useDashboardStore'
+import { resolveDashboardGoalMonth } from '~/utils/salesGoalMonths'
 import { errorMessage } from '~/utils/errorMessage'
 import type { GeoStat } from '~/utils/geoCoordinates'
 import type { MetaCreativeInsight } from '~/composables/useDashboard'
 import type {
   AdPlatformLiveInsights, CounterSummaryResponse, CounterSeriesResponse,
   DashboardConfig, DashboardHeatmap, GoogleKeywordInsight, GroupedEvent,
-  PanelAudit, PreviousPeriodMetrics, PublicSalesGoal, SourceBreakdown, TrackableLinksOverview, TrafficQualityStats,
+  MonthlyGoalMetrics, PanelAudit, PreviousPeriodMetrics, PublicSalesGoal, SourceBreakdown, TrackableLinksOverview, TrafficQualityStats,
 } from '#shared/types'
 
 const ADS_CACHE_TTL_MS = 120_000
@@ -50,6 +51,7 @@ export const usePublicDashboardFetch = (token: string) => {
   const recentPurchases = ref<GroupedEvent[]>([])
   const geoData = ref<GeoStat[]>([])
   const totalRevenue = ref(0)
+  const monthlyGoal = ref<MonthlyGoalMetrics | null>(null)
   const trafficQuality = ref<TrafficQualityStats | undefined>(undefined)
   const sourceBreakdown = ref<SourceBreakdown | null>(null)
   const panelAudit = ref<PanelAudit | null>(null)
@@ -103,13 +105,14 @@ export const usePublicDashboardFetch = (token: string) => {
     try {
       const { from, to } = dateRange.value
       const ts = trafficSource.value
+      const goalMonth = resolveDashboardGoalMonth(period.value, customFrom.value, customTo.value)
       const [summary, series, purchases, geo, geoPurchases, revenue, linksRes] = await Promise.all([
         api.summary({ from, to, traffic_source: ts }, ac.signal),
         api.series({ from, to, granularity: granularity.value, traffic_source: ts }, ac.signal),
         api.purchases({ from, to, traffic_source: ts }, ac.signal),
         api.geo({ from, to, traffic_source: ts }, ac.signal),
         api.geoByEvent({ from, to, event: 'Purchase', traffic_source: ts }, ac.signal),
-        api.revenue({ from, to, traffic_source: ts }, ac.signal),
+        api.revenue({ from, to, traffic_source: ts, goal_month: goalMonth }, ac.signal),
         api.trackableLinks({ from, to }, ac.signal).catch(() => null),
       ])
       if (seq !== coreSeq || ac.signal.aborted) return
@@ -118,6 +121,7 @@ export const usePublicDashboardFetch = (token: string) => {
       seriesData.value = series
       recentPurchases.value = purchases.data || []
       totalRevenue.value = revenue.total_revenue ?? 0
+      monthlyGoal.value = revenue.monthly_goal || null
       trackableLinks.value = linksRes
       trafficQuality.value = revenue.traffic_quality
       sourceBreakdown.value = revenue.source_breakdown || null
@@ -222,7 +226,7 @@ export const usePublicDashboardFetch = (token: string) => {
   return {
     period, customFrom, customTo, trafficSource, privacyMode, dateRange, granularity,
     loading, isRefreshing, adsLoading, notFound, metaLoaded, loadError, pixelLabel, currency, dashboardConfig, publicSalesGoal,
-    summaryData, seriesData, recentPurchases, geoData, totalRevenue, trafficQuality,
+    summaryData, seriesData, recentPurchases, geoData, totalRevenue, monthlyGoal, trafficQuality,
     sourceBreakdown, panelAudit, previousPeriod, heatmap, trackableLinks, metaInsights, googleInsights,
     metaCreatives, googleKeywords, refresh, retryLoad,
   }

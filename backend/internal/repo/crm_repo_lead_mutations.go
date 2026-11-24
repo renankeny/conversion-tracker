@@ -143,6 +143,33 @@ func (r *CRMRepo) SyncLeadFromEventTrigger(
 		return r.SyncOrCreateLeadOnPurchase(ctx, accountID, trackedUserID, v, false)
 	}
 
+	var targetStageID int64
+	evNorm := strings.TrimSpace(eventName)
+	if evNorm != "" {
+		_ = r.pool.QueryRow(ctx, `
+			SELECT id FROM crm_stages
+			WHERE account_id = $1
+			  AND (LOWER(trigger_event) = LOWER($2) OR LOWER(trigger_event_ctwa) = LOWER($2))
+			ORDER BY (CASE WHEN order_index > 0 THEN 0 ELSE 1 END) ASC, order_index DESC, id DESC LIMIT 1
+		`, accountID, evNorm).Scan(&targetStageID)
+	}
+	if targetStageID == 0 && (strings.EqualFold(evNorm, "Lead") || strings.EqualFold(evNorm, "LeadSubmitted") || strings.EqualFold(evNorm, "QualifiedLead")) {
+		_ = r.pool.QueryRow(ctx, `
+			SELECT id FROM crm_stages
+			WHERE account_id = $1
+			  AND (
+			    LOWER(trigger_event) IN ('lead', 'leadsubmitted', 'qualifiedlead')
+			    OR LOWER(trigger_event_ctwa) IN ('lead', 'leadsubmitted', 'qualifiedlead')
+			  )
+			ORDER BY (CASE WHEN order_index > 0 THEN 0 ELSE 1 END) ASC, order_index ASC, id ASC LIMIT 1
+		`, accountID).Scan(&targetStageID)
+	}
+
+	val := 0.0
+	if value != nil && *value > 0 {
+		val = *value
+	}
+
 	var leadID int64
 	groupID, _ := r.groupIDOf(ctx, trackedUserID)
 	if groupID != nil && *groupID > 0 {
@@ -158,34 +185,13 @@ func (r *CRMRepo) SyncLeadFromEventTrigger(
 			LIMIT 1
 		`, accountID, trackedUserID).Scan(&leadID)
 	}
+
 	if leadID == 0 {
-		return 0, false
-	}
-
-	var targetStageID int64
-	evNorm := strings.TrimSpace(eventName)
-	if strings.EqualFold(evNorm, "Lead") || strings.EqualFold(evNorm, "LeadSubmitted") || strings.EqualFold(evNorm, "QualifiedLead") {
-		_ = r.pool.QueryRow(ctx, `
-			SELECT id FROM crm_stages
-			WHERE account_id = $1
-			  AND (
-			    LOWER(trigger_event) IN ('lead', 'leadsubmitted', 'qualifiedlead')
-			    OR LOWER(trigger_event_ctwa) IN ('lead', 'leadsubmitted', 'qualifiedlead')
-			  )
-			ORDER BY (CASE WHEN order_index > 0 THEN 0 ELSE 1 END) ASC, order_index ASC, id ASC LIMIT 1
-		`, accountID).Scan(&targetStageID)
-	} else if evNorm != "" {
-		_ = r.pool.QueryRow(ctx, `
-			SELECT id FROM crm_stages
-			WHERE account_id = $1
-			  AND (LOWER(trigger_event) = LOWER($2) OR LOWER(trigger_event_ctwa) = LOWER($2))
-			ORDER BY order_index DESC, id DESC LIMIT 1
-		`, accountID, evNorm).Scan(&targetStageID)
-	}
-
-	val := 0.0
-	if value != nil && *value > 0 {
-		val = *value
+		if targetStageID <= 0 {
+			return 0, false
+		}
+		createdID, _, err := r.CreateOrUpdateLeadAPI(ctx, accountID, trackedUserID, targetStageID, val)
+		return createdID, err == nil && createdID > 0
 	}
 	if targetStageID == 0 && val <= 0 {
 		return leadID, false

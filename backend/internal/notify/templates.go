@@ -52,6 +52,8 @@ func FriendlyGatewayOrigin(gateway string) string {
 		return "CRM"
 	case "api", "s2s":
 		return "API Externa"
+	case "onixpay":
+		return "Onix Pay"
 	default:
 		return strings.ToUpper(g[:1]) + g[1:]
 	}

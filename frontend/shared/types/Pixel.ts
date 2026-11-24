@@ -41,6 +41,7 @@ export interface PublicSalesGoal {
   enabled: boolean
   type: SalesGoalType
   target: number
+  months?: Record<string, number>
 }
 
 export interface DashboardConfig {
@@ -99,6 +100,7 @@ export interface Pixel {
   sales_goal_enabled?: boolean
   sales_goal_type?: SalesGoalType
   sales_goal_target?: number
+  sales_goal_months?: Record<string, number>
 
   created_at: string
   updated_at: string
@@ -137,6 +139,7 @@ export interface PixelInput {
   sales_goal_enabled?: boolean
   sales_goal_type?: SalesGoalType
   sales_goal_target?: number
+  sales_goal_months?: Record<string, number>
   public_show_sales_goal?: boolean
 }
 

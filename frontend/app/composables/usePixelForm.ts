@@ -1,5 +1,6 @@
 import type { Pixel, PixelInput, SalesGoalType, TrackerConfig } from '#shared/types'
 import { validatePixelFormState } from '~/utils/pixelFormValidation'
+import { getCurrentSaoPauloYM } from '~/utils/salesGoalMonths'
 
 export type PixelFormTabKey = 'basic' | 'meta' | 'tiktok' | 'gads' | 'ga4' | 'tracker' | 'links'
 
@@ -63,6 +64,7 @@ export const usePixelForm = (props: { pixel?: Pixel | null; initialTab?: PixelFo
     sales_goal_enabled: false,
     sales_goal_type: 'revenue' as SalesGoalType,
     sales_goal_target: 0,
+    sales_goal_months: {} as Record<string, number>,
     public_show_sales_goal: true,
   })
 
@@ -98,7 +100,7 @@ export const usePixelForm = (props: { pixel?: Pixel | null; initialTab?: PixelFo
       meta_account_id: null, meta_ad_account_id: '', ga4_measurement_id: '', ga4_api_secret: '',
       domains: [], enabled: true, account_id: null, tracker_config: defaultTrackerConfig(),
       aggregation_enabled: false, aggregation_window_minutes: 10,
-      sales_goal_enabled: false, sales_goal_type: 'revenue' as SalesGoalType, sales_goal_target: 0, public_show_sales_goal: true,
+      sales_goal_enabled: false, sales_goal_type: 'revenue' as SalesGoalType, sales_goal_target: 0, sales_goal_months: {}, public_show_sales_goal: true,
     })
     domainsInput.value = ''
     errors.name = ''; errors.pixel_ids = ''; errors.sales_goal = ''
@@ -136,6 +138,12 @@ export const usePixelForm = (props: { pixel?: Pixel | null; initialTab?: PixelFo
     form.sales_goal_enabled = Boolean(pixel.sales_goal_enabled)
     form.sales_goal_type = pixel.sales_goal_type === 'count' ? 'count' : 'revenue'
     form.sales_goal_target = Number(pixel.sales_goal_target) || 0
+    const initialMonths: Record<string, number> = { ...(pixel.sales_goal_months || {}) }
+    const curYM = getCurrentSaoPauloYM()
+    if (form.sales_goal_target > 0 && !initialMonths[curYM]) {
+      initialMonths[curYM] = form.sales_goal_target
+    }
+    form.sales_goal_months = initialMonths
     form.public_show_sales_goal = pixel.dashboard_config?.public_show_sales_goal !== false
     form.tracker_config = { ...defaultTrackerConfig(), ...(pixel.tracker_config || {}) }
     domainsInput.value = (pixel.domains || []).join(', ')
@@ -169,7 +177,18 @@ export const usePixelForm = (props: { pixel?: Pixel | null; initialTab?: PixelFo
     const cleanPrices = (form.tracker_config.product_value || []).filter((n) => typeof n === 'number' && Number.isFinite(n) && n > 0)
     const hasGads = Boolean(form.google_ads_account_id && form.google_ads_account_id > 0)
 
-    const targetNum = Number(form.sales_goal_target) || 0
+    const cleanGoalMonths: Record<string, number> = {}
+    for (const [ym, rawVal] of Object.entries(form.sales_goal_months || {})) {
+      const n = Number(rawVal)
+      if (/^\d{4}-\d{2}$/.test(ym) && Number.isFinite(n) && n > 0) {
+        cleanGoalMonths[ym] = form.sales_goal_type === 'count' ? Math.round(n) : n
+      }
+    }
+    const curYM = getCurrentSaoPauloYM()
+    const targetNum = cleanGoalMonths[curYM] || Number(form.sales_goal_target) || 0
+    if (targetNum > 0 && !cleanGoalMonths[curYM] && Object.keys(cleanGoalMonths).length === 0) {
+      cleanGoalMonths[curYM] = form.sales_goal_type === 'count' ? Math.round(targetNum) : targetNum
+    }
     const payload: PixelInput = {
       name: form.name.trim(),
       label: form.label.trim(),
@@ -184,6 +203,7 @@ export const usePixelForm = (props: { pixel?: Pixel | null; initialTab?: PixelFo
       sales_goal_enabled: form.sales_goal_enabled,
       sales_goal_type: form.sales_goal_type,
       sales_goal_target: form.sales_goal_type === 'count' ? Math.round(targetNum) : targetNum,
+      sales_goal_months: cleanGoalMonths,
       public_show_sales_goal: form.public_show_sales_goal,
       google_ads_account_id: hasGads ? form.google_ads_account_id : 0,
       google_ads_customer_id: hasGads ? form.google_ads_customer_id.trim() : '',

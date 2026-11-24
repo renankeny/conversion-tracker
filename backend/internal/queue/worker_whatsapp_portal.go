@@ -17,28 +17,21 @@ func resolveOrCreatePortalLead(
 	parsed *ParsedWhatsAppMessage,
 	protocolCode, phone, lidDigits string,
 ) (*domain.TrackedUser, string) {
+	if parsed == nil || parsed.IsFromMe {
+		return nil, ""
+	}
 	first, last := splitFullName(parsed.PushName)
 
-	// Portal 1: Protocolo injetado pelo tracker.js (Site / LP / Link na Bio)
+	// Portal 1: Protocolo válido gerado pelo tracker.js (Site / LP / Link Rastreável).
+	// Se o visitante apagou o protocolo ou enviou um texto que não existe em tracked_users,
+	// não cria lead nem conversa para evitar capturar contatos orgânicos puros.
 	if protocolCode != "" {
+		if deps.Users == nil {
+			return nil, ""
+		}
 		u, _ := deps.Users.FindByProtocolByAccount(ctx, protocolCode, inst.AccountID)
-		if u == nil && phone != "" {
-			u, _ = deps.Users.FindByPhoneVariantsByAccount(ctx, util.PhoneVariants(phone), inst.AccountID)
-		}
-		if u == nil && lidDigits != "" {
-			u, _ = deps.Users.FindByWaLIDByAccount(ctx, lidDigits, inst.AccountID)
-		}
 		if u == nil {
-			pixel, err := deps.Pixels.FindByID(ctx, inst.PixelID)
-			if err != nil || pixel == nil {
-				return nil, ""
-			}
-			u = &domain.TrackedUser{
-				ExternalID: protocolCode,
-				IDWpp:      protocolCode,
-				AccountID:  inst.AccountID,
-				PixelName:  pixel.Name,
-			}
+			return nil, ""
 		}
 		hydrateWhatsAppUserFields(u, phone, lidDigits, first, last, parsed)
 		_ = deps.Users.Upsert(ctx, u)
@@ -50,8 +43,11 @@ func resolveOrCreatePortalLead(
 		return u, ClassifyPortalOrigin(parsed.CtwaClid, parsed.SourceID, u)
 	}
 
-	// Portal 2: Meta Ads CTWA Direto (ctwaClid ou referral.sourceID)
+	// Portal 2: Meta Ads CTWA Direto (ctwaClid ou referral.sourceID genuíno do anúncio)
 	if parsed.CtwaClid != "" || parsed.SourceID != "" {
+		if deps.Pixels == nil || deps.Users == nil {
+			return nil, ""
+		}
 		pixel, err := deps.Pixels.FindByID(ctx, inst.PixelID)
 		if err != nil || pixel == nil {
 			return nil, ""
@@ -72,6 +68,7 @@ func resolveOrCreatePortalLead(
 				AccountID:      inst.AccountID,
 				PixelName:      pixel.Name,
 				FirstUTMSource: util.FirstNonEmpty(parsed.SourceApp, "facebook"),
+				FirstUTMMedium: "ctwa",
 			}
 		}
 		hydrateWhatsAppUserFields(u, phone, lidDigits, first, last, parsed)
@@ -84,6 +81,7 @@ func resolveOrCreatePortalLead(
 		} else if u.LastUTMSource == "" {
 			u.LastUTMSource = "facebook"
 		}
+		u.LastUTMMedium = "ctwa"
 		if err := deps.Users.Upsert(ctx, u); err != nil {
 			slog.Warn("upsert ctwa tracked user failed", "err", err)
 			return nil, ""
@@ -94,25 +92,6 @@ func resolveOrCreatePortalLead(
 			}
 		}
 		return u, domain.WhatsAppOriginMetaCTWA
-	}
-
-	// Portal 3: Visitante já rastreado na conta pelo telefone ou @lid (preencheu form/checkout na LP e chamou sem protocolo)
-	var existingUser *domain.TrackedUser
-	if phone != "" {
-		existingUser, _ = deps.Users.FindByPhoneVariantsByAccount(ctx, util.PhoneVariants(phone), inst.AccountID)
-	}
-	if existingUser == nil && lidDigits != "" {
-		existingUser, _ = deps.Users.FindByWaLIDByAccount(ctx, lidDigits, inst.AccountID)
-	}
-	if existingUser != nil {
-		hydrateWhatsAppUserFields(existingUser, phone, lidDigits, first, last, parsed)
-		_ = deps.Users.Upsert(ctx, existingUser)
-		if phone != "" {
-			if stitched, lerr := deps.Users.ResolveAndLink(ctx, inst.AccountID, existingUser.ExternalID, phone, existingUser.Email); lerr == nil && stitched != nil {
-				existingUser = stitched
-			}
-		}
-		return existingUser, ClassifyPortalOrigin(parsed.CtwaClid, parsed.SourceID, existingUser)
 	}
 
 	return nil, ""

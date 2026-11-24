@@ -7,6 +7,11 @@ import {
   type CardFormat, type DashboardMetricsContext, type EventCatalogEntry,
 } from '~/utils/dashboardEventCatalog'
 import { computeCardRichDetails, type CardRichDetails } from '~/utils/dashboardCardDetails'
+import {
+  formatGoalMonthLabel,
+  resolveDashboardGoalMonth,
+  resolveSalesGoalTargetForMonth,
+} from '~/utils/salesGoalMonths'
 import type { CounterSummaryRow, DashboardConfig, GroupedEvent, SalesGoalType } from '#shared/types'
 
 export interface DashboardVisibleCard extends CardRichDetails {
@@ -38,7 +43,7 @@ export const useDashboardView = () => {
   const {
     loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, sourceBreakdown,
     panelAudit, previousPeriod, heatmap, metaInsights, googleInsights, metaCreatives,
-    googleKeywords, recentPurchases, geoData, totalRevenue, trackableLinks, refresh,
+    googleKeywords, recentPurchases, geoData, totalRevenue, monthlyGoal, trackableLinks, refresh,
   } = useDashboardFetch(selectedPixel)
 
   const purchaseModalOpen = ref(false)
@@ -121,10 +126,16 @@ export const useDashboardView = () => {
 
   const salesGoal = computed(() => {
     const p = selectedPixelObj.value
-    if (!p?.sales_goal_enabled || !p.sales_goal_target || p.sales_goal_target <= 0) return null
+    if (!p?.sales_goal_enabled) return null
+    const goalMonth = resolveDashboardGoalMonth(dashboardStore.period, dashboardStore.customFrom, dashboardStore.customTo)
+    const target = resolveSalesGoalTargetForMonth(p.sales_goal_target, p.sales_goal_months, goalMonth)
+    if (target <= 0) return null
     const type: SalesGoalType = p.sales_goal_type === 'count' ? 'count' : 'revenue'
-    const current = type === 'count' ? resolvePanelPurchases(metricsCtx.value) : totalRevenue.value
-    return { type, target: p.sales_goal_target, current }
+    const mg = monthlyGoal.value
+    const current = mg && mg.month === goalMonth
+      ? (type === 'count' ? mg.purchases : mg.revenue)
+      : (type === 'count' ? resolvePanelPurchases(metricsCtx.value) : totalRevenue.value)
+    return { type, target, current, periodLabel: formatGoalMonthLabel(goalMonth, true) }
   })
 
   const visibleCards = computed<DashboardVisibleCard[]>(() => {

@@ -43,4 +43,18 @@ type WebhookPurchaseInput struct {
 	IsOrderBump       bool    `json:"is_order_bump,omitempty"`
 	IsUpsell          bool    `json:"is_upsell,omitempty"`
 	OfferType         string  `json:"offer_type,omitempty"`
+	ClientIP          string  `json:"client_ip,omitempty"`
+	ClientUserAgent   string  `json:"client_user_agent,omitempty"`
+	Country           string  `json:"country,omitempty"`
+	State             string  `json:"state,omitempty"`
+	City              string  `json:"city,omitempty"`
+	PostalCode        string  `json:"postal_code,omitempty"`
+	SourceURL         string  `json:"source_url,omitempty"`
+	UTMSource         string  `json:"utm_source,omitempty"`
+	UTMMedium         string  `json:"utm_medium,omitempty"`
+	UTMCampaign       string  `json:"utm_campaign,omitempty"`
+	UTMContent        string  `json:"utm_content,omitempty"`
+	UTMTerm           string  `json:"utm_term,omitempty"`
+	GCLID             string  `json:"gclid,omitempty"`
+	TTClid            string  `json:"ttclid,omitempty"`
 }

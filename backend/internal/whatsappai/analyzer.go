@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -37,6 +38,17 @@ func (a *Analyzer) AnalyzeAccount(ctx context.Context, accountID, fallbackUserID
 	var sum RunSummary
 	if a == nil || a.AI == nil {
 		return sum, nil
+	}
+	if a.Redis != nil && accountID > 0 {
+		lockKey := fmt.Sprintf("lock:whatsapp_ai_account:%d", accountID)
+		ok, lerr := a.Redis.SetNX(ctx, lockKey, "1", 5*time.Minute).Result()
+		if lerr == nil && !ok {
+			if force {
+				return sum, fmt.Errorf("uma análise da IA já está em andamento para esta conta; aguarde alguns segundos")
+			}
+			return sum, nil
+		}
+		defer a.Redis.Del(context.Background(), lockKey)
 	}
 	settings, err := a.AI.GetSettings(ctx, accountID)
 	if err != nil {

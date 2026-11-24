@@ -87,9 +87,10 @@ type Pixel struct {
 	AggregationWindowMinutes int  `json:"aggregation_window_minutes"`
 
 	// Meta de Vendas por Pixel ("revenue" = valor financeiro | "count" = quantidade de vendas)
-	SalesGoalEnabled bool    `json:"sales_goal_enabled"`
-	SalesGoalType    string  `json:"sales_goal_type"`
-	SalesGoalTarget  float64 `json:"sales_goal_target"`
+	SalesGoalEnabled bool               `json:"sales_goal_enabled"`
+	SalesGoalType    string             `json:"sales_goal_type"`
+	SalesGoalTarget  float64            `json:"sales_goal_target"`
+	SalesGoalMonths  map[string]float64 `json:"sales_goal_months"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -150,6 +151,7 @@ func (p Pixel) PublicView() map[string]any {
 		"sales_goal_enabled":         p.SalesGoalEnabled,
 		"sales_goal_type":            NormalizeSalesGoalType(p.SalesGoalType),
 		"sales_goal_target":          p.SalesGoalTarget,
+		"sales_goal_months":          NormalizeSalesGoalMonths(p.SalesGoalMonths),
 		"created_at":                 p.CreatedAt,
 		"updated_at":                 p.UpdatedAt,
 	}

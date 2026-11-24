@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
@@ -112,9 +113,21 @@ func (h *AdminWhatsAppChats) Convert(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if h.aiRepo != nil && cctx.TrackedUserID > 0 {
+	var uGroupID *int64
+	var uEmail string
+	if u != nil {
+		uGroupID = u.GroupID
+		uEmail = u.Email
+	}
+	if cctx.TrackedUserID > 0 {
 		if eventName == domain.EventPurchase && body.Value != nil {
-			if dup, _ := h.aiRepo.HasMatchingPurchaseSent(ctx, accID, cctx.TrackedUserID, cctx.PixelName, *body.Value, time.Now()); dup {
+			now := time.Now()
+			dupInFlight := cache.HasInFlightMatchingPurchase(ctx, h.rdb, accID, cctx.PixelName, uGroupID, cctx.TrackedUserID, cctx.ExternalID, cctx.Phone, uEmail, "", true, *body.Value, now)
+			dupDB := false
+			if !dupInFlight && h.aiRepo != nil {
+				dupDB, _ = h.aiRepo.HasMatchingPurchaseSent(ctx, accID, cctx.TrackedUserID, cctx.PixelName, *body.Value, now)
+			}
+			if dupInFlight || dupDB {
 				if h.crmRepo != nil {
 					if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, accID, cctx.TrackedUserID, *body.Value, false); synced && h.rdb != nil {
 						wshub.PublishCustom(ctx, h.rdb, accID, "crm_updated", map[string]any{"action": "whatsapp_chat_converted", "lead_id": leadID, "event": eventName})
@@ -123,7 +136,7 @@ func (h *AdminWhatsAppChats) Convert(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true})
 				return
 			}
-		} else if eventName == domain.EventLead || eventName == domain.EventLeadSubmitted || eventName == domain.EventQualifiedLead {
+		} else if h.aiRepo != nil && (eventName == domain.EventLead || eventName == domain.EventLeadSubmitted || eventName == domain.EventQualifiedLead) {
 			if dup, _ := h.aiRepo.HasLeadConversionSent(ctx, accID, cctx.TrackedUserID, cctx.PixelName); dup {
 				writeJSON(w, http.StatusOK, map[string]any{"queued": false, "deduplicated": true})
 				return
@@ -165,6 +178,11 @@ func (h *AdminWhatsAppChats) Convert(w http.ResponseWriter, r *http.Request) {
 	if err := h.enqueuer.EnqueueSendEvent(ctx, in); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if eventName == domain.EventPurchase && body.Value != nil {
+		cache.RecordInFlightPurchase(ctx, h.rdb, accID, cctx.PixelName, uGroupID, cctx.TrackedUserID, cctx.ExternalID, cctx.Phone, uEmail, cache.InFlightPurchase{
+			EventID: in.EventID, IsNonOrder: true, Value: *body.Value,
+		})
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"queued": true, "event_id": in.EventID})
 }

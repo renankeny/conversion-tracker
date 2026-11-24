@@ -17,6 +17,13 @@ type SeriesPoint struct {
 
 // TimeSeries devolve evolução temporal por bucket (hora ou dia).
 func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, daily bool) ([]SeriesPoint, error) {
+	evExprSrc := "e.event_name"
+	evExprPlain := "event_name"
+	if f.EventName == "" {
+		evExprSrc = "CASE WHEN e.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead') THEN 'Lead' ELSE e.event_name END"
+		evExprPlain = "CASE WHEN event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead') THEN 'Lead' ELSE event_name END"
+	}
+
 	if f.TrafficSource != "" && f.TrafficSource != "all" {
 		unit := "hour"
 		if daily {
@@ -27,10 +34,10 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 
 		qEvents := `
 			SELECT date_trunc('` + unit + `', e.created_at) AS bucket,
-			       e.event_name,
-			       COUNT(DISTINCT e.event_id) AS total,
-			       COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.event_id END) AS sent,
-			       COUNT(DISTINCT CASE WHEN e.status = 'failed' THEN e.event_id END) AS failed
+			       ` + evExprSrc + ` AS event_name,
+			       COUNT(DISTINCT e.pixel_name || ':' || e.event_id) AS total,
+			       COUNT(DISTINCT CASE WHEN e.status = 'sent' THEN e.pixel_name || ':' || e.event_id END) AS sent,
+			       COUNT(DISTINCT CASE WHEN e.status = 'failed' THEN e.pixel_name || ':' || e.event_id END) AS failed
 			FROM sent_events e
 			JOIN tracked_users u ON e.external_id = u.external_id AND e.account_id = u.account_id
 			WHERE e.status <> 'contested'
@@ -65,7 +72,7 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 		if srcCond != "" {
 			qEvents += " AND " + srcCond
 		}
-		qEvents += " GROUP BY bucket, e.event_name"
+		qEvents += " GROUP BY bucket, 2"
 
 		q := qEvents
 		if (f.EventName == "" || f.EventName == "PageView") && srcCond != "" {
@@ -137,10 +144,10 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 	`
 	q2 := `
 		SELECT ` + bucketExpr2 + ` AS bucket,
-		       event_name,
-		       COUNT(DISTINCT event_id) AS total,
-		       COUNT(DISTINCT CASE WHEN status = 'sent' THEN event_id END) AS sent,
-		       COUNT(DISTINCT CASE WHEN status = 'failed' THEN event_id END) AS failed
+		       ` + evExprPlain + ` AS event_name,
+		       COUNT(DISTINCT pixel_name || ':' || event_id) AS total,
+		       COUNT(DISTINCT CASE WHEN status = 'sent' THEN pixel_name || ':' || event_id END) AS sent,
+		       COUNT(DISTINCT CASE WHEN status = 'failed' THEN pixel_name || ':' || event_id END) AS failed
 		FROM sent_events
 		WHERE event_name NOT IN ('PageView', 'ViewContent')
 		  AND status <> 'contested'
@@ -181,7 +188,7 @@ func (r *EventCounterRepo) TimeSeries(ctx context.Context, f SummaryFilters, dai
 	}
 
 	q1 += " GROUP BY bucket, event_name"
-	q2 += " GROUP BY bucket, event_name"
+	q2 += " GROUP BY bucket, 2"
 
 	q := q1 + " UNION ALL " + q2 + " ORDER BY bucket ASC"
 	rows, err := r.pool.Query(ctx, q, args...)

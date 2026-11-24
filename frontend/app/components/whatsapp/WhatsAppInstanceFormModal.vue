@@ -80,10 +80,9 @@
       </div>
 
       <WhatsAppInstanceTriggersBox
-        v-model:lead-trigger="form.lead_trigger"
-        v-model:purchase-trigger="form.purchase_trigger"
-        v-model:custom-event-name="form.custom_event_name"
-        v-model:custom-event-trigger="form.custom_event_trigger"
+        v-model="triggerRows"
+        v-model:average-ticket="averageTicketInput"
+        :currency="form.currency"
       />
 
       <BaseCheckbox
@@ -105,6 +104,13 @@
 <script setup lang="ts">
 import type { Pixel, WhatsAppInstance, WhatsAppInstanceInput, WhatsAppProvider } from '#shared/types'
 import { META_CURRENCY_OPTIONS } from '~/utils/metaCurrencies'
+import {
+  formatAverageTicketInput,
+  parseAverageTicketInput,
+  serializeEditableTriggerRows,
+  toEditableTriggerRows,
+  type EditableWhatsAppTriggerRow,
+} from '~/utils/whatsappEventOptions'
 import WhatsAppInstanceTriggersBox from '~/components/whatsapp/WhatsAppInstanceTriggersBox.vue'
 
 const props = defineProps<{
@@ -124,6 +130,8 @@ const emit = defineEmits<{
 const toast = useToast()
 const nameError = ref('')
 const copiedWh = ref(false)
+const triggerRows = ref<EditableWhatsAppTriggerRow[]>([])
+const averageTicketInput = ref('')
 
 const form = reactive({
   name: '',
@@ -133,10 +141,6 @@ const form = reactive({
   ctwa_min_inbound_messages: 1 as number,
   auto_create_crm_lead: true,
   default_crm_stage_id: 0 as number,
-  lead_trigger: '',
-  purchase_trigger: '',
-  custom_event_name: '',
-  custom_event_trigger: '',
   enabled: true,
 })
 
@@ -177,6 +181,8 @@ watch(
     if (!open) return
     nameError.value = ''
     copiedWh.value = false
+    triggerRows.value = toEditableTriggerRows(inst)
+    averageTicketInput.value = formatAverageTicketInput(inst?.average_ticket)
     if (inst) {
       form.name = inst.name
       form.provider = inst.provider || 'evolution_go'
@@ -185,10 +191,6 @@ watch(
       form.ctwa_min_inbound_messages = inst.ctwa_min_inbound_messages === 3 ? 3 : 1
       form.auto_create_crm_lead = inst.auto_create_crm_lead
       form.default_crm_stage_id = inst.default_crm_stage_id || 0
-      form.lead_trigger = inst.lead_trigger || ''
-      form.purchase_trigger = inst.purchase_trigger || ''
-      form.custom_event_name = inst.custom_event_name || ''
-      form.custom_event_trigger = inst.custom_event_trigger || ''
       form.enabled = inst.enabled
     } else {
       form.name = ''
@@ -198,10 +200,6 @@ watch(
       form.ctwa_min_inbound_messages = 1
       form.auto_create_crm_lead = true
       form.default_crm_stage_id = 0
-      form.lead_trigger = ''
-      form.purchase_trigger = ''
-      form.custom_event_name = ''
-      form.custom_event_trigger = ''
       form.enabled = true
     }
   },
@@ -212,6 +210,13 @@ const onSubmit = () => {
   nameError.value = ''
   if (!form.name.trim()) { nameError.value = 'Informe um nome para a conexão'; return }
   if (!form.pixel_id) { nameError.value = 'Selecione um Pixel válido'; return }
+
+  const { triggers, missingCustomName } = serializeEditableTriggerRows(triggerRows.value)
+  if (missingCustomName) {
+    toast.error('Evento personalizado incompleto', 'Digite o nome do evento personalizado ou limpe o gatilho correspondente.')
+    return
+  }
+
   emit('submit', {
     name: form.name.trim(),
     provider: form.provider,
@@ -221,10 +226,8 @@ const onSubmit = () => {
     ctwa_min_inbound_messages: Number(form.ctwa_min_inbound_messages) === 3 ? 3 : 1,
     auto_create_crm_lead: form.auto_create_crm_lead,
     default_crm_stage_id: form.default_crm_stage_id > 0 ? Number(form.default_crm_stage_id) : null,
-    lead_trigger: form.lead_trigger.trim(),
-    purchase_trigger: form.purchase_trigger.trim(),
-    custom_event_name: form.custom_event_name.trim(),
-    custom_event_trigger: form.custom_event_trigger.trim(),
+    event_triggers: triggers,
+    average_ticket: parseAverageTicketInput(averageTicketInput.value),
     enabled: form.enabled,
   })
 }

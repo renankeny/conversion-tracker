@@ -1,3 +1,9 @@
+export interface MonthlyGoalMetrics {
+  month: string
+  revenue: number
+  purchases: number
+}
+
 export interface DashboardStats {
   status_totals: {
     sent: number
@@ -21,6 +27,7 @@ export interface DashboardStats {
   panel_audit?: PanelAudit
   previous_period?: PreviousPeriodMetrics
   heatmap?: DashboardHeatmap
+  monthly_goal?: MonthlyGoalMetrics
 }
 
 export interface SourceMetrics {

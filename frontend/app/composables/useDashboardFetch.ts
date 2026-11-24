@@ -4,6 +4,7 @@ import { useDashboardStore } from '~/stores/useDashboardStore'
 import { useDashboardDataStore } from '~/stores/useDashboardDataStore'
 import { useTenantStore } from '~/stores/useTenantStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
+import { resolveDashboardGoalMonth } from '~/utils/salesGoalMonths'
 import { errorMessage } from '~/utils/errorMessage'
 
 const ADS_CACHE_TTL_MS = 120_000
@@ -26,7 +27,7 @@ export const useDashboardFetch = (selectedPixel: ComputedRef<string>) => {
 
   const {
     summaryData, seriesData, trafficQuality, sourceBreakdown, panelAudit,
-    previousPeriod, heatmap, recentPurchases, geoData, totalRevenue, trackableLinks,
+    previousPeriod, heatmap, recentPurchases, geoData, totalRevenue, monthlyGoal, trackableLinks,
     metaInsights, googleInsights, metaCreatives, googleKeywords,
   } = storeToRefs(dataStore)
 
@@ -53,8 +54,9 @@ export const useDashboardFetch = (selectedPixel: ComputedRef<string>) => {
     const px = selectedPixel.value
     const { from, to } = dashboardStore.getDateRange()
     const ts = dashboardStore.trafficSource
+    const goalMonth = resolveDashboardGoalMonth(dashboardStore.period, dashboardStore.customFrom, dashboardStore.customTo)
     const acc = tenantStore.activeAccountId || ''
-    const nextCoreKey = `${acc}|${px}|${from}|${to}|${ts}`
+    const nextCoreKey = `${acc}|${px}|${from}|${to}|${ts}|${goalMonth}`
 
     if (!opts.force && inFlightCoreKey === nextCoreKey) return
     const hasWarm = dataStore.coreKey === nextCoreKey && summaryData.value !== null
@@ -76,7 +78,7 @@ export const useDashboardFetch = (selectedPixel: ComputedRef<string>) => {
         dashboard.recentPurchases({ from, to, limit: 50, pixel: px, traffic_source: ts }, ac.signal),
         dashboard.geoStats({ from, to, pixel: px, traffic_source: ts }, ac.signal),
         dashboard.geoStatsByEvent({ from, to, event: 'Purchase', pixel: px, traffic_source: ts }, ac.signal),
-        dashboard.revenue({ from, to, pixel: px, traffic_source: ts }, ac.signal),
+        dashboard.revenue({ from, to, pixel: px, traffic_source: ts, goal_month: goalMonth }, ac.signal),
         dashboard.trackableLinksStats({ pixel_name: px, from, to }, ac.signal).catch(() => null),
       ])
       if (seq !== coreSeq || ac.signal.aborted) return
@@ -85,6 +87,7 @@ export const useDashboardFetch = (selectedPixel: ComputedRef<string>) => {
       seriesData.value = series
       recentPurchases.value = purchases.data || []
       totalRevenue.value = revenue.total_revenue ?? 0
+      monthlyGoal.value = revenue.monthly_goal || null
       trackableLinks.value = linksRes
       trafficQuality.value = revenue.traffic_quality
       sourceBreakdown.value = revenue.source_breakdown || null
@@ -223,7 +226,7 @@ export const useDashboardFetch = (selectedPixel: ComputedRef<string>) => {
   return {
     loading, isRefreshing, adsLoading, summaryData, seriesData, trafficQuality, sourceBreakdown,
     panelAudit, previousPeriod, heatmap, metaInsights, googleInsights, metaCreatives,
-    googleKeywords, recentPurchases, geoData, totalRevenue, trackableLinks,
+    googleKeywords, recentPurchases, geoData, totalRevenue, monthlyGoal, trackableLinks,
     refresh: () => fetchAll({ force: true }),
   }
 }

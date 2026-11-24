@@ -71,6 +71,9 @@ type AggregatedSession struct {
 }
 
 func NormalizeCustomerKey(in domain.SendEventInput) string {
+	if gk := strings.TrimSpace(in.CustomerGroupKey); gk != "" {
+		return "grp:" + gk
+	}
 	email := strings.ToLower(strings.TrimSpace(in.Email))
 	if email != "" {
 		return "em:" + email

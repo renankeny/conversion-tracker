@@ -85,11 +85,15 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 	}
 	originalEvent := events[0]
 	pixelName := util.FirstNonEmpty(strings.TrimSpace(req.PixelName), originalEvent.PixelName)
+	isReplayExistingPurchase := originalEvent.EventName == domain.EventPurchase
 
-	purchaseEventID := BuildConfirmedPurchaseEventID(req.EventID)
-	if exists, err := h.sentEventsRepo.ExistsSent(ctx, scopedAccountID, purchaseEventID, pixelName, ""); err == nil && exists {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "already_confirmed": true, "event_id": purchaseEventID})
-		return
+	purchaseEventID := originalEvent.EventID
+	if !isReplayExistingPurchase {
+		purchaseEventID = BuildConfirmedPurchaseEventID(req.EventID)
+		if exists, err := h.sentEventsRepo.ExistsSent(ctx, scopedAccountID, purchaseEventID, pixelName, ""); err == nil && exists {
+			writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "already_confirmed": true, "event_id": purchaseEventID})
+			return
+		}
 	}
 
 	user, err := h.usersRepo.FindByExternalIDByAccount(ctx, originalEvent.ExternalID, scopedAccountID)
@@ -103,11 +107,6 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 			effAccountID = user.AccountID
 		}
 		h.usersRepo.EnrichGroupFields(ctx, user)
-	} else {
-		user = &domain.TrackedUser{PixelName: pixelName, AccountID: effAccountID, ExternalID: originalEvent.ExternalID}
-		if effAccountID > 0 && user.ExternalID != "" {
-			_ = h.usersRepo.Create(ctx, user)
-		}
 	}
 
 	val := originalEvent.PurchaseValue
@@ -117,8 +116,17 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 	var pixel *domain.Pixel
 	if h.pixelsRepo != nil {
 		pixel, _ = h.pixelsRepo.FindByName(ctx, pixelName)
+		if effAccountID == 0 && pixel != nil {
+			effAccountID = pixel.AccountID
+		}
 		if val <= 0 && pixel != nil && len(pixel.TrackerConfig.ProductValue) > 0 && pixel.TrackerConfig.ProductValue[0] > 0 {
 			val = pixel.TrackerConfig.ProductValue[0]
+		}
+	}
+	if user == nil {
+		user = &domain.TrackedUser{PixelName: pixelName, AccountID: effAccountID, ExternalID: originalEvent.ExternalID}
+		if effAccountID > 0 && user.ExternalID != "" {
+			_ = h.usersRepo.Create(ctx, user)
 		}
 	}
 	if val <= 0 {
@@ -126,14 +134,32 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if dup, _ := h.sentEventsRepo.HasDuplicateExternalPurchase(ctx, effAccountID, user.ID, user.ExternalID, pixelName, req.EventID, val, time.Now()); dup {
-		if h.crmRepo != nil && user.ID > 0 {
-			if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, effAccountID, user.ID, val, false); synced && h.rdb != nil {
-				wshub.PublishCustom(ctx, h.rdb, effAccountID, "crm_updated", map[string]any{"action": "sales_confirmation_synced", "lead_id": leadID, "event": domain.EventPurchase})
-			}
+	if isReplayExistingPurchase {
+		if claimed, ok := cache.ClaimEventDedup(ctx, h.rdb, effAccountID, pixelName, "replay:"+purchaseEventID, 15*time.Second); ok && !claimed {
+			writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "replayed": true, "event_id": purchaseEventID})
+			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "already_confirmed": true, "event_id": purchaseEventID})
-		return
+		cache.ClearDoneTargets(ctx, h.rdb, effAccountID, pixelName, purchaseEventID)
+	} else {
+		if claimed, ok := cache.ClaimEventDedup(ctx, h.rdb, effAccountID, pixelName, purchaseEventID, cache.EventDedupTTL); ok && !claimed {
+			writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "already_confirmed": true, "event_id": purchaseEventID})
+			return
+		}
+		now := time.Now()
+		dupInFlight := cache.HasInFlightMatchingPurchase(ctx, h.rdb, effAccountID, pixelName, user.GroupID, user.ID, user.ExternalID, user.Phone, user.Email, "", true, val, now)
+		dupDB := false
+		if !dupInFlight {
+			dupDB, _ = h.sentEventsRepo.HasDuplicateExternalPurchase(ctx, effAccountID, user.ID, user.ExternalID, pixelName, "", val, now)
+		}
+		if dupInFlight || dupDB {
+			if h.crmRepo != nil && user.ID > 0 {
+				if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, effAccountID, user.ID, val, false); synced && h.rdb != nil {
+					wshub.PublishCustom(ctx, h.rdb, effAccountID, "crm_updated", map[string]any{"action": "sales_confirmation_synced", "lead_id": leadID, "event": domain.EventPurchase})
+				}
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "already_confirmed": true, "event_id": purchaseEventID})
+			return
+		}
 	}
 
 	currency := req.Currency
@@ -146,35 +172,19 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 	}
 	currency = domain.NormalizeWhatsAppCurrency(currency)
 
-	sourceURL := util.FirstNonEmpty(user.URL, user.FirstURL)
-	actionSource := "website"
-	msgChannel := ""
-	ctwaClid := ""
-	pageID := ""
-	if user.CtwaClid != "" && user.FBC == "" && h.whatsappRepo != nil {
-		pageID = h.whatsappRepo.FindPageIDByCtwaClid(ctx, effAccountID, user.CtwaClid)
-		if pageID == "" && user.ID > 0 {
-			pageID = h.whatsappRepo.FindPageIDByTrackedUserID(ctx, effAccountID, user.ID)
-		}
-		if pageID == "" && h.metaAccRepo != nil && pixel != nil && pixel.MetaAccountID != nil && *pixel.MetaAccountID > 0 {
-			if mAcc, merr := h.metaAccRepo.FindByID(ctx, *pixel.MetaAccountID); merr == nil && mAcc != nil && mAcc.AccountID == effAccountID && mAcc.Enabled && mAcc.IsConnected() {
-				pageID = mAcc.DefaultPageID
-			}
-		}
-		if pageID != "" {
-			actionSource = "business_messaging"
-			msgChannel = "whatsapp"
-			ctwaClid = user.CtwaClid
-			sourceURL = ""
-		}
+	sourceURL, actionSource, msgChannel, ctwaClid, pageID := h.resolveConfirmationAttribution(ctx, effAccountID, pixel, user)
+	orderID := ""
+	if isReplayExistingPurchase && !cache.IsNonOrderPurchaseEventID(originalEvent.EventID) {
+		orderID = originalEvent.EventID
 	}
-	if actionSource == "website" && sourceURL == "" {
-		actionSource = "system_generated"
+	evTime := time.Now().Unix()
+	if isReplayExistingPurchase && !originalEvent.CreatedAt.IsZero() {
+		evTime = util.ClampEventTime(originalEvent.CreatedAt.Unix(), time.Now())
 	}
 
 	input := domain.SendEventInput{
 		PixelName: pixelName, EventName: domain.EventPurchase, EventID: purchaseEventID,
-		OrderID: req.EventID, EventTime: time.Now().Unix(), SourceURL: sourceURL,
+		OrderID: orderID, EventTime: evTime, SourceURL: sourceURL,
 		Value: &val, Currency: currency, ActionSource: actionSource,
 		MessagingChannel: msgChannel, CtwaClid: ctwaClid, PageID: pageID,
 		ExternalID: user.ExternalID, IDWpp: user.IDWpp, ClientIP: user.ClientIP, ClientUserAgent: user.ClientUserAgent,
@@ -182,21 +192,29 @@ func (h *AdminSalesConfirmation) Confirm(w http.ResponseWriter, r *http.Request)
 		TTClid: user.TTClid, TTP: user.TTP, GA4ClientID: user.GA4ClientID, GA4SessionID: user.GA4SessionID,
 		Email: user.Email, Phone: user.Phone, FirstName: user.FirstName, LastName: user.LastName,
 		Country: user.Country, State: user.State, City: user.City, PostalCode: user.PostalCode,
-		CRMSynced: true,
+		IsReplay: isReplayExistingPurchase, CRMSynced: true,
 	}
 	service.EnrichSendInput(ctx, h.usersRepo, effAccountID, &input)
 
 	if err := h.enqueuer.EnqueueSendEvent(ctx, input); err != nil {
+		if !isReplayExistingPurchase {
+			cache.ReleaseEventDedup(ctx, h.rdb, effAccountID, pixelName, purchaseEventID)
+		}
 		writeError(w, http.StatusInternalServerError, "failed to enqueue event")
 		return
 	}
+	if !isReplayExistingPurchase {
+		cache.RecordInFlightPurchase(ctx, h.rdb, effAccountID, pixelName, user.GroupID, user.ID, user.ExternalID, user.Phone, user.Email, cache.InFlightPurchase{
+			EventID: purchaseEventID, IsNonOrder: true, Value: val,
+		})
+	}
 	if h.crmRepo != nil && user.ID > 0 {
-		if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, effAccountID, user.ID, val, true); synced && h.rdb != nil {
+		if leadID, synced := h.crmRepo.SyncOrCreateLeadOnPurchase(ctx, effAccountID, user.ID, val, !isReplayExistingPurchase); synced && h.rdb != nil {
 			wshub.PublishCustom(ctx, h.rdb, effAccountID, "crm_updated", map[string]any{"action": "sales_confirmation_synced", "lead_id": leadID, "event": domain.EventPurchase})
 		}
 	}
 	cache.BumpDashboardVersion(ctx, h.rdb, effAccountID)
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "event_id": purchaseEventID})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "replayed": isReplayExistingPurchase, "event_id": purchaseEventID})
 }
 
 func BuildConfirmedPurchaseEventID(originalEventID string) string {

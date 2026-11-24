@@ -2,7 +2,7 @@ package repo
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -18,6 +18,7 @@ const selectInstanceColumns = `
 	i.owner_jid, i.profile_name, i.profile_pic_url,
 	i.share_token, i.connection_status,
 	i.purchase_trigger, i.lead_trigger, i.custom_event_name, i.custom_event_trigger,
+	COALESCE(i.event_triggers, '[]'::jsonb), COALESCE(i.average_ticket, 0),
 	i.auto_create_crm_lead, i.default_crm_stage_id, COALESCE(i.ctwa_min_inbound_messages, 1), i.enabled,
 	i.created_at, i.updated_at,
 	COALESCE(s.url, ''), COALESCE(s.api_key, '')
@@ -25,6 +26,7 @@ const selectInstanceColumns = `
 
 func scanWhatsAppInstance(scanner pgx.Row, i *domain.WhatsAppInstance) error {
 	var encInstToken, encServerKey string
+	var rawTriggers []byte
 	err := scanner.Scan(
 		&i.ID, &i.AccountID, &i.PixelID, &i.PixelName, &i.ServerID,
 		&i.Provider, &i.ExternalAPIURL, &i.Currency,
@@ -32,6 +34,7 @@ func scanWhatsAppInstance(scanner pgx.Row, i *domain.WhatsAppInstance) error {
 		&i.OwnerJID, &i.ProfileName, &i.ProfilePicURL,
 		&i.ShareToken, &i.ConnectionStatus,
 		&i.PurchaseTrigger, &i.LeadTrigger, &i.CustomEventName, &i.CustomEventTrigger,
+		&rawTriggers, &i.AverageTicket,
 		&i.AutoCreateCRMLead, &i.DefaultCRMStageID, &i.CtwaMinInboundMessages, &i.Enabled,
 		&i.CreatedAt, &i.UpdatedAt,
 		&i.ServerURL, &encServerKey,
@@ -42,6 +45,10 @@ func scanWhatsAppInstance(scanner pgx.Row, i *domain.WhatsAppInstance) error {
 	i.Provider = domain.NormalizeWhatsAppProvider(i.Provider)
 	i.Currency = domain.NormalizeWhatsAppCurrency(i.Currency)
 	i.CtwaMinInboundMessages = domain.NormalizeCtwaMinMessages(i.CtwaMinInboundMessages)
+	if len(rawTriggers) > 0 {
+		_ = json.Unmarshal(rawTriggers, &i.EventTriggers)
+	}
+	i.EventTriggers = i.EffectiveEventTriggers()
 	if encServerKey != "" {
 		i.ServerAPIKey = util.Decrypt(encServerKey)
 	}
@@ -52,6 +59,15 @@ func scanWhatsAppInstance(scanner pgx.Row, i *domain.WhatsAppInstance) error {
 		i.InstanceToken = i.InstanceName
 	}
 	return nil
+}
+
+func marshalInstanceTriggers(inst *domain.WhatsAppInstance) ([]byte, error) {
+	if inst.EventTriggers == nil {
+		inst.EventTriggers = inst.EffectiveEventTriggers()
+	} else {
+		inst.EventTriggers = domain.NormalizeWhatsAppEventTriggers(inst.EventTriggers)
+	}
+	return json.Marshal(inst.EventTriggers)
 }
 
 func (r *WhatsAppRepo) CreateInstance(ctx context.Context, inst *domain.WhatsAppInstance) error {
@@ -65,6 +81,13 @@ func (r *WhatsAppRepo) CreateInstance(ctx context.Context, inst *domain.WhatsApp
 	inst.Provider = domain.NormalizeWhatsAppProvider(inst.Provider)
 	inst.Currency = domain.NormalizeWhatsAppCurrency(inst.Currency)
 	inst.CtwaMinInboundMessages = domain.NormalizeCtwaMinMessages(inst.CtwaMinInboundMessages)
+	if inst.AverageTicket < 0 {
+		inst.AverageTicket = 0
+	}
+	triggersJSON, err := marshalInstanceTriggers(inst)
+	if err != nil {
+		return err
+	}
 	var srvID *int64
 	if inst.ServerID > 0 {
 		srvID = &inst.ServerID
@@ -74,16 +97,16 @@ func (r *WhatsAppRepo) CreateInstance(ctx context.Context, inst *domain.WhatsApp
 			account_id, pixel_id, server_id, provider, external_api_url, currency,
 			name, instance_name, evolution_uuid, instance_token_encrypted, webhook_secret,
 			share_token, connection_status,
-			purchase_trigger, lead_trigger, custom_event_name, custom_event_trigger,
+			purchase_trigger, lead_trigger, custom_event_name, custom_event_trigger, event_triggers, average_ticket,
 			auto_create_crm_lead, default_crm_stage_id, ctwa_min_inbound_messages, enabled
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
 		RETURNING id, created_at, updated_at
 	`,
 		inst.AccountID, inst.PixelID, srvID, inst.Provider, strings.TrimSpace(inst.ExternalAPIURL), inst.Currency,
 		inst.Name, inst.InstanceName, inst.EvolutionUUID, encTok, inst.WebhookSecret,
 		inst.ShareToken, inst.ConnectionStatus,
-		inst.PurchaseTrigger, inst.LeadTrigger, inst.CustomEventName, inst.CustomEventTrigger,
+		inst.PurchaseTrigger, inst.LeadTrigger, inst.CustomEventName, inst.CustomEventTrigger, triggersJSON, inst.AverageTicket,
 		inst.AutoCreateCRMLead, inst.DefaultCRMStageID, inst.CtwaMinInboundMessages, inst.Enabled,
 	).Scan(&inst.ID, &inst.CreatedAt, &inst.UpdatedAt)
 }
@@ -92,6 +115,9 @@ func (r *WhatsAppRepo) UpdateInstance(ctx context.Context, inst *domain.WhatsApp
 	inst.Provider = domain.NormalizeWhatsAppProvider(inst.Provider)
 	inst.Currency = domain.NormalizeWhatsAppCurrency(inst.Currency)
 	inst.CtwaMinInboundMessages = domain.NormalizeCtwaMinMessages(inst.CtwaMinInboundMessages)
+	if inst.AverageTicket < 0 {
+		inst.AverageTicket = 0
+	}
 	encTok, err := util.Encrypt(strings.TrimSpace(inst.InstanceToken))
 	if err != nil {
 		return err
@@ -99,19 +125,23 @@ func (r *WhatsAppRepo) UpdateInstance(ctx context.Context, inst *domain.WhatsApp
 	if encTok != "" {
 		inst.HasInstanceToken = true
 	}
+	triggersJSON, err := marshalInstanceTriggers(inst)
+	if err != nil {
+		return err
+	}
 	_, err = r.db.Exec(ctx, `
 		UPDATE whatsapp_instances
 		SET name = $1, pixel_id = $2, provider = $3, external_api_url = $4, currency = $5,
 		    instance_token_encrypted = CASE WHEN $6 <> '' THEN $6 ELSE instance_token_encrypted END,
 		    purchase_trigger = $7, lead_trigger = $8,
-		    custom_event_name = $9, custom_event_trigger = $10,
-		    auto_create_crm_lead = $11, default_crm_stage_id = $12,
-		    ctwa_min_inbound_messages = $13, enabled = $14, updated_at = NOW()
-		WHERE id = $15 AND account_id = $16
+		    custom_event_name = $9, custom_event_trigger = $10, event_triggers = $11, average_ticket = $12,
+		    auto_create_crm_lead = $13, default_crm_stage_id = $14,
+		    ctwa_min_inbound_messages = $15, enabled = $16, updated_at = NOW()
+		WHERE id = $17 AND account_id = $18
 	`,
 		inst.Name, inst.PixelID, inst.Provider, strings.TrimSpace(inst.ExternalAPIURL), inst.Currency, encTok,
 		inst.PurchaseTrigger, inst.LeadTrigger,
-		inst.CustomEventName, inst.CustomEventTrigger,
+		inst.CustomEventName, inst.CustomEventTrigger, triggersJSON, inst.AverageTicket,
 		inst.AutoCreateCRMLead, inst.DefaultCRMStageID,
 		inst.CtwaMinInboundMessages, inst.Enabled, inst.ID, inst.AccountID,
 	)
@@ -147,96 +177,4 @@ func (r *WhatsAppRepo) CountInstances(ctx context.Context, accountID int64) (int
 	var count int
 	err := r.db.QueryRow(ctx, "SELECT COUNT(*) FROM whatsapp_instances WHERE account_id = $1", accountID).Scan(&count)
 	return count, err
-}
-
-func (r *WhatsAppRepo) getInstanceWhere(ctx context.Context, whereSQL string, args ...any) (*domain.WhatsAppInstance, error) {
-	var i domain.WhatsAppInstance
-	row := r.db.QueryRow(ctx, `
-		SELECT `+selectInstanceColumns+`
-		FROM whatsapp_instances i
-		LEFT JOIN whatsapp_servers s ON i.server_id = s.id
-		LEFT JOIN pixels p ON i.pixel_id = p.id
-		WHERE `+whereSQL, args...)
-	if err := scanWhatsAppInstance(row, &i); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &i, nil
-}
-
-func (r *WhatsAppRepo) GetInstance(ctx context.Context, accountID, instanceID int64) (*domain.WhatsAppInstance, error) {
-	return r.getInstanceWhere(ctx, "i.account_id = $1 AND i.id = $2", accountID, instanceID)
-}
-
-func (r *WhatsAppRepo) GetInstanceByIDUnscoped(ctx context.Context, instanceID int64) (*domain.WhatsAppInstance, error) {
-	return r.getInstanceWhere(ctx, "i.id = $1", instanceID)
-}
-
-func (r *WhatsAppRepo) GetInstanceByWebhookSecret(ctx context.Context, secret string) (*domain.WhatsAppInstance, error) {
-	if secret == "" {
-		return nil, nil
-	}
-	return r.getInstanceWhere(ctx, "i.webhook_secret = $1", secret)
-}
-
-func (r *WhatsAppRepo) GetInstanceByName(ctx context.Context, instanceName string) (*domain.WhatsAppInstance, error) {
-	return r.getInstanceWhere(ctx, "i.instance_name = $1", instanceName)
-}
-
-func (r *WhatsAppRepo) GetInstanceByShareToken(ctx context.Context, token string) (*domain.WhatsAppInstance, error) {
-	return r.getInstanceWhere(ctx, "i.share_token = $1", token)
-}
-
-func (r *WhatsAppRepo) DeleteInstance(ctx context.Context, accountID, instanceID int64) error {
-	_, err := r.db.Exec(ctx, "DELETE FROM whatsapp_instances WHERE id = $1 AND account_id = $2", instanceID, accountID)
-	return err
-}
-
-func (r *WhatsAppRepo) UpdateInstanceStatus(ctx context.Context, instanceID int64, status string) error {
-	_, err := r.db.Exec(ctx, "UPDATE whatsapp_instances SET connection_status = $1, updated_at = NOW() WHERE id = $2", status, instanceID)
-	return err
-}
-
-func (r *WhatsAppRepo) ResetInstanceSession(ctx context.Context, instanceID int64, status string) error {
-	_, err := r.db.Exec(ctx, `
-		UPDATE whatsapp_instances
-		SET connection_status = $1, owner_jid = '', profile_name = '', profile_pic_url = '', updated_at = NOW()
-		WHERE id = $2
-	`, status, instanceID)
-	return err
-}
-
-func (r *WhatsAppRepo) EnsureInstanceShareToken(ctx context.Context, instanceID int64, shareToken string) error {
-	_, err := r.db.Exec(ctx, "UPDATE whatsapp_instances SET share_token = $1, updated_at = NOW() WHERE id = $2 AND (share_token IS NULL OR share_token = '')", shareToken, instanceID)
-	return err
-}
-
-func (r *WhatsAppRepo) UpdateInstanceOwnerAndProfile(ctx context.Context, instanceID int64, status, ownerJID, profileName, profilePicURL string) error {
-	_, err := r.db.Exec(ctx, `
-		UPDATE whatsapp_instances
-		SET connection_status = COALESCE(NULLIF($1, ''), connection_status),
-		    owner_jid         = COALESCE(NULLIF($2, ''), owner_jid),
-		    profile_name      = COALESCE(NULLIF($3, ''), profile_name),
-		    profile_pic_url   = COALESCE(NULLIF($4, ''), profile_pic_url),
-		    updated_at        = NOW()
-		WHERE id = $5
-	`, status, ownerJID, profileName, profilePicURL, instanceID)
-	return err
-}
-
-func (r *WhatsAppRepo) UpdateInstanceExternalCredentials(ctx context.Context, instanceID int64, externalURL, rawToken string) error {
-	encTok, err := util.Encrypt(strings.TrimSpace(rawToken))
-	if err != nil {
-		return err
-	}
-	_, err = r.db.Exec(ctx, `
-		UPDATE whatsapp_instances
-		SET external_api_url         = COALESCE(NULLIF(external_api_url, ''), NULLIF($1, ''), external_api_url),
-		    instance_token_encrypted = COALESCE(NULLIF(instance_token_encrypted, ''), NULLIF($2, ''), instance_token_encrypted),
-		    updated_at               = NOW()
-		WHERE id = $3
-	`, strings.TrimRight(strings.TrimSpace(externalURL), "/"), encTok, instanceID)
-	return err
 }

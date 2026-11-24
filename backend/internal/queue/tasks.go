@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	TypeSendEvent      = "meta:send_event"
-	TypeWhatsAppEvent  = "whatsapp:process_event"
-	TypeWhatsAppMedia  = "whatsapp:process_media"
+	TypeSendEvent                = "meta:send_event"
+	TypeWhatsAppEvent            = "whatsapp:process_event"
+	TypeWhatsAppMedia            = "whatsapp:process_media"
+	TypeWhatsAppVerifyDisconnect = "whatsapp:verify_disconnect"
 
 	QueueCritical       = "critical"
 	QueueWhatsAppEvents = "whatsapp_events"
@@ -27,6 +28,13 @@ type WhatsAppEventPayload struct {
 	InstanceID int64           `json:"instance_id"`
 	Event      string          `json:"event"`
 	Data       json.RawMessage `json:"data"`
+}
+
+type WhatsAppVerifyDisconnectPayload struct {
+	AccountID       int64  `json:"account_id"`
+	InstanceID      int64  `json:"instance_id"`
+	Event           string `json:"event"`
+	TriggeredAtUnix int64  `json:"triggered_at_unix"`
 }
 
 type WhatsAppMediaPayload struct {
@@ -42,8 +50,9 @@ type WhatsAppMediaPayload struct {
 }
 
 type Enqueuer struct {
-	client   *asynq.Client
-	sendHook func(context.Context, domain.SendEventInput) error
+	client        *asynq.Client
+	sendHook      func(context.Context, domain.SendEventInput) error
+	discCheckHook func(context.Context, WhatsAppVerifyDisconnectPayload, time.Duration) error
 }
 
 func NewEnqueuer(opt asynq.RedisClientOpt) *Enqueuer {
@@ -94,6 +103,28 @@ func (e *Enqueuer) EnqueueWhatsAppMedia(ctx context.Context, in WhatsAppMediaPay
 		asynq.Queue(QueueWhatsAppMedia),
 		asynq.MaxRetry(3),
 		asynq.Timeout(60*time.Second),
+	)
+	return err
+}
+
+// EnqueueWhatsAppDisconnectCheck agenda confirmação atrasada para absorver reconexões transitórias de WebSocket.
+func (e *Enqueuer) EnqueueWhatsAppDisconnectCheck(ctx context.Context, in WhatsAppVerifyDisconnectPayload, delay time.Duration) error {
+	if e.discCheckHook != nil {
+		return e.discCheckHook(ctx, in, delay)
+	}
+	if e.client == nil {
+		return fmt.Errorf("asynq client not initialized")
+	}
+	payload, err := json.Marshal(in)
+	if err != nil {
+		return fmt.Errorf("marshal whatsapp disconnect check: %w", err)
+	}
+	task := asynq.NewTask(TypeWhatsAppVerifyDisconnect, payload)
+	_, err = e.client.EnqueueContext(ctx, task,
+		asynq.Queue(QueueWhatsAppEvents),
+		asynq.ProcessIn(delay),
+		asynq.MaxRetry(2),
+		asynq.Timeout(30*time.Second),
 	)
 	return err
 }

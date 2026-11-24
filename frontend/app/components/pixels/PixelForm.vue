@@ -20,7 +20,7 @@
       </button>
       <button type="button" class="tab" :class="{ active: activeTab === 'tracker' }" @click="activeTab = 'tracker'">Tracker</button>
       <button v-if="isEditing && pixel" type="button" class="tab" :class="{ active: activeTab === 'links' }" @click="activeTab = 'links'">
-        Links WhatsApp
+        Links Rastreáveis
         <span v-if="linksCount > 0" class="tab-count">{{ linksCount }}</span>
       </button>
     </div>
