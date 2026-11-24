@@ -34,7 +34,10 @@ func buildMinIOEndpointAndTransport(rawEndpoint string, secure bool) (string, ht
 	}
 
 	if !strings.Contains(host, "_") {
-		return clean, nil, minio.BucketLookupAuto, nil
+		// Sempre força path-style (/bucket/key) para funcionar em qualquer versão
+		// antiga do MinIO e em domínios HTTPS atrás do Traefik (ex: s3.seudominio.com.br)
+		// sem exigir DNS/SSL wildcard de subdomínio.
+		return clean, nil, minio.BucketLookupPath, nil
 	}
 
 	// EasyPanel / Docker Swarm usa "<projeto>_<servico>" no DNS interno, mas o
@@ -85,10 +88,11 @@ func NewMediaStorage(cfg *config.Config) (*MediaStorage, error) {
 		return nil, fmt.Errorf("prepare minio endpoint: %w", err)
 	}
 	opts := &minio.Options{
-		Creds:        credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
-		Secure:       cfg.MinIOUseSSL,
-		Region:       cfg.MinIORegion,
-		BucketLookup: lookupType,
+		Creds:           credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
+		Secure:          cfg.MinIOUseSSL,
+		Region:          cfg.MinIORegion,
+		BucketLookup:    lookupType,
+		TrailingHeaders: false,
 	}
 	if transport != nil {
 		opts.Transport = transport
@@ -172,9 +176,12 @@ func (s *MediaStorage) PutMedia(ctx context.Context, objectKey string, r io.Read
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	info, err := s.client.PutObject(ctx, s.bucket, objectKey, r, size, minio.PutObjectOptions{
-		ContentType: contentType,
-	})
+	putOpts := minio.PutObjectOptions{
+		ContentType:      contentType,
+		SendContentMd5:   size >= 0,
+		DisableMultipart: size >= 0 && size <= 64*1024*1024,
+	}
+	info, err := s.client.PutObject(ctx, s.bucket, objectKey, r, size, putOpts)
 	if err != nil {
 		return 0, fmt.Errorf("put minio object %q: %w", objectKey, err)
 	}
@@ -213,8 +220,10 @@ func (s *MediaStorage) DeleteBatch(ctx context.Context, objectKeys []string) err
 
 	var firstErr error
 	for rmErr := range s.client.RemoveObjects(ctx, s.bucket, objectsCh, minio.RemoveObjectsOptions{}) {
-		if rmErr.Err != nil && firstErr == nil {
-			firstErr = rmErr.Err
+		if rmErr.Err != nil {
+			if ferr := s.client.RemoveObject(ctx, s.bucket, rmErr.ObjectName, minio.RemoveObjectOptions{}); ferr != nil && firstErr == nil {
+				firstErr = rmErr.Err
+			}
 		}
 	}
 	if firstErr != nil {

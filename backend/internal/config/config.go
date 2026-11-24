@@ -114,8 +114,8 @@ func Load() (*Config, error) {
 		GoogleOAuthRedirectURI:  getenv("GOOGLE_OAUTH_REDIRECT_URI", ""),
 
 		MinIOEndpoint:  minioEndpoint,
-		MinIOAccessKey: getenv("MINIO_ACCESS_KEY", ""),
-		MinIOSecretKey: getenv("MINIO_SECRET_KEY", ""),
+		MinIOAccessKey: firstNonEmptyEnv("MINIO_ACCESS_KEY", "MINIO_ROOT_USER"),
+		MinIOSecretKey: firstNonEmptyEnv("MINIO_SECRET_KEY", "MINIO_ROOT_PASSWORD"),
 		MinIOBucket:    getenv("MINIO_BUCKET", "trackeado-whatsapp"),
 		MinIORegion:    getenv("MINIO_REGION", ""),
 		MinIOUseSSL:    minioSSL,
@@ -165,6 +165,15 @@ func getenv(k, d string) string {
 		return v
 	}
 	return d
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func atoi(s string) int {

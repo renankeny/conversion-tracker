@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"net/http"
@@ -12,19 +13,71 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-func TestBuildMinIOEndpointAndTransport_WithoutUnderscore(t *testing.T) {
-	ep, tr, lookup, err := buildMinIOEndpointAndTransport("trackeado-minio:9000", false)
+func TestBuildMinIOEndpointAndTransport_PathStyleForAllHosts(t *testing.T) {
+	for _, raw := range []string{"trackeado-minio:9000", "https://s3.meudominio.com.br"} {
+		ep, tr, lookup, err := buildMinIOEndpointAndTransport(raw, strings.HasPrefix(raw, "https://"))
+		if err != nil {
+			t.Fatalf("unexpected error for %q: %v", raw, err)
+		}
+		if ep == "" {
+			t.Fatalf("empty endpoint for %q", raw)
+		}
+		if tr != nil {
+			t.Fatalf("expected nil custom transport when no underscore is present (%q)", raw)
+		}
+		if lookup != minio.BucketLookupPath {
+			t.Fatalf("got lookup %v for %q, want BucketLookupPath", lookup, raw)
+		}
+	}
+}
+
+func TestPutMedia_LegacyMinIOCompatibilityNoTrailingCRC(t *testing.T) {
+	var gotMD5, gotCRC32C, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("location") {
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LocationConstraint>`))
+			return
+		}
+		if r.Method == http.MethodPut {
+			gotMD5 = r.Header.Get("Content-Md5")
+			gotCRC32C = r.Header.Get("X-Amz-Checksum-Crc32c")
+			gotPath = r.URL.Path
+			w.Header().Set("ETag", `"d41d8cd98f00b204e9800998ecf8427e"`)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ep := strings.TrimPrefix(srv.URL, "http://")
+	cli, err := minio.New(ep, &minio.Options{
+		Creds:           credentials.NewStaticV4("old_minio_key", "old_minio_secret", ""),
+		Secure:          false,
+		BucketLookup:    minio.BucketLookupPath,
+		TrailingHeaders: false,
+	})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("minio.New: %v", err)
 	}
-	if ep != "trackeado-minio:9000" {
-		t.Fatalf("got endpoint %q, want %q", ep, "trackeado-minio:9000")
+	ms := &MediaStorage{client: cli, bucket: "whatsapp-media"}
+	payload := []byte("audio-opus-bytes")
+	n, err := ms.PutMedia(context.Background(), "accounts/1/chats/2/msg_3.ogg", bytes.NewReader(payload), int64(len(payload)), "audio/ogg")
+	if err != nil {
+		t.Fatalf("PutMedia failed: %v", err)
 	}
-	if tr != nil {
-		t.Fatalf("expected nil custom transport when no underscore is present")
+	if n != int64(len(payload)) {
+		t.Fatalf("expected %d bytes written, got %d", len(payload), n)
 	}
-	if lookup != minio.BucketLookupAuto {
-		t.Fatalf("got lookup %v, want BucketLookupAuto", lookup)
+	if gotMD5 == "" {
+		t.Fatalf("expected classic Content-MD5 header for legacy MinIO compatibility")
+	}
+	if gotCRC32C != "" {
+		t.Fatalf("expected no X-Amz-Checksum-Crc32c header, got %q", gotCRC32C)
+	}
+	if gotPath != "/whatsapp-media/accounts/1/chats/2/msg_3.ogg" {
+		t.Fatalf("expected path-style upload URL, got %q", gotPath)
 	}
 }
 
@@ -64,7 +117,6 @@ func TestBuildMinIOEndpointAndTransport_EasyPanelUnderscoreHost(t *testing.T) {
 		t.Fatalf("got lookup %v, want BucketLookupPath", lookup)
 	}
 
-	// Em ambiente de teste sem DNS Docker, redireciona o dial real para 127.0.0.1:<port>
 	httpTr := tr.(*http.Transport)
 	origDial := httpTr.DialContext
 	var dialedTarget string
