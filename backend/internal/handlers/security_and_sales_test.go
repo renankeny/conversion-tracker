@@ -97,5 +97,15 @@ func TestSafeLogoOrFaviconURLAndCanAccessAccount(t *testing.T) {
 	if CanAccessAccount(context.Background(), nil, apiClaims, 11) {
 		t.Fatalf("api key must not access account 11")
 	}
+
+	single := int64(7)
+	ids := normalizeAccountIDsInput([]int64{3, 9, 3, -1, 0, 12}, &single)
+	if len(ids) != 3 || ids[0] != 3 || ids[1] != 9 || ids[2] != 12 {
+		t.Fatalf("unexpected deduplicated account_ids: %+v", ids)
+	}
+	fallbackIDs := normalizeAccountIDsInput(nil, &single)
+	if len(fallbackIDs) != 1 || fallbackIDs[0] != 7 {
+		t.Fatalf("expected fallback to single account_id=7, got %+v", fallbackIDs)
+	}
 }
 

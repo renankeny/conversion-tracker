@@ -105,11 +105,14 @@ export const useAuthStore = defineStore('auth', () => {
     const response = await api.post<LoginResponse>('/admin/login', credentials)
     const maxAge = credentials.remember_me ? 60 * 60 * 24 * 30 : 60 * 60 * 24
     const cleanUser = sanitizeUserForStorage(response.user)
-    const accId = cleanUser?.account_id ? String(cleanUser.account_id) : '1'
+    const firstAccId = cleanUser?.account_id || cleanUser?.account_ids?.[0] || 1
+    const accId = String(firstAccId)
 
     token.value = response.access_token
     user.value = cleanUser
-    useTenantStore().setActiveAccountId(accId, maxAge)
+    const tenantStore = useTenantStore()
+    tenantStore.reset()
+    tenantStore.setActiveAccountId(accId, maxAge)
 
     setBrowserCookie('auth_token', response.access_token, maxAge)
     setBrowserCookie('auth_user', cleanUser ? JSON.stringify(cleanUser) : null, maxAge)

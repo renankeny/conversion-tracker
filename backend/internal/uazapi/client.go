@@ -13,9 +13,10 @@ import (
 
 // Client é o cliente HTTP para servidores compatíveis com uazapiGO (API Premium e Uazapi).
 type Client struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	baseURL   string
+	token     string
+	http      *http.Client
+	mediaHTTP *http.Client
 }
 
 type InstanceStatus struct {
@@ -31,11 +32,10 @@ type InstanceStatus struct {
 func New(baseURL, token string) *Client {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	return &Client{
-		baseURL: baseURL,
-		token:   strings.TrimSpace(token),
-		http: &http.Client{
-			Timeout: 12 * time.Second,
-		},
+		baseURL:   baseURL,
+		token:     strings.TrimSpace(token),
+		http:      &http.Client{Timeout: 12 * time.Second},
+		mediaHTTP: &http.Client{Timeout: 45 * time.Second},
 	}
 }
 

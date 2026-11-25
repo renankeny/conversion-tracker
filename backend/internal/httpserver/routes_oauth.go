@@ -33,6 +33,7 @@ func registerOAuthAdminRoutes(r chi.Router, h routeHandlers) {
 func registerOAuthLongAdminRoutes(r chi.Router, h routeHandlers) {
 	r.Get("/admin/google-ads-accounts/{id}/customers", h.adminGoogleAds.ListCustomers)
 	r.Get("/admin/google-ads-accounts/{id}/conversion-actions", h.adminGoogleAds.ListConversionActions)
+	r.Post("/admin/google-ads-accounts/{id}/conversion-actions", h.adminGoogleAds.CreateConversionAction)
 	r.Post("/admin/google-ads-accounts/{id}/test-event", h.adminGoogleAds.SendTestEvent)
 
 	r.Get("/admin/meta-accounts/{id}/ad-accounts", h.adminMetaAds.ListAdAccounts)

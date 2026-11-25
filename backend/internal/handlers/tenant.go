@@ -27,7 +27,7 @@ func TenantFromContext(ctx context.Context) TenantScope {
 	if accID <= 0 {
 		accID = -1 // previne bypass (0) no banco para não-owners sem conta selecionada
 	}
-	canOverride := !c.IsAPIKey() && (c.Role == "admin" || c.Role == "manager")
+	canOverride := !c.IsAPIKey()
 	return TenantScope{IsOwner: false, CanOverride: canOverride, AccountID: accID}
 }
 

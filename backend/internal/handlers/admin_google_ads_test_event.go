@@ -16,6 +16,8 @@ import (
 type googleAdsTestEventInput struct {
 	EventType          string  `json:"event_type"`
 	ConversionActionID string  `json:"conversion_action_id"`
+	ActionType         string  `json:"action_type"`
+	OwnerCustomerID    string  `json:"owner_customer_id"`
 	CustomerID         string  `json:"customer_id"`
 	LoginCustomerID    string  `json:"login_customer_id"`
 	GCLID              string  `json:"gclid"`
@@ -76,6 +78,14 @@ func (h *AdminGoogleAdsAccounts) SendTestEvent(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "nenhuma Conversion Action configurada para o evento '"+in.EventType+"'")
 		return
 	}
+	actCopy := *action
+	if tp := strings.TrimSpace(in.ActionType); tp != "" {
+		actCopy.ActionType = tp
+	}
+	if own := strings.TrimSpace(in.OwnerCustomerID); own != "" {
+		actCopy.OwnerCustomerID = own
+	}
+	action = &actCopy
 
 	if in.GCLID == "" && in.WBraid == "" && in.GBraid == "" {
 		in.GCLID = "Cj0KCQiTrackFindTESTgclid_" + strings.ReplaceAll(strings.ToUpper(action.ConversionActionID), " ", "")

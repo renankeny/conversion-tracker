@@ -129,6 +129,48 @@ func (h *AdminGoogleAdsAccounts) ListConversionActions(w http.ResponseWriter, r 
 	writeJSON(w, http.StatusOK, res)
 }
 
+func (h *AdminGoogleAdsAccounts) CreateConversionAction(w http.ResponseWriter, r *http.Request) {
+	if !auth.CanEditPixels(r.Context()) {
+		writeError(w, http.StatusForbidden, "você não tem permissão para gerenciar contas de anúncios")
+		return
+	}
+	a, ok := h.loadAuthorizedAccount(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		CustomerID      string `json:"customer_id"`
+		LoginCustomerID string `json:"login_customer_id"`
+		Name            string `json:"name"`
+		EventType       string `json:"event_type"`
+		Category        string `json:"category"`
+		Currency        string `json:"currency"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	res, err := h.client.CreateConversionAction(r.Context(), a, body.CustomerID, body.LoginCustomerID, map[string]any{
+		"name":       strings.TrimSpace(body.Name),
+		"event_type": strings.TrimSpace(body.EventType),
+		"category":   strings.TrimSpace(body.Category),
+		"currency":   strings.TrimSpace(body.Currency),
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.invalidateAccountCaches(r.Context(), a.AccountID, a.ID)
+	writeJSON(w, http.StatusCreated, res)
+}
+
+func onlyDigitsStr(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func sanitizeConversionActions(in []domain.GoogleAdsConversionAction) []domain.GoogleAdsConversionAction {
 	out := make([]domain.GoogleAdsConversionAction, 0, len(in))
 	seen := make(map[string]struct{}, len(in))
@@ -147,6 +189,8 @@ func sanitizeConversionActions(in []domain.GoogleAdsConversionAction) []domain.G
 			EventType:          ev,
 			ConversionActionID: id,
 			Name:               strings.TrimSpace(ca.Name),
+			ActionType:         strings.ToUpper(strings.TrimSpace(ca.ActionType)),
+			OwnerCustomerID:    onlyDigitsStr(ca.OwnerCustomerID),
 			Enabled:            ca.Enabled,
 		})
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/evolution"
 	"github.com/renankeny/conversion-tracker/backend/internal/storage"
+	"github.com/renankeny/conversion-tracker/backend/internal/uazapi"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
@@ -55,25 +56,17 @@ func makeWhatsAppMediaHandler(deps Deps) func(context.Context, *asynq.Task) erro
 		}
 
 		maxBytes := maxAllowedMediaBytes(payload.MessageType)
-		cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-
-		var data []byte
-		var detectedMime string
-		if payload.ExternalMediaURL != "" {
-			data, detectedMime, err = cli.FetchExternalMedia(ctx, payload.ExternalMediaURL, maxBytes)
-		} else if len(payload.RawMessageJSON) > 0 {
-			data, detectedMime, err = cli.DownloadMedia(ctx, inst.InstanceToken, payload.RawMessageJSON, maxBytes)
-		} else {
+		data, detectedMime, ok, err := fetchInstanceMediaBytes(ctx, inst, payload, maxBytes)
+		if !ok {
 			_ = deps.WhatsApp.UpdateMessageMediaStatus(ctx, payload.MessageDBID, domain.MediaStatusFailed)
 			return nil
 		}
-
-		if errors.Is(err, evolution.ErrMediaTooLarge) {
+		if errors.Is(err, evolution.ErrMediaTooLarge) || errors.Is(err, uazapi.ErrMediaTooLarge) {
 			_ = deps.WhatsApp.UpdateMessageMediaStatus(ctx, payload.MessageDBID, domain.MediaStatusSkippedSize)
 			return nil
 		}
 		if err != nil {
-			slog.Warn("download whatsapp media failed", "msg_db_id", payload.MessageDBID, "err", err)
+			slog.Warn("download whatsapp media failed", "msg_db_id", payload.MessageDBID, "provider", inst.Provider, "err", err)
 			return err
 		}
 
@@ -107,6 +100,45 @@ func makeWhatsAppMediaHandler(deps Deps) func(context.Context, *asynq.Task) erro
 	}
 }
 
+func fetchInstanceMediaBytes(
+	ctx context.Context,
+	inst *domain.WhatsAppInstance,
+	payload WhatsAppMediaPayload,
+	maxBytes int64,
+) ([]byte, string, bool, error) {
+	if inst.IsExternalUazapi() {
+		ucli := uazapi.New(inst.ExternalAPIURL, inst.InstanceToken)
+		if payload.ExternalMediaURL != "" {
+			data, mime, err := ucli.FetchExternalMedia(ctx, payload.ExternalMediaURL, maxBytes)
+			if err == nil || errors.Is(err, uazapi.ErrMediaTooLarge) {
+				return data, mime, true, err
+			}
+			if payload.WhatsAppMessageID == "" && payload.RawWhatsAppMessageID == "" {
+				return nil, "", true, err
+			}
+		}
+		if payload.WhatsAppMessageID != "" || payload.RawWhatsAppMessageID != "" {
+			if !ucli.Configured() {
+				return nil, "", false, nil
+			}
+			data, mime, err := ucli.DownloadMedia(ctx, payload.WhatsAppMessageID, payload.RawWhatsAppMessageID, maxBytes)
+			return data, mime, true, err
+		}
+		return nil, "", false, nil
+	}
+
+	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
+	if payload.ExternalMediaURL != "" {
+		data, mime, err := cli.FetchExternalMedia(ctx, payload.ExternalMediaURL, maxBytes)
+		return data, mime, true, err
+	}
+	if len(payload.RawMessageJSON) > 0 {
+		data, mime, err := cli.DownloadMedia(ctx, inst.InstanceToken, payload.RawMessageJSON, maxBytes)
+		return data, mime, true, err
+	}
+	return nil, "", false, nil
+}
+
 func defaultMimeForType(msgType string) string {
 	switch msgType {
 	case "audio":
@@ -127,17 +159,47 @@ func defaultMimeForType(msgType string) string {
 func extensionForMime(mimeType, msgType string) string {
 	m := strings.ToLower(strings.TrimSpace(mimeType))
 	switch {
-	case strings.Contains(m, "ogg") || strings.Contains(m, "opus") || msgType == "audio":
+	case strings.Contains(m, "mpeg") || strings.Contains(m, "mp3"):
+		return ".mp3"
+	case strings.Contains(m, "ogg") || strings.Contains(m, "opus"):
 		return ".ogg"
+	case strings.Contains(m, "m4a") || strings.Contains(m, "aac") || (msgType == "audio" && strings.Contains(m, "mp4")):
+		return ".m4a"
+	case strings.Contains(m, "wav"):
+		return ".wav"
+	case strings.Contains(m, "webm"):
+		return ".webm"
 	case strings.Contains(m, "png"):
 		return ".png"
 	case strings.Contains(m, "webp"):
 		return ".webp"
-	case strings.Contains(m, "jpeg") || strings.Contains(m, "jpg") || msgType == "image":
+	case strings.Contains(m, "gif"):
+		return ".gif"
+	case strings.Contains(m, "jpeg") || strings.Contains(m, "jpg"):
 		return ".jpg"
 	case strings.Contains(m, "pdf"):
 		return ".pdf"
-	case strings.Contains(m, "mp4") || msgType == "video":
+	case strings.Contains(m, "wordprocessingml") || strings.Contains(m, "msword"):
+		return ".docx"
+	case strings.Contains(m, "spreadsheetml") || strings.Contains(m, "excel"):
+		return ".xlsx"
+	case strings.Contains(m, "csv"):
+		return ".csv"
+	case strings.Contains(m, "vcard"):
+		return ".vcf"
+	case strings.Contains(m, "quicktime"):
+		return ".mov"
+	case strings.Contains(m, "3gp"):
+		return ".3gp"
+	case strings.Contains(m, "mp4"):
+		return ".mp4"
+	case msgType == "audio":
+		return ".ogg"
+	case msgType == "image":
+		return ".jpg"
+	case msgType == "sticker":
+		return ".webp"
+	case msgType == "video":
 		return ".mp4"
 	default:
 		return ".bin"

@@ -99,14 +99,15 @@ func (r *WhatsAppAIRepo) ResolveOpenAIKey(ctx context.Context, accountID, fallba
 		WHERE (
 			($2::bigint > 0 AND u.id = $2)
 			OR (a.owner_id IS NOT NULL AND u.id = a.owner_id)
-			OR (u.account_id = $1 AND COALESCE(u.role, 'admin') IN ('owner', 'superadmin', 'admin'))
+			OR ((u.account_id = $1 OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = u.id AND ua.account_id = $1))
+				AND COALESCE(u.role, 'admin') IN ('owner', 'superadmin', 'admin'))
 			OR COALESCE(u.role, '') IN ('owner', 'superadmin')
 		)
 		ORDER BY
 			CASE
 				WHEN $2::bigint > 0 AND u.id = $2 THEN 0
 				WHEN a.owner_id IS NOT NULL AND u.id = a.owner_id THEN 1
-				WHEN u.account_id = $1 THEN 2
+				WHEN u.account_id = $1 OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = u.id AND ua.account_id = $1) THEN 2
 				ELSE 3
 			END,
 			u.id ASC

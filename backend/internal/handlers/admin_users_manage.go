@@ -18,10 +18,11 @@ type updateAdminInput struct {
 	Phone       string         `json:"phone"`
 	Role        string         `json:"role"`
 	AccountID   *int64         `json:"account_id"`
+	AccountIDs  []int64        `json:"account_ids"`
 	Permissions map[string]any `json:"permissions"`
 }
 
-// Update altera dados de um admin existente.
+// Update altera dados e empresas vinculadas de um admin existente.
 func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -82,14 +83,13 @@ func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.requireValidAccount(r.Context(), in.AccountID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	accountIDs, statusCode, err := h.resolveValidatedAccountIDs(r.Context(), c, in.AccountIDs, in.AccountID)
+	if err != nil {
+		writeError(w, statusCode, err.Error())
 		return
 	}
-	if !CanAccessAccount(r.Context(), h.pool, c, *in.AccountID) {
-		writeError(w, http.StatusForbidden, "você não tem permissão para vincular usuários a esta empresa")
-		return
-	}
+
+	prevAccountIDs, _ := h.users.GetAccountIDs(r.Context(), id)
 
 	permsBytes := []byte("{}")
 	if in.Permissions != nil {
@@ -109,7 +109,7 @@ func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.users.Update(r.Context(), id, in.Email, in.Name, in.Phone, role, in.AccountID, permsBytes, passwordHash); err != nil {
+	if err := h.users.Update(r.Context(), id, in.Email, strings.TrimSpace(in.Name), strings.TrimSpace(in.Phone), role, accountIDs, permsBytes, passwordHash); err != nil {
 		if isDuplicateKey(err) {
 			writeError(w, http.StatusConflict, "e-mail já cadastrado")
 			return
@@ -118,8 +118,9 @@ func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if in.Password != "" || role != targetRole {
-		if h.sessions != nil {
+	if h.sessions != nil {
+		h.sessions.InvalidateUserTenantAccess(r.Context(), id, append(prevAccountIDs, accountIDs...)...)
+		if in.Password != "" || role != targetRole {
 			h.sessions.RevokeUserSessions(r.Context(), id)
 		}
 	}

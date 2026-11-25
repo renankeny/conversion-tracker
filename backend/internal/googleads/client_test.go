@@ -138,3 +138,44 @@ func TestDetectPartialFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveTargetOperatingAndDataManagerPayload(t *testing.T) {
+	acc := &domain.GoogleAdsAccount{
+		CustomerID:      "111-222-3333",
+		LoginCustomerID: "999-888-7777",
+	}
+	act := &domain.GoogleAdsConversionAction{
+		EventType:          "Purchase",
+		ConversionActionID: "customers/9998887777/conversionActions/654321",
+	}
+	opID, actID := resolveTargetOperatingAndAction(acc, act)
+	if opID != "9998887777" || actID != "654321" {
+		t.Fatalf("expected MCC owner 9998887777 and action 654321, got op=%q act=%q", opID, actID)
+	}
+
+	pld := buildDataManagerPayload("1112223333", "9998887777", "654321", domain.SendEventInput{GCLID: "test_gclid"}, nil, true)
+	dests := pld["destinations"].([]map[string]any)
+	if dests[0]["reference"] != "dest_0" || dests[0]["productDestinationId"] != "654321" {
+		t.Fatalf("unexpected destination payload: %+v", dests[0])
+	}
+	if _, hasLogin := dests[0]["loginAccount"]; !hasLogin {
+		t.Fatalf("expected loginAccount when MCC differs from operatingAccount")
+	}
+
+	standalone := buildDataManagerPayload("1112223333", "1112223333", "654321", domain.SendEventInput{GCLID: "test_gclid"}, nil, true)
+	destSolo := standalone["destinations"].([]map[string]any)[0]
+	if _, hasLogin := destSolo["loginAccount"]; hasLogin {
+		t.Fatalf("expected loginAccount to be omitted when equal to operatingAccount")
+	}
+}
+
+func TestFormatGoogleDataManagerError_IncompatibleType(t *testing.T) {
+	raw := `{"error":{"code":400,"details":[{"fieldViolations":[{"field":"events.events[0].destination_references","description":"Resource not found.","reason":"NOT_FOUND"}]}]}}`
+	msg := formatGoogleDataManagerError(400, raw, &domain.GoogleAdsConversionAction{
+		ConversionActionID: "777",
+		ActionType:         "WEBPAGE",
+	}, "1112223333")
+	if msg == "" || msg[:2] != "A " {
+		t.Fatalf("expected Portuguese explanation for WEBPAGE type, got %q", msg)
+	}
+}

@@ -74,7 +74,7 @@ export const useTenantStore = defineStore('tenant', () => {
 
   async function fetchAccounts(force = false): Promise<Account[]> {
     const authStore = useAuthStore()
-    if (!authStore.canManageAccounts) return accounts.value
+    if (!authStore.token) return accounts.value
     if (loaded.value && !force) return accounts.value
     if (inFlightPromise && !force) return inFlightPromise
 

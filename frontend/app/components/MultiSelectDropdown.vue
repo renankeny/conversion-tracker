@@ -25,8 +25,23 @@
           <li v-if="options.length === 0" class="dropdown-empty">
             Nenhuma opção
           </li>
-          <li v-if="modelValue.length" class="dropdown-item dropdown-clear" @click="clearAll">
-            <span class="item-label">Limpar seleção</span>
+          <li v-if="options.length > 1 || modelValue.length" class="dropdown-actions">
+            <button
+              v-if="options.length > 1 && modelValue.length < options.length"
+              type="button"
+              class="action-btn select-all"
+              @click="selectAll"
+            >
+              Selecionar todas
+            </button>
+            <button
+              v-if="modelValue.length"
+              type="button"
+              class="action-btn clear-all"
+              @click="clearAll"
+            >
+              Limpar seleção
+            </button>
           </li>
           <li
             v-for="option in options"
@@ -101,6 +116,7 @@ const toggleOption = (value: string) => {
   emit('update:modelValue', next)
 }
 
+const selectAll = () => emit('update:modelValue', props.options.map((o) => o.value))
 const clearAll = () => emit('update:modelValue', [])
 
 const updateMenuPosition = () => {
@@ -156,8 +172,12 @@ onClickOutside(dropdownRef, () => {
 .dropdown-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.65rem; border-radius: 5px; color: var(--text-2); font-size: var(--fs-base); cursor: pointer; transition: all 0.12s ease; }
 .dropdown-item:hover { background: var(--surface-soft); color: var(--text-1); }
 .dropdown-item.is-selected { color: var(--brand); }
-.dropdown-clear { color: var(--text-3); font-size: var(--fs-sm); padding-bottom: 0.35rem; border-bottom: 1px solid var(--border-soft); margin-bottom: 0.25rem; }
-.dropdown-clear:hover { color: var(--danger); background: var(--danger-soft); }
+.dropdown-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0.5rem 0.35rem; border-bottom: 1px solid var(--border-soft); margin-bottom: 0.25rem; }
+.action-btn { background: transparent; border: none; padding: 0.15rem 0.35rem; border-radius: 4px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer; transition: all 0.12s ease; }
+.action-btn.select-all { color: var(--brand); }
+.action-btn.select-all:hover { background: var(--brand-soft); }
+.action-btn.clear-all { color: var(--text-3); margin-left: auto; }
+.action-btn.clear-all:hover { color: var(--danger); background: var(--danger-soft); }
 .fade-down-enter-active, .fade-down-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .fade-down-enter-from, .fade-down-leave-to { opacity: 0; transform: translateY(-10px); }
 </style>

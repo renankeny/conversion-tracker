@@ -19,6 +19,7 @@ type AdminUserRecord struct {
 	Phone        string
 	Role         string
 	AccountID    *int64
+	AccountIDs   []int64
 	ParentID     *int64
 	Permissions  []byte
 	Preferences  []byte
@@ -35,9 +36,21 @@ func NewAdminUserRepo(pool *pgxpool.Pool) *AdminUserRepo {
 	return &AdminUserRepo{pool: pool}
 }
 
+const adminUserAccountsArraySQL = `COALESCE(
+	ARRAY(
+		SELECT DISTINCT sub.aid FROM (
+			SELECT ua.account_id AS aid FROM admin_user_accounts ua WHERE ua.user_id = admin_users.id
+			UNION ALL
+			SELECT admin_users.account_id WHERE admin_users.account_id IS NOT NULL
+		) sub ORDER BY sub.aid ASC
+	),
+	'{}'::bigint[]
+)`
+
 func (r *AdminUserRepo) ListSubordinates(ctx context.Context, isOwner bool, userID int64) ([]AdminUserRecord, error) {
 	const q = `SELECT id, email, COALESCE(name, ''), COALESCE(phone, ''),
-		COALESCE(role, 'admin'), account_id, parent_id, permissions, created_at, updated_at
+		COALESCE(role, 'admin'), account_id, ` + adminUserAccountsArraySQL + `,
+		parent_id, permissions, created_at, updated_at
 		FROM admin_users
 		WHERE $1::boolean OR parent_id = $2 OR id = $2
 		ORDER BY id ASC`
@@ -53,9 +66,12 @@ func (r *AdminUserRepo) ListSubordinates(ctx context.Context, isOwner bool, user
 		var u AdminUserRecord
 		if err := rows.Scan(
 			&u.ID, &u.Email, &u.Name, &u.Phone, &u.Role,
-			&u.AccountID, &u.ParentID, &u.Permissions, &u.CreatedAt, &u.UpdatedAt,
+			&u.AccountID, &u.AccountIDs, &u.ParentID, &u.Permissions, &u.CreatedAt, &u.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan admin_users: %w", err)
+		}
+		if u.AccountIDs == nil {
+			u.AccountIDs = []int64{}
 		}
 		out = append(out, u)
 	}
@@ -64,12 +80,13 @@ func (r *AdminUserRepo) ListSubordinates(ctx context.Context, isOwner bool, user
 
 func (r *AdminUserRepo) FindByID(ctx context.Context, id int64) (*AdminUserRecord, error) {
 	const q = `SELECT id, email, COALESCE(name, ''), COALESCE(phone, ''),
-		COALESCE(role, 'admin'), account_id, parent_id, permissions, created_at, updated_at
+		COALESCE(role, 'admin'), account_id, ` + adminUserAccountsArraySQL + `,
+		parent_id, permissions, created_at, updated_at
 		FROM admin_users WHERE id = $1`
 	var u AdminUserRecord
 	err := r.pool.QueryRow(ctx, q, id).Scan(
 		&u.ID, &u.Email, &u.Name, &u.Phone, &u.Role,
-		&u.AccountID, &u.ParentID, &u.Permissions, &u.CreatedAt, &u.UpdatedAt,
+		&u.AccountID, &u.AccountIDs, &u.ParentID, &u.Permissions, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -77,17 +94,20 @@ func (r *AdminUserRepo) FindByID(ctx context.Context, id int64) (*AdminUserRecor
 	if err != nil {
 		return nil, fmt.Errorf("find admin_user by id: %w", err)
 	}
+	if u.AccountIDs == nil {
+		u.AccountIDs = []int64{}
+	}
 	return &u, nil
 }
 
 func (r *AdminUserRepo) FindByEmailForAuth(ctx context.Context, email string) (*AdminUserRecord, error) {
-	const q = `SELECT id, password_hash, COALESCE(role, 'superadmin'), account_id,
+	const q = `SELECT id, password_hash, COALESCE(role, 'superadmin'), account_id, ` + adminUserAccountsArraySQL + `,
 		parent_id, permissions, COALESCE(name, ''), COALESCE(phone, ''), preferences
 		FROM admin_users WHERE email = $1`
 	var u AdminUserRecord
 	u.Email = email
 	err := r.pool.QueryRow(ctx, q, email).Scan(
-		&u.ID, &u.PasswordHash, &u.Role, &u.AccountID,
+		&u.ID, &u.PasswordHash, &u.Role, &u.AccountID, &u.AccountIDs,
 		&u.ParentID, &u.Permissions, &u.Name, &u.Phone, &u.Preferences,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -96,7 +116,28 @@ func (r *AdminUserRepo) FindByEmailForAuth(ctx context.Context, email string) (*
 	if err != nil {
 		return nil, fmt.Errorf("find admin_user by email: %w", err)
 	}
+	if u.AccountIDs == nil {
+		u.AccountIDs = []int64{}
+	}
 	return &u, nil
+}
+
+func (r *AdminUserRepo) GetAccountIDs(ctx context.Context, id int64) ([]int64, error) {
+	if r == nil || r.pool == nil || id <= 0 {
+		return []int64{}, nil
+	}
+	var ids []int64
+	err := r.pool.QueryRow(ctx, `SELECT `+adminUserAccountsArraySQL+` FROM admin_users WHERE id = $1`, id).Scan(&ids)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []int64{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get admin_user account_ids: %w", err)
+	}
+	if ids == nil {
+		ids = []int64{}
+	}
+	return ids, nil
 }
 
 func (r *AdminUserRepo) GetRoleAndParent(ctx context.Context, id int64) (string, *int64, error) {
@@ -161,4 +202,3 @@ func (r *AdminUserRepo) Count(ctx context.Context) (int, error) {
 	}
 	return n, nil
 }
-

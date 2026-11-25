@@ -5,26 +5,14 @@
         <div>
           <h4>3. Mapeamento de Ações de Conversão</h4>
           <p class="section-hint">
-            Vincule os eventos do {{ brandName }} às Ações de Conversão correspondentes no Google Ads.
+            Vincule os eventos do {{ brandName }} a conversões do tipo <strong>Importação de Cliques (API Offline)</strong> no Google Ads.
           </p>
         </div>
         <div v-if="canLoadRemoteActions" class="header-actions">
-          <BaseButton
-            v-if="remoteActions.length"
-            type="button"
-            variant="ghost"
-            size="sm"
-            @click="autoMapRecommended"
-          >
-            Auto-mapear recomendadas
+          <BaseButton v-if="hasCompatibleRemote" type="button" variant="ghost" size="sm" @click="autoMapRecommended">
+            Auto-mapear API
           </BaseButton>
-          <BaseButton
-            type="button"
-            variant="ghost"
-            size="sm"
-            :loading="loadingActions"
-            @click="$emit('refresh-actions', true)"
-          >
+          <BaseButton type="button" variant="ghost" size="sm" :loading="loadingActions" @click="$emit('refresh-actions', true)">
             Atualizar ações
           </BaseButton>
         </div>
@@ -36,19 +24,9 @@
     </div>
 
     <div v-else class="actions-list">
-      <div
-        v-for="(ca, idx) in actions"
-        :key="idx"
-        class="action-row"
-        :class="{ disabled: !ca.enabled }"
-      >
+      <div v-for="(ca, idx) in actions" :key="idx" class="action-row" :class="{ disabled: !ca.enabled }">
         <div class="action-fields">
-          <BaseDropdown
-            v-model="ca.event_type"
-            :label="`Evento ${brandName}`"
-            :options="eventTypeOptions"
-          />
-
+          <BaseDropdown v-model="ca.event_type" :label="`Evento ${brandName}`" :options="eventTypeOptions" />
           <BaseDropdown
             :model-value="ca.conversion_action_id"
             label="Ação de Conversão (Google Ads)"
@@ -59,23 +37,35 @@
           />
         </div>
 
+        <div v-if="isIncompatibleRow(ca)" class="type-warn">
+          <span>
+            Esta conversão é do tipo <strong>{{ resolveRowType(ca) }}</strong> (Tag/GA4) e retorna <code>Resource not found</code> na API Offline. Use ou crie uma conversão de <strong>Importação de Cliques</strong>.
+          </span>
+          <BaseButton v-if="canLoadRemoteActions" type="button" variant="outline" size="sm" :loading="creatingAction" @click="$emit('create-action', ca)">
+            + Criar Conversão API ({{ ca.event_type }})
+          </BaseButton>
+        </div>
+
+        <div v-if="isIncompatibleRow(ca)" class="type-warn">
+          <span>
+            Esta conversão é do tipo <strong>{{ resolveRowType(ca) }}</strong> (Tag/GA4) e retorna <code>Resource not found</code> na API Offline. Use ou crie uma conversão de <strong>Importação de Cliques</strong>.
+          </span>
+          <BaseButton v-if="canLoadRemoteActions" type="button" variant="outline" size="sm" :loading="creatingAction" @click="$emit('create-action', ca)">
+            + Criar Conversão API ({{ ca.event_type }})
+          </BaseButton>
+        </div>
+
         <div class="action-controls">
           <div class="control-left">
-            <BaseCheckbox
-              v-model="ca.enabled"
-              size="sm"
-              :label="ca.enabled ? 'Ativa' : 'Pausada'"
-            />
+            <BaseCheckbox v-model="ca.enabled" size="sm" :label="ca.enabled ? 'Ativa' : 'Pausada'" />
             <span v-if="ca.conversion_action_id" class="action-id-pill">
               {{ ca.name ? `${ca.name} · ` : '' }}ID {{ ca.conversion_action_id }}
             </span>
+            <BaseButton v-else-if="canLoadRemoteActions && !loadingActions" type="button" variant="ghost" size="sm" :loading="creatingAction" @click="$emit('create-action', ca)">
+              + Criar "{{ ca.event_type }} (API Offline)" no Google Ads
+            </BaseButton>
           </div>
-          <button
-            type="button"
-            class="remove-btn"
-            title="Remover Ação de Conversão"
-            @click="removeAction(idx)"
-          >
+          <button type="button" class="remove-btn" title="Remover Ação de Conversão" @click="removeAction(idx)">
             Remover
           </button>
         </div>
@@ -93,21 +83,20 @@
 </template>
 
 <script setup lang="ts">
-import type {
-  GoogleAdsConversionAction,
-  GoogleAdsEventType,
-  GoogleAdsRemoteConversionAction,
-} from '#shared/types'
+import { isGadsUploadType } from '~/composables/useGoogleAdsAccountForm'
+import type { GoogleAdsConversionAction, GoogleAdsEventType, GoogleAdsRemoteConversionAction } from '#shared/types'
 
 const props = defineProps<{
   actions: GoogleAdsConversionAction[]
   remoteActions: GoogleAdsRemoteConversionAction[]
   loadingActions?: boolean
+  creatingAction?: boolean
   canLoadRemoteActions?: boolean
 }>()
 
 defineEmits<{
   'refresh-actions': [forceRefresh: boolean]
+  'create-action': [row: GoogleAdsConversionAction]
 }>()
 
 const { brandName } = useBranding()
@@ -124,31 +113,36 @@ const eventTypeOptions: Array<{ value: GoogleAdsEventType; label: string }> = [
 ]
 
 const categoryToEvent: Record<string, GoogleAdsEventType> = {
-  PURCHASE: 'Purchase',
-  SUBMIT_LEAD_FORM: 'Lead',
-  CONTACT: 'Lead',
-  PHONE_CALL_LEAD: 'Lead',
-  IMPORTED_LEAD: 'Lead',
-  QUALIFIED_LEAD: 'Lead',
-  CONVERTED_LEAD: 'Lead',
-  SIGNUP: 'CompleteRegistration',
-  SUBSCRIBE_PAID: 'CompleteRegistration',
-  BEGIN_CHECKOUT: 'InitiateCheckout',
-  ADD_TO_CART: 'AddToCart',
-  PAGE_VIEW: 'PageView',
+  PURCHASE: 'Purchase', SUBMIT_LEAD_FORM: 'Lead', CONTACT: 'Lead',
+  PHONE_CALL_LEAD: 'Lead', IMPORTED_LEAD: 'Lead', QUALIFIED_LEAD: 'Lead',
+  CONVERTED_LEAD: 'Lead', SIGNUP: 'CompleteRegistration', SUBSCRIBE_PAID: 'CompleteRegistration',
+  BEGIN_CHECKOUT: 'InitiateCheckout', ADD_TO_CART: 'AddToCart', PAGE_VIEW: 'PageView',
+}
+
+const hasCompatibleRemote = computed(() => props.remoteActions.some((r) => isGadsUploadType(r.type)))
+
+const resolveRowType = (row: GoogleAdsConversionAction): string => {
+  const remote = props.remoteActions.find((r) => r.id === row.conversion_action_id)
+  return (remote?.type || row.action_type || '').toUpperCase()
+}
+
+const isIncompatibleRow = (row: GoogleAdsConversionAction): boolean => {
+  if (!row.conversion_action_id || !row.enabled) return false
+  const tp = resolveRowType(row)
+  return Boolean(tp && !isGadsUploadType(tp))
 }
 
 const actionPlaceholder = computed(() => {
   if (!props.canLoadRemoteActions) return 'Selecione a conta Google Ads no passo 2 primeiro...'
   if (props.loadingActions) return 'Carregando ações de conversão...'
-  if (props.remoteActions.length === 0) return 'Nenhuma ação encontrada nesta conta'
+  if (props.remoteActions.length === 0) return 'Nenhuma ação encontrada (clique em Criar abaixo)'
   return 'Escolha a ação de conversão...'
 })
 
 const remoteActionOptions = computed(() =>
   props.remoteActions.map((ra) => ({
     value: ra.id,
-    label: `${ra.name} · ID ${ra.id} (${ra.category || ra.type})`,
+    label: `${ra.name} · ID ${ra.id} · ${isGadsUploadType(ra.type) ? 'API Offline' : `Tag/GA4 (${ra.type})`}`,
   })),
 )
 
@@ -172,35 +166,39 @@ const hasExactDuplicates = computed(() => {
     seen.add(key)
   }
   return false
-})
+}
+)
 
 const onPickRemoteAction = (row: GoogleAdsConversionAction, actionId: string) => {
   row.conversion_action_id = actionId
   const found = props.remoteActions.find((r) => r.id === actionId)
-  if (found) row.name = found.name
+  if (found) {
+    row.name = found.name
+    row.action_type = found.type
+    row.owner_customer_id = found.owner_customer_id || ''
+  }
 }
 
 const autoMapRecommended = () => {
   const existingIds = new Set(props.actions.map((a) => a.conversion_action_id).filter(Boolean))
   const added: GoogleAdsConversionAction[] = []
   for (const ra of props.remoteActions) {
-    if (ra.status && ra.status !== 'ENABLED') continue
-    if (existingIds.has(ra.id)) continue
+    if ((ra.status && ra.status !== 'ENABLED') || !isGadsUploadType(ra.type) || existingIds.has(ra.id)) continue
     const ev = categoryToEvent[(ra.category || '').toUpperCase()]
     if (!ev) continue
-    added.push({ event_type: ev, conversion_action_id: ra.id, name: ra.name, enabled: true })
+    added.push({
+      event_type: ev, conversion_action_id: ra.id, name: ra.name,
+      action_type: ra.type, owner_customer_id: ra.owner_customer_id || '', enabled: true,
+    })
     existingIds.add(ra.id)
   }
   if (!added.length) {
-    toast.info('Nada novo para mapear', 'Todas as ações compatíveis já estão mapeadas.')
+    toast.info('Nada novo para mapear', 'Todas as conversões UPLOAD_CLICKS compatíveis já estão mapeadas.')
     return
   }
-  if (props.actions.length === 1 && !props.actions[0]!.conversion_action_id) {
-    props.actions.splice(0, 1, ...added)
-  } else {
-    props.actions.push(...added)
-  }
-  toast.success('Mapeamento aplicado', `${added.length} ${added.length === 1 ? 'ação mapeada' : 'ações mapeadas'} automaticamente.`)
+  if (props.actions.length === 1 && !props.actions[0]!.conversion_action_id) props.actions.splice(0, 1, ...added)
+  else props.actions.push(...added)
+  toast.success('Mapeamento aplicado', `${added.length} conversão(ões) de API mapeada(s).`)
 }
 
 const addAction = () => {
@@ -209,9 +207,7 @@ const addAction = () => {
   props.actions.push({ event_type: nextEvent, conversion_action_id: '', name: '', enabled: true })
 }
 
-const removeAction = (idx: number) => {
-  props.actions.splice(idx, 1)
-}
+const removeAction = (idx: number) => { props.actions.splice(idx, 1) }
 </script>
 
 <style scoped>
@@ -226,6 +222,7 @@ const removeAction = (idx: number) => {
 .action-row.disabled { opacity: 0.55; }
 .action-fields { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
 @media (min-width: 640px) { .action-fields { grid-template-columns: 1fr 1.4fr; } }
+.type-warn { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--warning); background: var(--warning-soft); border: 1px solid var(--warning-border); padding: 0.55rem 0.75rem; border-radius: 8px; line-height: 1.45; }
 .action-controls { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
 .control-left { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
 .action-id-pill { font-size: var(--fs-xs); font-family: var(--font-mono); color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border-faint); padding: 0.15rem 0.5rem; border-radius: 999px; }

@@ -1,11 +1,8 @@
 package queue
 
 import (
-	"bytes"
 	"encoding/json"
 	"strings"
-
-	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 // StripHeavyUazapiThumbnails remove JPEGThumbnail e thumbnail base64 pesados antes de gravar no Redis.
@@ -132,46 +129,6 @@ func resolveUazapiLID(fromMe bool, msgChatLID, chatWaChatLID, senderLID, sender 
 		}
 	}
 	return ""
-}
-
-func extractUazapiContentAndContext(rawContent json.RawMessage, out *ParsedWhatsAppMessage) {
-	trimmed := bytes.TrimSpace(rawContent)
-	if len(trimmed) == 0 || string(trimmed) == "null" {
-		return
-	}
-	if trimmed[0] == '"' {
-		var s string
-		if json.Unmarshal(trimmed, &s) == nil && strings.TrimSpace(s) != "" && out.Content == "" {
-			out.Content = strings.TrimSpace(s)
-		}
-		return
-	}
-	if trimmed[0] != '{' {
-		return
-	}
-
-	var obj struct {
-		Text        string          `json:"text"`
-		Caption     string          `json:"caption"`
-		Title       string          `json:"title"`
-		Description string          `json:"description"`
-		URL         string          `json:"URL"`
-		UrlLower    string          `json:"url"`
-		Mimetype    string          `json:"mimetype"`
-		ContextInfo *evoContextInfo `json:"contextInfo"`
-	}
-	if json.Unmarshal(trimmed, &obj) == nil {
-		if out.Content == "" {
-			out.Content = strings.TrimSpace(util.FirstNonEmpty(obj.Text, obj.Caption))
-		}
-		if out.ExternalMediaURL == "" {
-			out.ExternalMediaURL = strings.TrimSpace(util.FirstNonEmpty(obj.URL, obj.UrlLower))
-		}
-		if out.MimeType == "" && obj.Mimetype != "" {
-			out.MimeType = strings.TrimSpace(obj.Mimetype)
-		}
-		applyContextInfo(obj.ContextInfo, out)
-	}
 }
 
 func isStandardUUID(s string) bool {

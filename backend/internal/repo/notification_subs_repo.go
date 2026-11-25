@@ -119,7 +119,10 @@ func (r *NotificationRepo) ListRecipientsForAccount(ctx context.Context, account
 		WHERE (
 			COALESCE(u.role, 'superadmin') IN ('superadmin', 'owner')
 			OR (a.owner_id IS NOT NULL AND u.id = a.owner_id)
-			OR (NOT $2::boolean AND $1 > 0 AND u.account_id = $1)
+			OR (NOT $2::boolean AND $1 > 0 AND (
+				u.account_id = $1
+				OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = u.id AND ua.account_id = $1)
+			))
 		)
 	`, accountID, ownersOnly)
 	if err != nil {

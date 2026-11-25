@@ -178,15 +178,15 @@ func ParseUazapiMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage, e
 	}
 
 	out := &ParsedWhatsAppMessage{
-		MessageID:        msgID,
-		ChatJID:          util.FirstNonEmpty(phoneJID, lidJID, NormalizeBareJID(env.Message.ChatID), NormalizeBareJID(env.Chat.WaChatID)),
-		IsFromMe:         env.Message.FromMe,
-		IsGroup:          false,
-		PushName:         pushName,
-		Timestamp:        ts,
-		MessageType:      "text",
-		Content:          strings.TrimSpace(util.FirstNonEmpty(env.Message.Text, env.Message.Vote, env.Message.ButtonOrListID)),
-		ExternalMediaURL: strings.TrimSpace(env.Message.FileURL),
+		MessageID:    msgID,
+		RawMessageID: strings.TrimSpace(env.Message.ID),
+		ChatJID:      util.FirstNonEmpty(phoneJID, lidJID, NormalizeBareJID(env.Message.ChatID), NormalizeBareJID(env.Chat.WaChatID)),
+		IsFromMe:     env.Message.FromMe,
+		IsGroup:      false,
+		PushName:     pushName,
+		Timestamp:    ts,
+		MessageType:  "text",
+		Content:      strings.TrimSpace(util.FirstNonEmpty(env.Message.Text, env.Message.Vote, env.Message.ButtonOrListID)),
 	}
 	if !env.Message.FromMe {
 		out.SenderJID = util.FirstNonEmpty(phoneJID, NormalizeBareJID(env.Message.Sender))
@@ -196,7 +196,7 @@ func ParseUazapiMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage, e
 		out.DeviceDestJID = util.FirstNonEmpty(lidJID, phoneJID)
 	}
 
-	extractUazapiContentAndContext(env.Message.Content, out)
+	extractUazapiContentAndMedia(env.Message.MessageType, env.Message.MediaType, env.Message.Type, env.Message.FileURL, env.Message.Content, out)
 	if !env.Message.FromMe {
 		if out.CtwaClid == "" && isValidUazapiCtwaClid(env.Chat.LeadField10) {
 			out.CtwaClid = strings.TrimSpace(env.Chat.LeadField10)

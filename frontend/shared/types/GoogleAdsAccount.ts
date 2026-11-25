@@ -15,6 +15,8 @@ export interface GoogleAdsConversionAction {
   event_type: GoogleAdsEventType | string
   conversion_action_id: string
   name: string
+  action_type?: string
+  owner_customer_id?: string
   enabled: boolean
 }
 
@@ -69,4 +71,5 @@ export interface GoogleAdsRemoteConversionAction {
   type: string
   status: string
   resource_name: string
+  owner_customer_id?: string
 }

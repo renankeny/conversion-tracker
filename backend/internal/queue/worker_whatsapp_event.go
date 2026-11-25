@@ -216,6 +216,7 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	if mediaStatus == domain.MediaStatusPending && deps.Enqueuer != nil {
 		_ = deps.Enqueuer.EnqueueWhatsAppMedia(ctx, WhatsAppMediaPayload{
 			AccountID: inst.AccountID, InstanceID: inst.ID, ChatID: chatID, MessageDBID: dbMsg.ID,
+			WhatsAppMessageID: parsed.MessageID, RawWhatsAppMessageID: parsed.RawMessageID,
 			MessageType: parsed.MessageType, MimeType: parsed.MimeType, ExternalMediaURL: parsed.ExternalMediaURL,
 			ExpectedBytes: parsed.FileLength, RawMessageJSON: parsed.MediaProtoJSON,
 		})

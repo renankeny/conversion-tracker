@@ -12,59 +12,40 @@
       <div v-else class="user-list">
         <div v-for="a in admins" :key="a.id" class="user-row">
           <div class="user-info">
-            <span class="user-email">
-              {{ a.name || a.email }}
-              <BaseBadge variant="info" style="margin-left:8px">{{ a.role }}</BaseBadge>
-            </span>
+            <div class="user-title-row">
+              <span class="user-email">{{ a.name || a.email }}</span>
+              <BaseBadge variant="info">{{ a.role }}</BaseBadge>
+            </div>
             <span class="user-meta">ID #{{ a.id }} · {{ a.email }} · criado {{ formatDate(a.created_at || '') }}</span>
-            <span v-if="a.role === 'employee' && a.permissions?.edit_pixels" class="user-meta text-success">↳ Pode editar pixels</span>
+            <span class="user-companies">{{ formatUserAccounts(a) }}</span>
+            <span v-if="a.role === 'employee' && a.permissions?.edit_pixels" class="user-meta text-success">
+              ↳ Pode editar pixels
+            </span>
           </div>
           <div v-if="a.id !== user?.id" class="row-actions">
             <BaseButton variant="outline" size="sm" @click="openEditAdmin(a)">Editar</BaseButton>
-            <BaseButton variant="ghost" size="sm" @click="askDelete(a)"><span class="text-danger">Remover</span></BaseButton>
+            <BaseButton variant="ghost" size="sm" @click="askDelete(a)">
+              <span class="text-danger">Remover</span>
+            </BaseButton>
           </div>
           <BaseBadge v-else variant="info">Você</BaseBadge>
         </div>
       </div>
     </div>
 
-    <BaseModal v-model="newAdminOpen" :title="editingAdminId ? 'Editar usuário' : 'Criar novo usuário'" size="sm">
-      <div class="form">
-        <BaseInput v-model="newAdminForm.email" type="email" label="E-mail" placeholder="admin@empresa.com.br" required />
-        <BaseInput
-          v-model="newAdminForm.password"
-          type="password"
-          :label="editingAdminId ? 'Senha (deixe em branco para manter)' : 'Senha (mínimo 6 caracteres)'"
-          :required="!editingAdminId"
-        />
-        <BaseInput v-model="newAdminForm.name" label="Nome" placeholder="João Silva" />
-        <BaseInput v-model="newAdminForm.phone" label="Telefone" placeholder="11999999999" />
-
-        <div v-if="canCreateUsers" class="form-field">
-          <BaseDropdown v-model="newAdminForm.role" label="Tipo de acesso" :options="roleOptions" />
-        </div>
-
-        <div v-if="newAdminForm.role === 'employee'" class="form-field">
-          <label class="form-label">Permissões Específicas</label>
-          <BaseCheckbox
-            v-model="newAdminForm.permissions.edit_pixels"
-            label="Pode editar pixels"
-          />
-        </div>
-
-        <div v-if="['admin', 'manager', 'employee'].includes(newAdminForm.role)" class="form-field">
-          <BaseDropdown v-model="newAdminAccountId" label="Empresa vinculada" :options="accountOptionsSettings" placeholder="Selecione uma empresa" />
-        </div>
-      </div>
-      <template #footer>
-        <BaseButton variant="ghost" @click="newAdminOpen = false">Cancelar</BaseButton>
-        <BaseButton variant="primary" :loading="creatingAdmin" @click="onCreateAdmin">{{ editingAdminId ? 'Salvar' : 'Criar' }}</BaseButton>
-      </template>
-    </BaseModal>
+    <AdminUserFormModal
+      v-model="modalOpen"
+      :editing-user="editingAdmin"
+      :saving="savingAdmin"
+      :can-create-users="canCreateUsers"
+      :role-options="roleOptions"
+      :account-options="accountOptionsSettings"
+      @submit="onSaveAdmin"
+    />
 
     <ConfirmModal
       v-model="deleteAdminOpen"
-      title="Remover administrador?"
+      title="Remover usuário?"
       :message="deletingAdmin ? `O usuário '${deletingAdmin.email}' perderá acesso ao painel imediatamente.` : ''"
       confirm-label="Remover"
       variant="danger"
@@ -76,6 +57,7 @@
 
 <script setup lang="ts">
 import type { Account, AdminUser, CreateAdminInput, UpdateAdminInput } from '#shared/types'
+import AdminUserFormModal, { type AdminUserFormSubmitPayload } from '~/components/settings/AdminUserFormModal.vue'
 import { formatDateTimeSP } from '~/utils/formatDate'
 import { errorMessage } from '~/utils/errorMessage'
 
@@ -91,23 +73,12 @@ const canCreateUsers = computed(() => user.value?.role !== 'employee')
 const admins = ref<AdminUser[]>([])
 const accounts = ref<Account[]>([])
 const loadingAdmins = ref(false)
-const newAdminOpen = ref(false)
-const editingAdminId = ref<number | null>(null)
-const creatingAdmin = ref(false)
+const modalOpen = ref(false)
+const editingAdmin = ref<AdminUser | null>(null)
+const savingAdmin = ref(false)
 const deleteAdminOpen = ref(false)
 const deletingAdmin = ref<AdminUser | null>(null)
 const deletingNow = ref(false)
-
-const newAdminForm = reactive({
-  email: '', password: '', name: '', phone: '', role: 'employee',
-  account_id: null as number | null,
-  permissions: { edit_pixels: false },
-})
-
-const newAdminAccountId = computed({
-  get: () => (newAdminForm.account_id ? String(newAdminForm.account_id) : ''),
-  set: (val) => { newAdminForm.account_id = val ? Number(val) : null },
-})
 
 const roleOptions = computed(() => {
   const opts = []
@@ -117,78 +88,94 @@ const roleOptions = computed(() => {
   return opts
 })
 
-const accountOptionsSettings = computed(() => accounts.value.map((a) => ({ value: String(a.id), label: `${a.name} (#${a.id})` })))
+const accountOptionsSettings = computed(() =>
+  accounts.value.map((a) => ({ value: String(a.id), label: `${a.name} (#${a.id})` })),
+)
+
+const accountNameById = computed(() => {
+  const map = new Map<number, string>()
+  for (const a of accounts.value) map.set(a.id, a.name)
+  return map
+})
 
 const formatDate = (iso: string): string => formatDateTimeSP(iso)
 
-const loadAdmins = async () => {
-  loadingAdmins.value = true
-  try {
-    const res = await settings.listAdmins()
-    admins.value = res.data || []
-  } catch (error: unknown) {
-    toast.error('Erro', errorMessage(error, 'Falha ao listar admins'))
-  } finally {
-    loadingAdmins.value = false
+const formatUserAccounts = (u: AdminUser): string => {
+  if (u.role === 'superadmin' || u.role === 'owner') return 'Acesso global a todas as empresas'
+  const ids = u.account_ids?.length ? u.account_ids : (u.account_id ? [u.account_id] : [])
+  if (!ids.length) return 'Nenhuma empresa vinculada'
+  const labels = ids.map((id) => accountNameById.value.get(id) || `#${id}`)
+  if (labels.length <= 3) {
+    return `${labels.length === 1 ? 'Empresa' : 'Empresas'}: ${labels.join(', ')}`
   }
+  return `Empresas (${labels.length}): ${labels.slice(0, 3).join(', ')} +${labels.length - 3}`
 }
 
 const ensureAccounts = async () => {
-  if (accounts.value.length) return
   try {
     const res = await accountsAPI.list()
     accounts.value = res.data || []
   } catch { /* ignore */ }
 }
 
-const openEditAdmin = async (a: AdminUser) => {
-  await ensureAccounts()
-  editingAdminId.value = a.id
-  Object.assign(newAdminForm, {
-    email: a.email, password: '', name: a.name || '', phone: a.phone || '',
-    role: a.role || 'employee', account_id: a.account_id ?? null,
-    permissions: { edit_pixels: Boolean(a.permissions?.edit_pixels) },
-  })
-  newAdminOpen.value = true
+const loadAdmins = async () => {
+  loadingAdmins.value = true
+  try {
+    const [res] = await Promise.all([settings.listAdmins(), ensureAccounts()])
+    admins.value = res.data || []
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao listar usuários'))
+  } finally {
+    loadingAdmins.value = false
+  }
 }
 
 const openNewAdmin = async () => {
-  await ensureAccounts()
-  editingAdminId.value = null
-  Object.assign(newAdminForm, {
-    email: '', password: '', name: '', phone: '', role: 'employee', account_id: null, permissions: { edit_pixels: false },
-  })
-  newAdminOpen.value = true
+  if (!accounts.value.length) await ensureAccounts()
+  editingAdmin.value = null
+  modalOpen.value = true
 }
 
-const onCreateAdmin = async () => {
-  if (!newAdminForm.email) return toast.error('Erro', 'E-mail é obrigatório')
-  if (!editingAdminId.value && newAdminForm.password.length < 6) return toast.error('Erro', 'Senha deve ter pelo menos 6 caracteres')
-  if (['admin', 'manager', 'employee'].includes(newAdminForm.role) && !newAdminForm.account_id) return toast.error('Erro', 'Selecione uma empresa vinculada')
+const openEditAdmin = async (a: AdminUser) => {
+  if (!accounts.value.length) await ensureAccounts()
+  editingAdmin.value = a
+  modalOpen.value = true
+}
 
-  creatingAdmin.value = true
+const onSaveAdmin = async (form: AdminUserFormSubmitPayload) => {
+  if (!form.email.trim()) return toast.error('Erro', 'E-mail é obrigatório')
+  if (!editingAdmin.value && form.password.length < 6) return toast.error('Erro', 'Senha deve ter pelo menos 6 caracteres')
+  if (['admin', 'manager', 'employee'].includes(form.role) && !form.account_ids.length) {
+    return toast.error('Erro', 'Selecione pelo menos uma empresa vinculada')
+  }
+
+  savingAdmin.value = true
   try {
     const basePayload: UpdateAdminInput = {
-      email: newAdminForm.email.trim().toLowerCase(), name: newAdminForm.name.trim(), phone: newAdminForm.phone.trim(),
-      role: newAdminForm.role, permissions: newAdminForm.role === 'employee' ? { ...newAdminForm.permissions } : undefined,
-      account_id: newAdminForm.account_id,
+      email: form.email.trim().toLowerCase(),
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+      role: form.role,
+      account_id: form.account_ids[0] ?? null,
+      account_ids: form.account_ids,
+      permissions: form.role === 'employee' ? { ...form.permissions } : undefined,
     }
-    if (newAdminForm.password) basePayload.password = newAdminForm.password
+    if (form.password) basePayload.password = form.password
 
-    if (editingAdminId.value) {
-      const updated = await settings.updateAdmin(editingAdminId.value, basePayload)
+    if (editingAdmin.value) {
+      const updated = await settings.updateAdmin(editingAdmin.value.id, basePayload)
       admins.value = admins.value.map((a) => (a.id === updated.id ? updated : a))
       toast.success('Sucesso', 'Usuário atualizado com sucesso')
     } else {
-      const created = await settings.createAdmin({ ...basePayload, password: newAdminForm.password } as CreateAdminInput)
+      const created = await settings.createAdmin({ ...basePayload, password: form.password } as CreateAdminInput)
       admins.value = [...admins.value, created]
-      toast.success('Admin criado', `${created.email} já pode logar`)
+      toast.success('Usuário criado', `${created.email} já pode acessar as empresas selecionadas`)
     }
-    newAdminOpen.value = false
+    modalOpen.value = false
   } catch (error: unknown) {
     toast.error('Erro', errorMessage(error, 'Falha ao salvar usuário'))
   } finally {
-    creatingAdmin.value = false
+    savingAdmin.value = false
   }
 }
 
@@ -200,7 +187,7 @@ const onConfirmDeleteAdmin = async () => {
   try {
     await settings.deleteAdmin(deletingAdmin.value.id)
     admins.value = admins.value.filter((a) => a.id !== deletingAdmin.value!.id)
-    toast.success('Sucesso', 'Admin removido')
+    toast.success('Sucesso', 'Usuário removido')
     deleteAdminOpen.value = false
     deletingAdmin.value = null
   } catch (error: unknown) {
@@ -217,17 +204,16 @@ onMounted(loadAdmins)
 <style scoped>
 .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-card); }
 .card-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
-.card-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); }
+.card-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0; }
 .muted { color: var(--text-3); font-size: var(--fs-md); font-style: italic; }
 .text-danger { color: var(--danger); }
 .text-success { color: var(--success); font-size: var(--fs-sm); display: block; }
 .user-list { display: flex; flex-direction: column; gap: 0.5rem; }
 .user-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; padding: 0.75rem 1rem; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface-soft-2); }
-.user-info { display: flex; flex-direction: column; gap: 0.125rem; }
-.user-email { font-weight: var(--fw-semibold); color: var(--text-1); }
+.user-info { display: flex; flex-direction: column; gap: 0.15rem; }
+.user-title-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.user-email { font-weight: var(--fw-semibold); color: var(--text-1); font-size: var(--fs-md); }
 .user-meta { font-size: var(--fs-sm); color: var(--text-3); }
+.user-companies { font-size: var(--fs-xs); color: var(--text-2); font-weight: var(--fw-medium); }
 .row-actions { display: flex; gap: 0.5rem; }
-.form { display: flex; flex-direction: column; gap: 0.875rem; }
-.form-field { display: flex; flex-direction: column; gap: 0.375rem; }
-.form-label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-2); }
 </style>

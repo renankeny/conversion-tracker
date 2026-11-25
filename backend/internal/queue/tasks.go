@@ -38,15 +38,17 @@ type WhatsAppVerifyDisconnectPayload struct {
 }
 
 type WhatsAppMediaPayload struct {
-	AccountID        int64           `json:"account_id"`
-	InstanceID       int64           `json:"instance_id"`
-	ChatID           int64           `json:"chat_id"`
-	MessageDBID      int64           `json:"message_db_id"`
-	MessageType      string          `json:"message_type"`
-	MimeType         string          `json:"mime_type"`
-	ExternalMediaURL string          `json:"external_media_url,omitempty"`
-	ExpectedBytes    int64           `json:"expected_bytes,omitempty"`
-	RawMessageJSON   json.RawMessage `json:"raw_message_json"`
+	AccountID            int64           `json:"account_id"`
+	InstanceID           int64           `json:"instance_id"`
+	ChatID               int64           `json:"chat_id"`
+	MessageDBID          int64           `json:"message_db_id"`
+	WhatsAppMessageID    string          `json:"whatsapp_message_id,omitempty"`
+	RawWhatsAppMessageID string          `json:"raw_whatsapp_message_id,omitempty"`
+	MessageType          string          `json:"message_type"`
+	MimeType             string          `json:"mime_type"`
+	ExternalMediaURL     string          `json:"external_media_url,omitempty"`
+	ExpectedBytes        int64           `json:"expected_bytes,omitempty"`
+	RawMessageJSON       json.RawMessage `json:"raw_message_json"`
 }
 
 type Enqueuer struct {

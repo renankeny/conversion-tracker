@@ -23,7 +23,11 @@ func NewAccountRepo(pool *pgxpool.Pool) *AccountRepo {
 
 const accountColumns = `id, name, slug, enabled, owner_id,
 	(SELECT COUNT(*) FROM pixels p WHERE p.account_id = accounts.id) AS pixels_count,
-	(SELECT COUNT(*) FROM admin_users u WHERE u.account_id = accounts.id) AS users_count,
+	(SELECT COUNT(DISTINCT u_cnt.uid) FROM (
+		SELECT u.id AS uid FROM admin_users u WHERE u.account_id = accounts.id
+		UNION
+		SELECT ua.user_id AS uid FROM admin_user_accounts ua WHERE ua.account_id = accounts.id
+	) u_cnt) AS users_count,
 	sent_events_retention_days, event_counters_retention_days,
 	event_label_overrides, events_filter, created_at, updated_at`
 
@@ -65,18 +69,26 @@ func (r *AccountRepo) ListByHierarchy(ctx context.Context, c *auth.Claims) ([]do
 
 	var rows pgx.Rows
 	var err error
-	if c.IsAPIKey() || c.Role == "employee" || c.Role == "member" {
+	if c.IsAPIKey() || c.Role == "member" {
 		if c.AccountID <= 0 {
 			return []domain.Account{}, nil
 		}
 		q := `SELECT ` + accountColumns + ` FROM accounts WHERE id = $1 ORDER BY id ASC`
 		rows, err = r.pool.Query(ctx, q, c.AccountID)
+	} else if c.Role == "employee" {
+		q := `SELECT ` + accountColumns + ` FROM accounts
+		      WHERE id = $2
+		         OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $1)
+		         OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $1 AND ua.account_id = accounts.id)
+		      ORDER BY id ASC`
+		rows, err = r.pool.Query(ctx, q, c.UserID, c.AccountID)
 	} else {
 		q := `SELECT ` + accountColumns + ` FROM accounts
 		      WHERE owner_id = $1
 		         OR owner_id IN (SELECT id FROM admin_users WHERE parent_id = $1)
 		         OR id = $2
 		         OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $1)
+		         OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $1 AND ua.account_id = accounts.id)
 		      ORDER BY id ASC`
 		rows, err = r.pool.Query(ctx, q, c.UserID, c.AccountID)
 	}
@@ -91,22 +103,31 @@ func (r *AccountRepo) CanAccess(ctx context.Context, c *auth.Claims, accountID i
 	if c == nil || accountID <= 0 {
 		return false
 	}
-	if c.IsAPIKey() {
+	if c.IsAPIKey() || c.Role == "member" {
 		return c.AccountID == accountID
 	}
 	if c.IsOwner() || c.AccountID == accountID {
 		return true
 	}
-	if c.Role == "employee" || c.Role == "member" {
-		return false
-	}
 	var ok bool
+	if c.Role == "employee" {
+		const qEmp = `SELECT EXISTS(
+			SELECT 1 FROM accounts
+			WHERE id = $1 AND (
+				id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
+				OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $2 AND ua.account_id = accounts.id)
+			)
+		)`
+		_ = r.pool.QueryRow(ctx, qEmp, accountID, c.UserID).Scan(&ok)
+		return ok
+	}
 	const q = `SELECT EXISTS(
 		SELECT 1 FROM accounts
 		WHERE id = $1 AND (
 			owner_id = $2
 			OR owner_id IN (SELECT id FROM admin_users WHERE parent_id = $2)
 			OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
+			OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $2 AND ua.account_id = accounts.id)
 		)
 	)`
 	_ = r.pool.QueryRow(ctx, q, accountID, c.UserID).Scan(&ok)

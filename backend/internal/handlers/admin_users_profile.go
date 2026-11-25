@@ -133,18 +133,44 @@ func (h *AdminUsers) UpdateMyPreferences(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "preferences": sanitized})
 }
 
-func (h *AdminUsers) requireValidAccount(ctx context.Context, accountID *int64) error {
-	if accountID == nil || *accountID <= 0 {
-		return errors.New("selecione uma empresa para este usuário — administradores, gerentes e funcionários precisam estar vinculados a uma conta")
+func normalizeAccountIDsInput(accountIDs []int64, single *int64) []int64 {
+	seen := make(map[int64]bool, len(accountIDs)+1)
+	out := make([]int64, 0, len(accountIDs)+1)
+	for _, id := range accountIDs {
+		if id > 0 && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
 	}
-	exists, err := h.accounts.Exists(ctx, *accountID)
-	if err != nil {
-		return err
+	if len(out) == 0 && single != nil && *single > 0 {
+		out = append(out, *single)
 	}
-	if !exists {
-		return errors.New("a empresa selecionada não existe")
+	return out
+}
+
+func (h *AdminUsers) resolveValidatedAccountIDs(
+	ctx context.Context,
+	c *auth.Claims,
+	accountIDs []int64,
+	single *int64,
+) ([]int64, int, error) {
+	ids := normalizeAccountIDsInput(accountIDs, single)
+	if len(ids) == 0 {
+		return nil, http.StatusBadRequest, errors.New("selecione pelo menos uma empresa para este usuário")
 	}
-	return nil
+	for _, accID := range ids {
+		exists, err := h.accounts.Exists(ctx, accID)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		if !exists {
+			return nil, http.StatusBadRequest, errors.New("uma ou mais empresas selecionadas não existem")
+		}
+		if !CanAccessAccount(ctx, h.pool, c, accID) {
+			return nil, http.StatusForbidden, errors.New("você não tem permissão para vincular usuários a esta empresa")
+		}
+	}
+	return ids, 0, nil
 }
 
 func validEmail(s string) bool {

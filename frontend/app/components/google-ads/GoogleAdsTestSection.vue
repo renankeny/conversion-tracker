@@ -163,6 +163,8 @@ const onSendTest = async () => {
     const res = await googleAdsApi.testEvent(props.account.id, {
       event_type: chosen.event_type,
       conversion_action_id: chosen.conversion_action_id,
+      action_type: chosen.action_type || undefined,
+      owner_customer_id: chosen.owner_customer_id || undefined,
       customer_id: props.customerId || undefined,
       login_customer_id: props.loginCustomerId || undefined,
       gclid: test.gclid.trim() || undefined,

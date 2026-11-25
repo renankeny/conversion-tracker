@@ -9,6 +9,8 @@ type GoogleAdsConversionAction struct {
 	EventType          string `json:"event_type"`
 	ConversionActionID string `json:"conversion_action_id"`
 	Name               string `json:"name"`
+	ActionType         string `json:"action_type,omitempty"`
+	OwnerCustomerID    string `json:"owner_customer_id,omitempty"`
 	Enabled            bool   `json:"enabled"`
 }
 

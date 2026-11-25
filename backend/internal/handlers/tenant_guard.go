@@ -30,7 +30,7 @@ func CanAccessAccount(ctx context.Context, pool *pgxpool.Pool, c *auth.Claims, t
 	if c == nil || targetAccountID <= 0 {
 		return false
 	}
-	if c.IsAPIKey() {
+	if c.IsAPIKey() || c.Role == "member" {
 		return c.AccountID == targetAccountID
 	}
 	if pool == nil {
@@ -41,16 +41,25 @@ func CanAccessAccount(ctx context.Context, pool *pgxpool.Pool, c *auth.Claims, t
 		_ = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM accounts WHERE id = $1)`, targetAccountID).Scan(&exists)
 		return exists
 	}
-	if c.Role != "admin" && c.Role != "manager" {
-		return c.AccountID == targetAccountID
-	}
 	var allowed bool
+	if c.Role == "employee" {
+		const qEmp = `SELECT EXISTS(
+			SELECT 1 FROM accounts
+			WHERE id = $1 AND (
+				id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
+				OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $2 AND ua.account_id = accounts.id)
+			)
+		)`
+		_ = pool.QueryRow(ctx, qEmp, targetAccountID, c.UserID).Scan(&allowed)
+		return allowed
+	}
 	const q = `SELECT EXISTS(
 		SELECT 1 FROM accounts
 		WHERE id = $1 AND (
 			owner_id = $2
 			OR owner_id IN (SELECT id FROM admin_users WHERE parent_id = $2)
 			OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
+			OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $2 AND ua.account_id = accounts.id)
 		)
 	)`
 	_ = pool.QueryRow(ctx, q, targetAccountID, c.UserID).Scan(&allowed)

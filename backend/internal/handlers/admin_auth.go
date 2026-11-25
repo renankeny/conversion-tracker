@@ -61,8 +61,17 @@ func (h *AdminAuth) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var accID int64
-	if u.AccountID != nil {
+	if u.AccountID != nil && *u.AccountID > 0 {
 		accID = *u.AccountID
+	} else if len(u.AccountIDs) > 0 {
+		accID = u.AccountIDs[0]
+	}
+	accIDs := u.AccountIDs
+	if len(accIDs) == 0 && accID > 0 {
+		accIDs = []int64{accID}
+	}
+	if accIDs == nil {
+		accIDs = []int64{}
 	}
 	var perms map[string]any
 	if len(u.Permissions) > 0 {
@@ -92,6 +101,7 @@ func (h *AdminAuth) Login(w http.ResponseWriter, r *http.Request) {
 			"phone":       u.Phone,
 			"role":        u.Role,
 			"account_id":  accID,
+			"account_ids": accIDs,
 			"preferences": prefs,
 		},
 	})
@@ -106,8 +116,16 @@ func (h *AdminAuth) Me(w http.ResponseWriter, r *http.Request) {
 
 	var name, phone string
 	var prefsBytes []byte
+	var accountIDs []int64
 	if c.UserID > 0 {
 		name, phone, prefsBytes, _ = h.users.GetProfileAndPrefs(r.Context(), c.UserID)
+		accountIDs, _ = h.users.GetAccountIDs(r.Context(), c.UserID)
+	}
+	if len(accountIDs) == 0 && c.AccountID > 0 {
+		accountIDs = []int64{c.AccountID}
+	}
+	if accountIDs == nil {
+		accountIDs = []int64{}
 	}
 
 	prefs := sanitizePrefsForClient(prefsBytes)
@@ -119,6 +137,7 @@ func (h *AdminAuth) Me(w http.ResponseWriter, r *http.Request) {
 		"phone":       phone,
 		"role":        c.Role,
 		"account_id":  c.AccountID,
+		"account_ids": accountIDs,
 		"parent_id":   c.ParentID,
 		"permissions": c.Permissions,
 		"preferences": prefs,

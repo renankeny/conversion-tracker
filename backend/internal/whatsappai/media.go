@@ -154,6 +154,8 @@ func buildMultimodalUserParts(
 		case "video", "sticker":
 			if strings.TrimSpace(m.Content) != "" {
 				fmt.Fprintf(&transcriptLines, "%s[%s com legenda]: %s\n", header, m.MessageType, strings.TrimSpace(m.Content))
+			} else if m.MessageType == "video" {
+				fmt.Fprintf(&transcriptLines, "%s[Vídeo enviado]\n", header)
 			}
 		case "audio":
 			text := strings.TrimSpace(m.AITranscript)

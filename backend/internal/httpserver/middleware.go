@@ -161,7 +161,7 @@ func TenantMiddlewareWithSessions(pool *pgxpool.Pool, sessions *cache.SessionSto
 				return
 			}
 
-			if c.Role != "admin" && c.Role != "manager" {
+			if c.Role != "admin" && c.Role != "manager" && c.Role != "employee" {
 				writeMiddlewareError(w, http.StatusForbidden, "sem permissão para alternar de empresa")
 				return
 			}
@@ -178,16 +178,33 @@ func TenantMiddlewareWithSessions(pool *pgxpool.Pool, sessions *cache.SessionSto
 				}
 			}
 
+			if pool == nil {
+				writeMiddlewareError(w, http.StatusForbidden, "sem acesso à empresa informada em X-Account-ID")
+				return
+			}
+
 			var allowed bool
-			const q = `SELECT EXISTS(
-				SELECT 1 FROM accounts
-				WHERE id = $1 AND (
-					owner_id = $2
-					OR owner_id IN (SELECT id FROM admin_users WHERE parent_id = $2)
-					OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
-				)
-			)`
-			if err := pool.QueryRow(r.Context(), q, reqAcc, c.UserID).Scan(&allowed); err != nil || !allowed {
+			var query string
+			if c.Role == "employee" {
+				query = `SELECT EXISTS(
+					SELECT 1 FROM accounts
+					WHERE id = $1 AND (
+						id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
+						OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $2 AND ua.account_id = accounts.id)
+					)
+				)`
+			} else {
+				query = `SELECT EXISTS(
+					SELECT 1 FROM accounts
+					WHERE id = $1 AND (
+						owner_id = $2
+						OR owner_id IN (SELECT id FROM admin_users WHERE parent_id = $2)
+						OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
+						OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $2 AND ua.account_id = accounts.id)
+					)
+				)`
+			}
+			if err := pool.QueryRow(r.Context(), query, reqAcc, c.UserID).Scan(&allowed); err != nil || !allowed {
 				if err == nil && sessions != nil {
 					sessions.SetTenantAccess(r.Context(), c.UserID, reqAcc, false)
 				}

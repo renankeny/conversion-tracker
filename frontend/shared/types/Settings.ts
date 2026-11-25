@@ -12,6 +12,7 @@ export interface CreateAdminInput {
   // Multi-tenant: 'owner' enxerga tudo, 'member' apenas a própria account_id.
   role?: string
   account_id?: number | null
+  account_ids?: number[]
   permissions?: Record<string, unknown>
 }
 
@@ -23,6 +24,7 @@ export interface UpdateAdminInput {
   phone?: string
   role?: string
   account_id?: number | null
+  account_ids?: number[]
   permissions?: Record<string, unknown>
 }
 

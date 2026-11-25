@@ -40,6 +40,7 @@ type adminUserView struct {
 	Phone       string         `json:"phone"`
 	Role        string         `json:"role"`
 	AccountID   *int64         `json:"account_id"`
+	AccountIDs  []int64        `json:"account_ids"`
 	ParentID    *int64         `json:"parent_id"`
 	Permissions map[string]any `json:"permissions"`
 	CreatedAt   string         `json:"created_at"`
@@ -54,6 +55,13 @@ func recordToAdminUserView(u repo.AdminUserRecord) adminUserView {
 	if perms == nil {
 		perms = make(map[string]any)
 	}
+	accIDs := u.AccountIDs
+	if len(accIDs) == 0 && u.AccountID != nil && *u.AccountID > 0 {
+		accIDs = []int64{*u.AccountID}
+	}
+	if accIDs == nil {
+		accIDs = []int64{}
+	}
 	return adminUserView{
 		ID:          u.ID,
 		Email:       u.Email,
@@ -61,6 +69,7 @@ func recordToAdminUserView(u repo.AdminUserRecord) adminUserView {
 		Phone:       u.Phone,
 		Role:        u.Role,
 		AccountID:   u.AccountID,
+		AccountIDs:  accIDs,
 		ParentID:    u.ParentID,
 		Permissions: perms,
 		CreatedAt:   u.CreatedAt.Format(time.RFC3339),
@@ -100,10 +109,11 @@ type createAdminInput struct {
 	Phone       string         `json:"phone"`
 	Role        string         `json:"role"`
 	AccountID   *int64         `json:"account_id"`
+	AccountIDs  []int64        `json:"account_ids"`
 	Permissions map[string]any `json:"permissions"`
 }
 
-// Create insere um novo admin.
+// Create insere um novo admin vinculado a uma ou mais empresas.
 func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 	var in createAdminInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -144,12 +154,9 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.requireValidAccount(r.Context(), in.AccountID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if !CanAccessAccount(r.Context(), h.pool, c, *in.AccountID) {
-		writeError(w, http.StatusForbidden, "você não tem permissão para vincular usuários a esta empresa")
+	accountIDs, statusCode, err := h.resolveValidatedAccountIDs(r.Context(), c, in.AccountIDs, in.AccountID)
+	if err != nil {
+		writeError(w, statusCode, err.Error())
 		return
 	}
 
@@ -170,7 +177,7 @@ func (h *AdminUsers) Create(w http.ResponseWriter, r *http.Request) {
 		Name:         strings.TrimSpace(in.Name),
 		Phone:        strings.TrimSpace(in.Phone),
 		Role:         role,
-		AccountID:    in.AccountID,
+		AccountIDs:   accountIDs,
 		ParentID:     &c.UserID,
 		Permissions:  permsBytes,
 	}

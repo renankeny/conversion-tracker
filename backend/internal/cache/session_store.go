@@ -142,3 +142,18 @@ func (s *SessionStore) SetTenantAccess(ctx context.Context, userID, accountID in
 	_ = s.rdb.Set(ctx, tenantAccessKey(userID, accountID), v, tenantAccessCacheTTL).Err()
 }
 
+func (s *SessionStore) InvalidateUserTenantAccess(ctx context.Context, userID int64, accountIDs ...int64) {
+	if s == nil || s.rdb == nil || userID <= 0 {
+		return
+	}
+	keys := make([]string, 0, len(accountIDs))
+	for _, accID := range accountIDs {
+		if accID > 0 {
+			keys = append(keys, tenantAccessKey(userID, accID))
+		}
+	}
+	if len(keys) > 0 {
+		_ = s.rdb.Del(ctx, keys...).Err()
+	}
+}
+

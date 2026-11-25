@@ -6,6 +6,7 @@ export interface AdminUser {
   // Multi-tenant: 'owner' tem acesso global, 'member' apenas à própria account_id.
   role?: string
   account_id?: number | null
+  account_ids?: number[]
   parent_id?: number | null
   permissions?: Record<string, unknown>
   preferences?: Record<string, unknown>

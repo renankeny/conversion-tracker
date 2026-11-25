@@ -95,15 +95,28 @@ export const useGoogleAdsAccounts = () => {
     customerId?: string,
     loginCustomerId?: string,
     refresh = false,
-  ): Promise<{ conversion_actions: GoogleAdsRemoteConversionAction[]; warning?: string }> => {
+  ): Promise<{ conversion_actions: GoogleAdsRemoteConversionAction[]; conversion_owner_id?: string; warning?: string }> => {
     const q = new URLSearchParams()
     if (customerId) q.set('customer_id', customerId)
     if (loginCustomerId) q.set('login_customer_id', loginCustomerId)
     if (refresh) q.set('refresh', '1')
     const qs = q.toString() ? `?${q.toString()}` : ''
-    return api.get<{ conversion_actions: GoogleAdsRemoteConversionAction[]; warning?: string }>(
+    return api.get<{ conversion_actions: GoogleAdsRemoteConversionAction[]; conversion_owner_id?: string; warning?: string }>(
       `/admin/google-ads-accounts/${id}/conversion-actions${qs}`,
     )
+  }
+
+  const createConversionAction = (
+    id: number,
+    body: {
+      customer_id: string
+      login_customer_id?: string
+      event_type: string
+      name?: string
+      currency?: string
+    },
+  ): Promise<{ conversion_action: GoogleAdsRemoteConversionAction }> => {
+    return api.post(`/admin/google-ads-accounts/${id}/conversion-actions`, body)
   }
 
   const disconnect = async (id: number): Promise<{ disconnected: boolean }> => {
@@ -120,6 +133,8 @@ export const useGoogleAdsAccounts = () => {
     body: {
       event_type: string
       conversion_action_id?: string
+      action_type?: string
+      owner_customer_id?: string
       customer_id?: string
       login_customer_id?: string
       gclid?: string
@@ -161,6 +176,7 @@ export const useGoogleAdsAccounts = () => {
     reuseOAuth,
     listCustomers,
     listConversionActions,
+    createConversionAction,
     disconnect,
     testEvent,
   }
