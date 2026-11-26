@@ -45,6 +45,8 @@ export interface CrmLead {
   tracked_user_id: number
   stage_id: number | null
   value: number
+  refund_status?: 'none' | 'refunded' | 'chargeback'
+  refunded_amount?: number
   has_notes?: boolean
   created_at: string
   updated_at: string

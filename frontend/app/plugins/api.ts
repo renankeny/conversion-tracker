@@ -25,7 +25,9 @@ export default defineNuxtPlugin({
   dependsOn: ['pinia'],
   setup() {
     const config = useRuntimeConfig()
-    const apiBase = config.public.apiUrl as string
+    const serverInternalBase = import.meta.server ? String(config.internalApiUrl || '').trim() : ''
+    const apiBase = serverInternalBase || String(config.public.apiUrl)
+    const ssrTimeout = import.meta.server ? 5000 : undefined
     const serviceNotice = useState<ServiceNoticeState | null>('platform_service_notice', () => null)
 
     const authStore = useAuthStore()
@@ -101,6 +103,7 @@ export default defineNuxtPlugin({
     const publicApi = $fetch.create({
       baseURL: apiBase,
       credentials: 'omit',
+      timeout: ssrTimeout,
       onRequest({ options }) {
         const headers = new Headers(options.headers as HeadersInit | undefined)
         if (!headers.has('Content-Type')) {
@@ -117,6 +120,7 @@ export default defineNuxtPlugin({
 
     const api = $fetch.create({
       baseURL: apiBase,
+      timeout: ssrTimeout,
       onRequest({ request, options }) {
         const urlStr = typeof request === 'string' ? request : String(request)
         const cleanPath = urlStr.split('?')[0] || ''

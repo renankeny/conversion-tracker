@@ -14,11 +14,14 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/evolution"
+	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/storage"
 	"github.com/renankeny/conversion-tracker/backend/internal/uazapi"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
+
+var mediaDownloadSem = make(chan struct{}, 6)
 
 func maxAllowedMediaBytes(messageType string) int64 {
 	switch messageType {
@@ -50,9 +53,19 @@ func makeWhatsAppMediaHandler(deps Deps) func(context.Context, *asynq.Task) erro
 		}
 
 		inst, err := deps.WhatsApp.GetInstance(ctx, payload.AccountID, payload.InstanceID)
-		if err != nil || inst == nil {
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			return fmt.Errorf("get whatsapp instance %d: %w", payload.InstanceID, err)
+		}
+		if inst == nil {
 			_ = deps.WhatsApp.UpdateMessageMediaStatus(ctx, payload.MessageDBID, domain.MediaStatusFailed)
 			return nil
+		}
+
+		select {
+		case mediaDownloadSem <- struct{}{}:
+			defer func() { <-mediaDownloadSem }()
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 
 		maxBytes := maxAllowedMediaBytes(payload.MessageType)

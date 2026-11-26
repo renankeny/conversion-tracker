@@ -23,7 +23,17 @@
     </div>
 
     <div class="card-meta">
-      <span class="card-value" :class="{ blurred }">{{ formatCurrency(lead.value || 0) }}</span>
+      <div class="card-value-group">
+        <span class="card-value" :class="{ blurred }">{{ formatCurrency(lead.value || 0) }}</span>
+        <span
+          v-if="lead.refund_status && lead.refund_status !== 'none'"
+          class="refund-pill"
+          :class="lead.refund_status === 'chargeback' ? 'is-chargeback' : 'is-refunded'"
+          :title="lead.refunded_amount ? `Estornado: ${formatCurrency(lead.refunded_amount)}` : 'Pedido estornado'"
+        >
+          {{ lead.refund_status === 'chargeback' ? 'Chargeback' : 'Reembolsado' }}
+        </span>
+      </div>
       <div class="card-pills">
         <span v-if="originBadge" class="origin-pill">
           {{ originBadge.label }}
@@ -158,7 +168,11 @@ const onClick = (e: MouseEvent) => {
   flex-shrink: 0; text-decoration: none; transition: all 0.15s ease;
 }
 .quick-wpp-btn:hover { background: var(--success); color: var(--brand-text); transform: scale(1.05); }
-.card-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem; }
+.card-meta { display: flex; justify-content: space-between; align-items: center; gap: 0.35rem; margin-top: 0.25rem; }
+.card-value-group { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
+.refund-pill { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); padding: 0.12rem 0.4rem; border-radius: 4px; }
+.refund-pill.is-refunded { color: var(--warning); background: var(--warning-soft); border: 1px solid var(--warning-border); }
+.refund-pill.is-chargeback { color: var(--danger); background: var(--danger-soft); border: 1px solid var(--danger-border); }
 .card-value {
   font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--brand);
   background: var(--brand-soft); padding: 0.15rem 0.45rem; border-radius: 4px;

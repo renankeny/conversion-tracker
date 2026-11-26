@@ -103,6 +103,7 @@
 
 <script setup lang="ts">
 import type { MaintenanceStatusResponse, PruneResultRow, ResetAccountResponse } from '#shared/types'
+import { useDashboardDataStore } from '~/stores/useDashboardDataStore'
 import { errorMessage } from '~/utils/errorMessage'
 
 const settings = useSettings()
@@ -144,6 +145,7 @@ const onPrune = async () => {
   try {
     const res = await settings.pruneNow()
     lastPruneResults.value = res.results || []
+    useDashboardDataStore().clearAll()
     toast.success('Limpeza executada', 'Veja resultado abaixo')
     confirmPrune.value = false
   } catch (error: unknown) {
@@ -190,8 +192,10 @@ const onResetRetention = async () => {
 const onReset = async () => {
   resetting.value = true
   try {
-    const res = await settings.resetAccount()
+    const explicitAccId = Number(tenantStore.activeAccountId) || undefined
+    const res = await settings.resetAccount(explicitAccId)
     lastResetResult.value = res
+    useDashboardDataStore().clearAll()
     toast.success(
       'Empresa resetada',
       `${formatNumber(res.deleted_sent_events)} eventos + ${formatNumber(res.deleted_event_counters)} contadores apagados`
@@ -205,6 +209,8 @@ const onReset = async () => {
 }
 
 watch(() => tenantStore.switchVersion, () => {
+  confirmPrune.value = false
+  confirmReset.value = false
   lastPruneResults.value = []
   lastResetResult.value = null
   loadMaintenance()
@@ -232,6 +238,6 @@ onMounted(loadMaintenance)
 .prune-results h4 { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
 .prune-row { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; font-size: var(--fs-md); border-bottom: 1px solid var(--border-soft); }
 .prune-row:last-child { border-bottom: none; }
-.prune-row code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-soft); padding: 0.125rem 0.5rem; border-radius: 4px; }
+.prune-row code { font-family: var(--font-mono); background: var(--surface-soft); padding: 0.125rem 0.5rem; border-radius: 4px; }
 </style>
 

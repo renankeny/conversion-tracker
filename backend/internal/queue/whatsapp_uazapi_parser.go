@@ -75,30 +75,39 @@ func ParseUazapiWebhookMeta(raw json.RawMessage) UazapiWebhookMeta {
 func IsUazapiIgnorableMessage(raw json.RawMessage) bool {
 	raw = UnwrapUazapiEnvelope(raw)
 	var quick struct {
-		Chat struct {
+		EventType string `json:"EventType"`
+		Chat      struct {
 			WaChatID  string `json:"wa_chatid"`
 			WaIsGroup bool   `json:"wa_isGroup"`
 		} `json:"chat"`
 		Message struct {
 			ChatID       string `json:"chatid"`
+			Sender       string `json:"sender"`
 			IsGroup      bool   `json:"isGroup"`
+			IsStatus     bool   `json:"isStatus"`
 			WasSentByAPI bool   `json:"wasSentByApi"`
 			SendFunction string `json:"sendFunction"`
+			MessageType  string `json:"messageType"`
+			Type         string `json:"type"`
 		} `json:"message"`
 	}
 	if json.Unmarshal(raw, &quick) != nil {
 		return false
 	}
+	if ev := strings.ToLower(strings.TrimSpace(quick.EventType)); ev != "" && ev != "messages" && ev != "message" {
+		return true
+	}
 	if quick.Message.WasSentByAPI || strings.TrimSpace(quick.Message.SendFunction) != "" {
 		return true
 	}
-	if quick.Message.IsGroup || quick.Chat.WaIsGroup {
+	if quick.Message.IsGroup || quick.Chat.WaIsGroup || quick.Message.IsStatus {
 		return true
 	}
-	for _, c := range []string{quick.Message.ChatID, quick.Chat.WaChatID} {
-		lc := strings.ToLower(strings.TrimSpace(c))
-		if strings.HasSuffix(lc, "@g.us") || strings.HasSuffix(lc, "@broadcast") ||
-			strings.HasSuffix(lc, "@newsletter") || lc == "status@broadcast" {
+	if isIgnorableUazapiMessageType(quick.Message.MessageType, quick.Message.Type) {
+		return true
+	}
+	for _, c := range []string{quick.Message.ChatID, quick.Chat.WaChatID, quick.Message.Sender} {
+		if IsIgnorableSpecialJID(c) {
 			return true
 		}
 	}
@@ -122,9 +131,6 @@ func ParseUazapiMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage, e
 			Name          string `json:"name"`
 			LeadFullName  string `json:"lead_fullName"`
 			LeadName      string `json:"lead_name"`
-			LeadField10   string `json:"lead_field10"`
-			LeadField11   string `json:"lead_field11"`
-			LeadField12   string `json:"lead_field12"`
 			WaIsGroup     bool   `json:"wa_isGroup"`
 		} `json:"chat"`
 		Message struct {
@@ -148,6 +154,7 @@ func ParseUazapiMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage, e
 			ButtonOrListID   string          `json:"buttonOrListid"`
 			FileURL          string          `json:"fileURL"`
 			Content          json.RawMessage `json:"content"`
+			Referral         *evoAdReferral  `json:"referral"`
 		} `json:"message"`
 	}
 	if err := json.Unmarshal(rawData, &env); err != nil {
@@ -162,6 +169,11 @@ func ParseUazapiMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage, e
 	}
 
 	ownerBare := normalizeUazapiPhoneJID(env.Owner)
+	if ownerBare != "" && (normalizeUazapiPhoneJID(env.Message.ChatID) == ownerBare ||
+		normalizeUazapiPhoneJID(env.Chat.WaChatID) == ownerBare ||
+		normalizeUazapiPhoneJID(env.Chat.Phone) == ownerBare) {
+		return nil, nil
+	}
 	phoneJID := resolveUazapiPhoneJID(env.Message.FromMe, ownerBare, env.Message.SenderPN, env.Message.ChatID, env.Chat.WaChatID, env.Chat.Phone)
 	lidJID := resolveUazapiLID(env.Message.FromMe, env.Message.ChatLID, env.Chat.WaChatLID, env.Message.SenderLID, env.Message.Sender)
 
@@ -197,17 +209,10 @@ func ParseUazapiMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage, e
 	}
 
 	extractUazapiContentAndMedia(env.Message.MessageType, env.Message.MediaType, env.Message.Type, env.Message.FileURL, env.Message.Content, out)
-	if !env.Message.FromMe {
-		if out.CtwaClid == "" && isValidUazapiCtwaClid(env.Chat.LeadField10) {
-			out.CtwaClid = strings.TrimSpace(env.Chat.LeadField10)
-		}
-		if out.SourceID == "" && isValidUazapiLeadAdSourceID(env.Chat.LeadField11, out.CtwaClid, env.Chat.LeadField12) {
-			out.SourceID = strings.TrimSpace(env.Chat.LeadField11)
-		}
-		if out.SourceApp == "" && (out.CtwaClid != "" || out.SourceID != "") {
-			out.SourceApp = normalizeAdSourceApp(env.Chat.LeadField12)
-		}
+	if env.Message.Referral != nil {
+		applyReferral(env.Message.Referral, false, "", out)
 	}
+	sanitizeParsedMessageDirection(out)
 	if out.Content == "" && !out.HasMedia && out.CtwaClid == "" && out.SourceID == "" {
 		return nil, nil
 	}

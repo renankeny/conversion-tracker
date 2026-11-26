@@ -85,6 +85,11 @@ const items: TriggerMeta[] = [
     description: 'Qualquer origem (checkout, webhook, API, site ou WhatsApp), detalhando valor, origem, produto, pixel e cliente.',
   },
   {
+    key: 'sale_refunded',
+    title: 'Reembolso ou chargeback recebido',
+    description: 'Avisa imediatamente quando um gateway estorna ou contesta um pedido, atualizando receita líquida e CRM.',
+  },
+  {
     key: 'meta_account_lifecycle',
     title: 'Conta Meta Ads criada ou excluída',
     description: 'Notifica sempre que uma conexão de anúncios da Meta é adicionada ou removida.',

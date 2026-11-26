@@ -11,6 +11,7 @@ import { useGoogleAdsStore } from '~/stores/useGoogleAdsStore'
 import { useCustomWebhooksStore } from '~/stores/customWebhooks'
 import { useSystemAlertsStore } from '~/stores/useSystemAlertsStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
+import { useWhatsAppStore } from '~/stores/useWhatsAppStore'
 
 export const useTenantStore = defineStore('tenant', () => {
   const accounts = ref<Account[]>([])
@@ -137,6 +138,7 @@ export const useTenantStore = defineStore('tenant', () => {
     useGoogleAdsStore().invalidate()
     useCustomWebhooksStore().invalidate()
     useSystemAlertsStore().invalidate()
+    useWhatsAppStore().invalidate()
 
     const liveStore = useLiveEventsStore()
     liveStore.reconnectForAccount(Number(nextId) || 0)
@@ -152,8 +154,12 @@ export const useTenantStore = defineStore('tenant', () => {
     activeAccountId.value = null
     inFlightPromise = null
     useDashboardDataStore().clearAll()
+    usePixelStore().invalidate()
     useMetaAdsStore().invalidate()
     useGoogleAdsStore().invalidate()
+    useCustomWebhooksStore().invalidate()
+    useSystemAlertsStore().invalidate()
+    useWhatsAppStore().invalidate()
   }
 
   return {

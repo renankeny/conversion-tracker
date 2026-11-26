@@ -141,12 +141,17 @@ func resolveOnixPayEventName(rawEvent, rawStatus string) (string, bool) {
 		return domain.EventPurchase, true
 	case "TRANSACTION_CREATED", "ORDER_CREATED", "PIX_GENERATED", "WAITING_PAYMENT":
 		return domain.EventAddPaymentInfo, true
-	case "":
-		if st == "COMPLETED" || st == "PAID" || st == "APPROVED" {
-			return domain.EventPurchase, true
+	default:
+		if rev := detectRefundOrChargeback(ev, st); rev != "" {
+			return rev, true
 		}
-		if st == "PENDING" || st == "WAITING_PAYMENT" {
-			return domain.EventAddPaymentInfo, true
+		if ev == "" {
+			if st == "COMPLETED" || st == "PAID" || st == "APPROVED" {
+				return domain.EventPurchase, true
+			}
+			if st == "PENDING" || st == "WAITING_PAYMENT" {
+				return domain.EventAddPaymentInfo, true
+			}
 		}
 	}
 	return "", false

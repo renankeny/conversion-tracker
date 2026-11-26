@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
@@ -42,13 +43,23 @@ func (r *CRMRepo) EnsureLeadReturningID(ctx context.Context, accountID, trackedU
 		ON CONFLICT (account_id, tracked_user_id) DO UPDATE SET updated_at = crm_leads.updated_at
 		RETURNING id
 	`, accountID, trackedUserID, stageID, groupID).Scan(&id)
+	if err != nil && groupID != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			if r.pool.QueryRow(ctx, `SELECT id FROM crm_leads WHERE account_id = $1 AND group_id = $2 LIMIT 1`, accountID, *groupID).Scan(&id) == nil {
+				return id, nil
+			}
+		}
+	}
 	return id, err
 }
 
 func (r *CRMRepo) GetLeads(ctx context.Context, accountID int64, pixel string) ([]domain.CRMLead, error) {
 	query := `
 		SELECT 
-			c.id, c.account_id, c.tracked_user_id, c.stage_id, c.value, c.created_at, c.updated_at,
+			c.id, c.account_id, c.tracked_user_id, c.stage_id, c.value,
+			COALESCE(c.refund_status, 'none'), COALESCE(c.refunded_amount, 0),
+			c.created_at, c.updated_at,
 			COALESCE(t.first_name, ''), COALESCE(t.last_name, ''), COALESCE(t.email, ''), COALESCE(t.phone, ''),
 			EXISTS(SELECT 1 FROM crm_notes n WHERE n.crm_lead_id = c.id) AS has_notes,
 			(
@@ -76,7 +87,8 @@ func (r *CRMRepo) GetLeads(ctx context.Context, accountID int64, pixel string) (
 				SELECT 1 FROM whatsapp_chats wc
 				JOIN whatsapp_instances wi ON wi.id = wc.instance_id
 				JOIN pixels px ON px.id = wi.pixel_id
-				WHERE (wc.crm_lead_id = c.id OR wc.tracked_user_id = c.tracked_user_id)
+				WHERE wc.account_id = c.account_id
+				  AND (wc.crm_lead_id = c.id OR wc.tracked_user_id = c.tracked_user_id)
 				  AND px.account_id = c.account_id
 				  AND px.name = $2
 			)
@@ -84,7 +96,7 @@ func (r *CRMRepo) GetLeads(ctx context.Context, accountID int64, pixel string) (
 		args = append(args, pixel)
 	}
 
-	query += ` ORDER BY c.updated_at DESC `
+	query += ` ORDER BY c.updated_at DESC LIMIT 2000 `
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -98,7 +110,9 @@ func (r *CRMRepo) GetLeads(ctx context.Context, accountID int64, pixel string) (
 		var tu domain.TrackedUser
 		var tagsJSON []byte
 		if err := rows.Scan(
-			&l.ID, &l.AccountID, &l.TrackedUserID, &l.StageID, &l.Value, &l.CreatedAt, &l.UpdatedAt,
+			&l.ID, &l.AccountID, &l.TrackedUserID, &l.StageID, &l.Value,
+			&l.RefundStatus, &l.RefundedAmount,
+			&l.CreatedAt, &l.UpdatedAt,
 			&tu.FirstName, &tu.LastName, &tu.Email, &tu.Phone,
 			&l.HasNotes,
 			&tagsJSON,
@@ -133,7 +147,9 @@ func (r *CRMRepo) GetLeadByID(ctx context.Context, id, accountID int64) (*domain
 	var tu domain.TrackedUser
 	err := r.pool.QueryRow(ctx, `
 		SELECT 
-			c.id, c.account_id, c.tracked_user_id, c.stage_id, c.value, c.created_at, c.updated_at,
+			c.id, c.account_id, c.tracked_user_id, c.stage_id, c.value,
+			COALESCE(c.refund_status, 'none'), COALESCE(c.refunded_amount, 0),
+			c.created_at, c.updated_at,
 			COALESCE(t.external_id, ''), COALESCE(t.first_name, ''), COALESCE(t.last_name, ''),
 			COALESCE(t.email, ''), COALESCE(t.phone, ''), COALESCE(t.pixel_name, ''),
 			COALESCE(t.fbp, ''), COALESCE(t.fbc, ''), COALESCE(t.gclid, ''), COALESCE(t.wbraid, ''), COALESCE(t.gbraid, ''),
@@ -151,7 +167,9 @@ func (r *CRMRepo) GetLeadByID(ctx context.Context, id, accountID int64) (*domain
 		JOIN tracked_users t ON t.id = c.tracked_user_id
 		WHERE c.id = $1 AND c.account_id = $2
 	`, id, accountID).Scan(
-		&l.ID, &l.AccountID, &l.TrackedUserID, &l.StageID, &l.Value, &l.CreatedAt, &l.UpdatedAt,
+		&l.ID, &l.AccountID, &l.TrackedUserID, &l.StageID, &l.Value,
+		&l.RefundStatus, &l.RefundedAmount,
+		&l.CreatedAt, &l.UpdatedAt,
 		&tu.ExternalID, &tu.FirstName, &tu.LastName,
 		&tu.Email, &tu.Phone, &tu.PixelName,
 		&tu.FBP, &tu.FBC, &tu.GCLID, &tu.WBraid, &tu.GBraid,

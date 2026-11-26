@@ -112,8 +112,7 @@ func (h *AdminDashboardMeta) loadCachedSummary(ctx context.Context, src *resolve
 	prevSince, prevUntil := previousYMDWindow(since, until)
 	prevRange := marshalMetaRange(prevSince, prevUntil)
 
-	ver := h.qcache.DashboardVersion(ctx, src.accountID)
-	key := cache.HashQueryKey("meta:insights:v5", strconv.FormatInt(src.accountID, 10), ver, src.credKey(), src.adAccountID, timeRange)
+	key := cache.HashQueryKey("meta:insights:v6", strconv.FormatInt(src.accountID, 10), src.credKey(), src.adAccountID, timeRange)
 	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte(`{"connected":false}`), func(lctx context.Context) ([]byte, error) {
 		summary, ferr := h.fetchMetaSummary(lctx, src, timeRange)
 		if ferr != nil {
@@ -174,24 +173,33 @@ func (h *AdminDashboardMeta) loadCachedCreatives(ctx context.Context, src *resol
 	if timeRange == "" {
 		return []byte("[]"), nil
 	}
+	rawRemoteKey := cache.HashQueryKey("meta:raw_creatives:v1", strconv.FormatInt(src.accountID, 10), src.credKey(), src.adAccountID, timeRange)
 	ver := h.qcache.DashboardVersion(ctx, src.accountID)
-	key := cache.HashQueryKey("meta:creatives:v4", strconv.FormatInt(src.accountID, 10), ver, src.credKey(), src.pixelName, src.adAccountID, timeRange)
+	key := cache.HashQueryKey("meta:creatives:v5", strconv.FormatInt(src.accountID, 10), ver, src.credKey(), src.pixelName, src.adAccountID, timeRange)
 	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte("[]"), func(lctx context.Context) ([]byte, error) {
-		var (
-			ranking []meta.CreativeInsight
-			ferr    error
-		)
-		if src.oauthAcc != nil {
-			ranking, ferr = h.metaOAuth.FetchCreativeRanking(lctx, src.oauthAcc, src.adAccountID, timeRange)
-		} else {
-			ranking, ferr = meta.FetchCreativeRanking(lctx, src.adAccountID, src.legacyToken, timeRange)
+		rawList, rerr := h.qcache.GetOrLoadWithNegCache(lctx, rawRemoteKey, 3*time.Minute, 20*time.Second, []byte("[]"), func(fctx context.Context) ([]byte, error) {
+			var (
+				fetched []meta.CreativeInsight
+				ferr    error
+			)
+			if src.oauthAcc != nil {
+				fetched, ferr = h.metaOAuth.FetchCreativeRanking(fctx, src.oauthAcc, src.adAccountID, timeRange)
+			} else {
+				fetched, ferr = meta.FetchCreativeRanking(fctx, src.adAccountID, src.legacyToken, timeRange)
+			}
+			if ferr != nil {
+				return nil, ferr
+			}
+			if len(fetched) > 3 {
+				fetched = fetched[:3]
+			}
+			return json.Marshal(fetched)
+		})
+		if rerr != nil {
+			return nil, rerr
 		}
-		if ferr != nil {
-			return nil, ferr
-		}
-		if len(ranking) > 3 {
-			ranking = ranking[:3]
-		}
+		var ranking []meta.CreativeInsight
+		_ = json.Unmarshal(rawList, &ranking)
 		if h.statsRepo != nil && len(ranking) > 0 {
 			h.statsRepo.EnrichCreativesWithTrackedConversions(lctx, repo.StatsFilter{
 				AccountID: src.accountID, PixelName: src.pixelName, From: fromTime, To: toTime,

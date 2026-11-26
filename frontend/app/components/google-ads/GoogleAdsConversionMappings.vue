@@ -46,15 +46,6 @@
           </BaseButton>
         </div>
 
-        <div v-if="isIncompatibleRow(ca)" class="type-warn">
-          <span>
-            Esta conversão é do tipo <strong>{{ resolveRowType(ca) }}</strong> (Tag/GA4) e retorna <code>Resource not found</code> na API Offline. Use ou crie uma conversão de <strong>Importação de Cliques</strong>.
-          </span>
-          <BaseButton v-if="canLoadRemoteActions" type="button" variant="outline" size="sm" :loading="creatingAction" @click="$emit('create-action', ca)">
-            + Criar Conversão API ({{ ca.event_type }})
-          </BaseButton>
-        </div>
-
         <div class="action-controls">
           <div class="control-left">
             <BaseCheckbox v-model="ca.enabled" size="sm" :label="ca.enabled ? 'Ativa' : 'Pausada'" />

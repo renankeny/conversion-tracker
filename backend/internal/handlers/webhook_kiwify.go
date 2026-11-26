@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -53,8 +54,13 @@ func (h *Webhooks) Kiwify(w http.ResponseWriter, r *http.Request) {
 
 	ev := strings.ToLower(strings.TrimSpace(p.WebhookEventType))
 	st := strings.ToLower(strings.TrimSpace(p.OrderStatus))
-	approved := ev == "order_approved" || ev == "compra_aprovada" || (ev == "" && st == "paid")
-	if !approved {
+	eventName := ""
+	if ev == "order_approved" || ev == "compra_aprovada" || (ev == "" && st == "paid") {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(ev, st)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -87,6 +93,7 @@ func (h *Webhooks) Kiwify(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "kiwify",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(p.OrderID, p.OrderRef),
 		Value:       value,

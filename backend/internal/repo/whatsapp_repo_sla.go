@@ -88,7 +88,8 @@ func (r *WhatsAppRepo) CountWaitingConversations(ctx context.Context, accountID 
 		SELECT COUNT(*)::INT
 		FROM whatsapp_chats c
 		JOIN whatsapp_instances i ON i.id = c.instance_id
-		WHERE i.account_id = $1
+		WHERE c.account_id = $1
+		  AND i.account_id = $1
 		  AND c.tracked_user_id IS NOT NULL
 		  AND c.sla_status IN ('unanswered', 'waiting_reply')
 	`, accountID).Scan(&count)

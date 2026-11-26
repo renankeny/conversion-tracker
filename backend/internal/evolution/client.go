@@ -30,6 +30,10 @@ func NewClient(baseURL, adminAPIKey string) *Client {
 }
 
 func (c *Client) doWithKey(ctx context.Context, cli *http.Client, apiKey, method, path string, body any, out any) error {
+	return c.doWithKeyLimit(ctx, cli, apiKey, method, path, body, out, 4*1024*1024)
+}
+
+func (c *Client) doWithKeyLimit(ctx context.Context, cli *http.Client, apiKey, method, path string, body any, out any, maxRespBytes int64) error {
 	var reqBody io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -59,7 +63,11 @@ func (c *Client) doWithKey(ctx context.Context, cli *http.Client, apiKey, method
 		return fmt.Errorf("evolution api error (status %d): %s", res.StatusCode, strings.TrimSpace(string(b)))
 	}
 	if out != nil {
-		if err := json.NewDecoder(res.Body).Decode(out); err != nil {
+		reader := io.Reader(res.Body)
+		if maxRespBytes > 0 {
+			reader = io.LimitReader(res.Body, maxRespBytes)
+		}
+		if err := json.NewDecoder(reader).Decode(out); err != nil {
 			return fmt.Errorf("decode response: %w", err)
 		}
 	}

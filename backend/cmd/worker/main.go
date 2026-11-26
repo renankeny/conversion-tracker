@@ -127,6 +127,7 @@ func main() {
 		GA4:                ga4.NewClient(),
 		Counters:           repo.NewEventCounterRepo(pool),
 		SentEvents:         repo.NewSentEventRepo(pool),
+		Refunds:            repo.NewRefundRepo(pool),
 		Notify:             notifySvc,
 		Redis:              rdb,
 		AppURL:             cfg.AppURL,

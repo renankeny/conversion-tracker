@@ -22,8 +22,13 @@ export interface RunOAuthPopupOptions {
   onManualClose: (accountId: number, createdTemp: boolean) => Promise<void> | void
 }
 
-const POPUP_LOADING_HTML = (label: string) => `<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><title>Conectando ${label}</title>
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+
+const POPUP_LOADING_HTML = (label: string) => {
+  const safeLabel = escapeHtml(label)
+  return `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Conectando ${safeLabel}</title>
 <style>
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #18181b; color: #f4f4f5; font-family: system-ui, -apple-system, sans-serif; }
   .box { text-align: center; padding: 24px; max-width: 300px; }
@@ -32,7 +37,8 @@ const POPUP_LOADING_HTML = (label: string) => `<!doctype html>
   h3 { margin: 0; font-size: 15px; font-weight: 600; }
   @keyframes r { to { transform: rotate(360deg); } }
 </style></head>
-<body><div class="box"><div class="spin"></div><h3>Conectando ao ${label}</h3><p>Aguarde, abrindo janela segura de autenticação...</p></div></body></html>`
+<body><div class="box"><div class="spin"></div><h3>Conectando ao ${safeLabel}</h3><p>Aguarde, abrindo janela segura de autenticação...</p></div></body></html>`
+}
 
 export const useOAuthPopup = () => {
   const openCenteredWindow = (providerLabel: string): Window | null => {

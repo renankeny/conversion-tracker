@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -55,11 +56,17 @@ func (h *AdminURLMappings) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminURLMappings) Create(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem criar mapeamentos de URL")
+		return
+	}
 	var in urlMappingInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	in.Source = strings.TrimSpace(in.Source)
+	in.Target = strings.TrimSpace(in.Target)
 	if in.Source == "" || in.Target == "" {
 		writeError(w, http.StatusBadRequest, "source and target are required")
 		return
@@ -84,6 +91,10 @@ func (h *AdminURLMappings) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminURLMappings) Update(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem editar mapeamentos de URL")
+		return
+	}
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")
@@ -108,6 +119,12 @@ func (h *AdminURLMappings) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	in.Source = strings.TrimSpace(in.Source)
+	in.Target = strings.TrimSpace(in.Target)
+	if in.Source == "" || in.Target == "" {
+		writeError(w, http.StatusBadRequest, "source and target are required")
+		return
+	}
 	m := &repo.URLMapping{ID: id, AccountID: existing.AccountID, Source: in.Source, Target: in.Target}
 	if in.Enabled != nil {
 		m.Enabled = *in.Enabled
@@ -127,6 +144,10 @@ func (h *AdminURLMappings) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminURLMappings) Delete(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem excluir mapeamentos de URL")
+		return
+	}
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")

@@ -39,9 +39,8 @@ func (h *Hub) broadcast(e LiveEvent) {
 	if err != nil {
 		return
 	}
+	var slow []*Client
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	for c := range h.clients {
 		if c.AccountID > 0 {
 			if c.AccountID != e.AccountID {
@@ -56,8 +55,12 @@ func (h *Hub) broadcast(e LiveEvent) {
 		select {
 		case c.Send <- out:
 		default:
-			slog.Warn("wshub: slow client, dropping message", "account_id", e.AccountID, "event", e.EventName)
+			slow = append(slow, c)
 		}
+	}
+	h.mu.RUnlock()
+	for _, c := range slow {
+		h.Unregister(c)
 	}
 }
 
@@ -69,9 +72,8 @@ func (h *Hub) broadcastCustom(ce customRedisEvent) {
 	if err != nil {
 		return
 	}
+	var slow []*Client
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	for c := range h.clients {
 		if ce.TargetUserID > 0 {
 			if c.UserID != ce.TargetUserID {
@@ -87,6 +89,11 @@ func (h *Hub) broadcastCustom(ce customRedisEvent) {
 		select {
 		case c.Send <- out:
 		default:
+			slow = append(slow, c)
 		}
+	}
+	h.mu.RUnlock()
+	for _, c := range slow {
+		h.Unregister(c)
 	}
 }

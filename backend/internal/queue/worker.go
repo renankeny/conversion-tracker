@@ -43,6 +43,7 @@ type Deps struct {
 	GA4                *ga4.Client
 	Counters           *repo.EventCounterRepo
 	SentEvents         *repo.SentEventRepo
+	Refunds            *repo.RefundRepo
 	Notify             *notify.Service
 	Redis              *redis.Client
 	AppURL             string
@@ -73,6 +74,7 @@ func NewServer(opt asynq.RedisClientOpt, deps Deps, concurrency int) *Server {
 	mux.HandleFunc(TypeWhatsAppEvent, makeWhatsAppEventHandler(deps))
 	mux.HandleFunc(TypeWhatsAppMedia, makeWhatsAppMediaHandler(deps))
 	mux.HandleFunc(TypeWhatsAppVerifyDisconnect, makeWhatsAppVerifyDisconnectHandler(deps))
+	mux.HandleFunc(TypeProcessRefund, makeProcessRefundHandler(deps))
 	return &Server{srv: srv, mux: mux}
 }
 

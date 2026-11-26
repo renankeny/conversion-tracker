@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -67,8 +68,13 @@ func (h *Webhooks) Ticto(w http.ResponseWriter, r *http.Request) {
 	}
 
 	st := strings.ToLower(strings.TrimSpace(p.Status))
-	approved := st == "authorized" || st == "approved" || st == "paid" || st == "completed" || st == "venda_realizada"
-	if !approved {
+	eventName := ""
+	if st == "authorized" || st == "approved" || st == "paid" || st == "completed" || st == "venda_realizada" {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(st)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -103,6 +109,7 @@ func (h *Webhooks) Ticto(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "ticto",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(p.Order.Hash, p.TransactionHash, anyString(p.Order.ID)),
 		Value:       value,

@@ -50,10 +50,7 @@ type Deps struct {
 
 func New(deps Deps) (*Server, error) {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
-	r.Use(TrustedRealIP)
-	r.Use(middleware.Recoverer)
-	r.Use(buildCORS(deps.Cfg, deps.AllowedDomains))
+	r.Use(middleware.RequestID, TrustedRealIP, middleware.Recoverer, buildCORS(deps.Cfg, deps.AllowedDomains))
 
 	rdb := deps.Rdb
 	if rdb == nil {
@@ -197,7 +194,7 @@ func New(deps Deps) (*Server, error) {
 		adminPixelTest:      adminPixelTestH,
 		adminOpenAI:         handlers.NewAdminOpenAI(deps.Pool),
 		adminGeoIP:          adminGeoIPH,
-		adminMaintenance:    handlers.NewAdminMaintenance(deps.Pool, accountRepo, deps.Cfg.SentEventsRetentionDays, deps.Cfg.EventCountersRetentionDays),
+		adminMaintenance:    handlers.NewAdminMaintenance(deps.Pool, accountRepo, deps.Cfg.SentEventsRetentionDays, deps.Cfg.EventCountersRetentionDays).WithRedis(rdb),
 		adminCustomWebhooks: handlers.NewAdminCustomWebhooks(customWebhooksRepo, webhookLogRepo),
 		adminPlatformTokens: handlers.NewPlatformTokens(platformTokenRepo).WithWebhookLogs(webhookLogRepo),
 		adminSalesConfirm:   adminSalesConfirmH,
@@ -222,6 +219,7 @@ func New(deps Deps) (*Server, error) {
 	}
 	notifySvc := attachNotificationHandlers(&rh, deps, rdb)
 	attachWhatsAppHandlers(&rh, deps, rdb, queryCache, whatsappRepo, pixels, users, crmRepo, metaAccountRepo, notifySvc)
+	attachCampaignsHandlers(&rh, deps, rdb, pixels, metaAccountRepo, googleAdsAccountRepo, metaOAuthClient, googleAdsClient)
 	registerRoutes(r, deps, rh)
 	return &Server{
 		cfg: deps.Cfg, router: r, hub: hub, calibrator: cal,
@@ -237,10 +235,10 @@ func (s *Server) Start(ctx context.Context) error {
 		s.calibrator.StartCompactionLoop(ctx)
 	}
 
-	srv := &http.Server{Addr: s.cfg.HTTPAddr, Handler: s.router, ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: s.cfg.HTTPAddr, Handler: s.router, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 120 * time.Second}
 	go func() {
 		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
 	}()

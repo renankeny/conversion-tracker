@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -82,14 +83,16 @@ func (h *Webhooks) Eduzz(w http.ResponseWriter, r *http.Request) {
 	v2Status := strings.ToLower(strings.TrimSpace(p.Data.Status))
 	v1Status := strings.ToLower(anyString(p.TransStatus))
 
-	approved := ev == "myeduzz.invoice_paid" ||
-		ev == "invoice_paid" ||
-		ev == "sun.invoice_paid" ||
-		v2Status == "paid" ||
-		v1Status == "3" ||
-		v1Status == "paid"
-
-	if !approved {
+	eventName := ""
+	if ev == "myeduzz.invoice_paid" || ev == "invoice_paid" || ev == "sun.invoice_paid" ||
+		v2Status == "paid" || v1Status == "3" || v1Status == "paid" {
+		eventName = domain.EventPurchase
+	} else if v1Status == "7" {
+		eventName = domain.EventRefund
+	} else {
+		eventName = detectRefundOrChargeback(ev, v2Status, v1Status)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -142,6 +145,7 @@ func (h *Webhooks) Eduzz(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "eduzz",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(anyString(p.Data.ID), anyString(p.TransCod), p.ID),
 		Value:       value,

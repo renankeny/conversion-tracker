@@ -12,6 +12,8 @@ func mapEventName(eventName string) string {
 	switch eventName {
 	case domain.EventPurchase:
 		return "purchase"
+	case domain.EventRefund, domain.EventChargeback:
+		return "refund"
 	case domain.EventLead, domain.EventLeadSubmitted:
 		return "generate_lead"
 	case "QualifiedLead":

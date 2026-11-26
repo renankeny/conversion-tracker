@@ -134,6 +134,10 @@ func (h *AdminWhatsAppInstances) Pair(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if inst.IsExternalUazapi() {
+		writeError(w, http.StatusBadRequest, "pareamento por código telefônico é suportado apenas na Evolution Go; utilize o QR Code")
+		return
+	}
 	var in struct {
 		Phone string `json:"phone"`
 	}
@@ -179,6 +183,10 @@ func (h *AdminWhatsAppInstances) RefreshStatus(w http.ResponseWriter, r *http.Re
 }
 
 func (h *AdminWhatsAppInstances) Disconnect(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem desconectar instâncias")
+		return
+	}
 	inst, ok := h.loadOwnedInstance(w, r)
 	if !ok {
 		return
@@ -205,6 +213,10 @@ func (h *AdminWhatsAppInstances) Disconnect(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *AdminWhatsAppInstances) Delete(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem excluir instâncias")
+		return
+	}
 	inst, ok := h.loadOwnedInstance(w, r)
 	if !ok {
 		return

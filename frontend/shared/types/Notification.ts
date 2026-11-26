@@ -3,6 +3,7 @@ export type ConfigurableNotificationCategory =
   | 'lead_created'
   | 'ai_lead_qualified'
   | 'sale_approved'
+  | 'sale_refunded'
   | 'meta_account_lifecycle'
   | 'google_ads_account_lifecycle'
   | 'pixel_lifecycle'
@@ -23,6 +24,7 @@ export interface NotificationPreferences {
   lead_created: boolean
   ai_lead_qualified: boolean
   sale_approved: boolean
+  sale_refunded: boolean
   meta_account_lifecycle: boolean
   google_ads_account_lifecycle: boolean
   pixel_lifecycle: boolean

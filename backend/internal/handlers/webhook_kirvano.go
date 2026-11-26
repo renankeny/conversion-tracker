@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -55,8 +56,13 @@ func (h *Webhooks) Kirvano(w http.ResponseWriter, r *http.Request) {
 
 	ev := strings.ToUpper(p.Event)
 	st := strings.ToUpper(p.Status)
-	approved := ev == "SALE_APPROVED" || st == "APPROVED" || ev == "PURCHASE_APPROVED"
-	if !approved {
+	eventName := ""
+	if ev == "SALE_APPROVED" || st == "APPROVED" || ev == "PURCHASE_APPROVED" {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(ev, st)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -91,6 +97,7 @@ func (h *Webhooks) Kirvano(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "kirvano",
+		EventName:   eventName,
 		ExternalID: util.FirstNonEmpty(
 			util.ExtractUserIDFromMap(p.UTM),
 			util.ExtractUserIDDeep(raw),

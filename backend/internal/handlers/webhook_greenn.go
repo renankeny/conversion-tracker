@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -49,8 +50,13 @@ func (h *Webhooks) Greenn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	st := strings.ToLower(strings.TrimSpace(util.FirstNonEmpty(p.CurrentStatus, p.Sale.Status, p.Status)))
-	approved := st == "paid" || st == "approved" || st == "pago"
-	if !approved {
+	eventName := ""
+	if st == "paid" || st == "approved" || st == "pago" {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(p.Event, st)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -82,6 +88,7 @@ func (h *Webhooks) Greenn(w http.ResponseWriter, r *http.Request) {
 	saleType := strings.ToLower(p.Sale.Type)
 	in := purchaseInput{
 		GatewayName: "greenn",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(p.Sale.TransactionCode, anyString(p.Sale.ID)),
 		Value:       value,

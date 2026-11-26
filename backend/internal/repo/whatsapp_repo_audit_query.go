@@ -64,6 +64,7 @@ const auditIsWonCaseSQL = `
 // permitindo reutilizar o mesmo conjunto base para calcular os contadores das pílulas de origem).
 func buildAuditBaseWhere(f domain.ConversationAuditFilter) (string, []any) {
 	conds := []string{
+		"c.account_id = $1",
 		"i.account_id = $1",
 		"c.tracked_user_id IS NOT NULL",
 	}

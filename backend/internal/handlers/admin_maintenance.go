@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/maintenance"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
@@ -17,6 +20,7 @@ import (
 type AdminMaintenance struct {
 	pool                       *pgxpool.Pool
 	accounts                   *repo.AccountRepo
+	rdb                        *redis.Client
 	sentEventsRetentionDays    int
 	eventCountersRetentionDays int
 }
@@ -28,6 +32,11 @@ func NewAdminMaintenance(pool *pgxpool.Pool, accounts *repo.AccountRepo, sentDay
 		sentEventsRetentionDays:    sentDays,
 		eventCountersRetentionDays: countersDays,
 	}
+}
+
+func (h *AdminMaintenance) WithRedis(rdb *redis.Client) *AdminMaintenance {
+	h.rdb = rdb
+	return h
 }
 
 // Status retorna a configuração atual de retenção.
@@ -72,19 +81,19 @@ func (h *AdminMaintenance) PruneNow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if v := r.URL.Query().Get("sent_events_days"); v != "" {
-		if n, err := parsePositiveInt(v); err == nil {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			sentDays = n
 		}
 	}
 	if v := r.URL.Query().Get("event_counters_days"); v != "" {
-		if n, err := parsePositiveInt(v); err == nil {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			countersDays = n
 		}
 	}
 
 	results := []maintenance.PruneResult{}
 
-	if scope.IsOwner && accountID == 0 {
+	if scope.IsOwner && scope.AccountID == 0 && r.URL.Query().Get("global") == "true" {
 		r1, err := maintenance.PruneOldSentEvents(ctx, h.pool, sentDays)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "sent_events: "+err.Error())
@@ -114,6 +123,7 @@ func (h *AdminMaintenance) PruneNow(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		results = append(results, r2)
+		cache.BumpDashboardVersion(ctx, h.rdb, accountID)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
@@ -192,9 +202,13 @@ func (h *AdminMaintenance) Reset(w http.ResponseWriter, r *http.Request) {
 	if in.AccountID != nil {
 		override = *in.AccountID
 	}
+	if scope.IsOwner && scope.AccountID == 0 && override <= 0 {
+		writeError(w, http.StatusBadRequest, "selecione explicitamente a empresa (X-Account-ID ou account_id) antes de resetar os dados")
+		return
+	}
 	accountID := scope.EffectiveAccountID(override)
-	if accountID == 0 {
-		writeError(w, http.StatusBadRequest, "account_id obrigatório (owner global precisa especificar)")
+	if accountID <= 0 {
+		writeError(w, http.StatusBadRequest, "account_id obrigatório")
 		return
 	}
 	if !scope.IsOwner && accountID != scope.AccountID {
@@ -209,6 +223,7 @@ func (h *AdminMaintenance) Reset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "reset error: "+err.Error())
 		return
 	}
+	cache.BumpDashboardVersion(ctx, h.rdb, accountID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"account_id":             accountID,
 		"deleted_sent_events":    sent,
@@ -222,20 +237,3 @@ func pickRetention(override *int, fallback int) int {
 	}
 	return fallback
 }
-
-func parsePositiveInt(s string) (int, error) {
-	n := 0
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, errInvalidInt
-		}
-		n = n*10 + int(c-'0')
-	}
-	return n, nil
-}
-
-var errInvalidInt = &simpleError{msg: "invalid int"}
-
-type simpleError struct{ msg string }
-
-func (e *simpleError) Error() string { return e.msg }

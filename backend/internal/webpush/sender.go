@@ -10,17 +10,19 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 type Sender struct {
-	httpClient *http.Client
+	httpClient  *http.Client
+	localClient *http.Client
 }
 
 func NewSender() *Sender {
 	return &Sender{
-		httpClient: &http.Client{
-			Timeout: 12 * time.Second,
-		},
+		httpClient:  util.NewSSRFSafeHTTPClient(12 * time.Second),
+		localClient: &http.Client{Timeout: 12 * time.Second},
 	}
 }
 
@@ -70,9 +72,14 @@ func (s *Sender) Send(ctx context.Context, kp *KeyPair, sub SubscriptionTarget, 
 	req.Header.Set("Urgency", "high")
 	req.Header.Set("Authorization", authHdr)
 
-	cli := http.DefaultClient
+	cli := util.NewSSRFSafeHTTPClient(12 * time.Second)
 	if s != nil && s.httpClient != nil {
 		cli = s.httpClient
+	}
+	if strings.HasPrefix(sub.Endpoint, "http://localhost") || strings.HasPrefix(sub.Endpoint, "http://127.0.0.1") {
+		if s != nil && s.localClient != nil {
+			cli = s.localClient
+		}
 	}
 	resp, err := cli.Do(req)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -54,8 +55,13 @@ func (h *Webhooks) Pepper(w http.ResponseWriter, r *http.Request) {
 
 	st := strings.ToLower(strings.TrimSpace(util.FirstNonEmpty(p.PaymentStatus, p.Status)))
 	ev := strings.ToLower(strings.TrimSpace(p.Event))
-	approved := st == "paid" || st == "approved" || st == "pago" || ev == "purchase_approved" || ev == "transaction.paid"
-	if !approved {
+	eventName := ""
+	if st == "paid" || st == "approved" || st == "pago" || ev == "purchase_approved" || ev == "transaction.paid" {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(ev, st)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -85,6 +91,7 @@ func (h *Webhooks) Pepper(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "pepper",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(p.Transaction, p.Hash),
 		Value:       value,

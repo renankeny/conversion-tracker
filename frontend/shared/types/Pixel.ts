@@ -66,6 +66,7 @@ export interface Pixel {
   access_tokens: string[]
   test_codes: string[]
   domains: string[]
+  tracking_host?: string
   tracker_config: TrackerConfig
   enabled: boolean
   account_id: number
@@ -102,6 +103,12 @@ export interface Pixel {
   sales_goal_target?: number
   sales_goal_months?: Record<string, number>
 
+  /** Custos operacionais por Pixel (Lucro Líquido em /campanhas) */
+  gateway_fee_pct?: number
+  gateway_fixed_fee?: number
+  tax_pct?: number
+  product_cost?: number
+
   created_at: string
   updated_at: string
 }
@@ -113,6 +120,7 @@ export interface PixelInput {
   access_tokens?: string[]
   test_codes?: string[]
   domains?: string[]
+  tracking_host?: string
   tracker_config?: TrackerConfig
   enabled?: boolean
   account_id?: number

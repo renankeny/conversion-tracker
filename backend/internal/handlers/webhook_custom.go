@@ -182,7 +182,8 @@ func resolveCustomMappedEvent(statusMap map[string]string, statusRaw string) str
 
 func isAllowedCustomWebhookEvent(ev string) bool {
 	switch ev {
-	case domain.EventPurchase, domain.EventAddPaymentInfo, domain.EventInitiateCheckout,
+	case domain.EventPurchase, domain.EventRefund, domain.EventChargeback,
+		domain.EventAddPaymentInfo, domain.EventInitiateCheckout,
 		domain.EventAddToCart, domain.EventLead, domain.EventCompleteRegistration,
 		domain.EventContact, "Subscribe", "StartTrial":
 		return true

@@ -29,6 +29,17 @@ func New(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, error)
 	if maxConns > 0 {
 		cfg.MaxConns = maxConns
 	}
+	if cfg.MinConns == 0 {
+		cfg.MinConns = 2
+	}
+	cfg.MaxConnLifetimeJitter = 5 * time.Minute
+	if cfg.ConnConfig.RuntimeParams == nil {
+		cfg.ConnConfig.RuntimeParams = make(map[string]string)
+	}
+	cfg.ConnConfig.RuntimeParams["TimeZone"] = config.ProjectTimezone
+	cfg.ConnConfig.RuntimeParams["statement_timeout"] = "45000"
+	cfg.ConnConfig.RuntimeParams["idle_in_transaction_session_timeout"] = "60000"
+	cfg.ConnConfig.RuntimeParams["lock_timeout"] = "10000"
 	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
 		_, err := conn.Exec(ctx, "SET TIME ZONE '"+config.ProjectTimezone+"'")
 		if err != nil {

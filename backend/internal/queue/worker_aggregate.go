@@ -50,6 +50,56 @@ func releaseAggregatedSession(ctx context.Context, rdb *redis.Client, procKey st
 	}
 }
 
+func buildMergedSendInput(session *AggregatedSession) domain.SendEventInput {
+	totalVal := session.TotalValue
+	numItems := session.Count
+	return domain.SendEventInput{
+		PixelName:             session.PixelName,
+		EventName:             domain.EventPurchase,
+		EventID:               session.FirstEventID,
+		EventTime:             session.FirstEventTime,
+		SourceURL:             session.SourceURL,
+		ActionSource:          session.ActionSource,
+		MessagingChannel:      session.MessagingChannel,
+		CtwaClid:              session.CtwaClid,
+		PageID:                session.PageID,
+		Gateway:               session.Gateway,
+		Value:                 &totalVal,
+		Currency:              session.Currency,
+		OrderID:               strings.Join(session.OrderIDs, ","),
+		ContentID:             strings.Join(session.ContentIDs, ","),
+		ContentName:           strings.Join(session.ContentNames, ", "),
+		ContentType:           "product",
+		NumItems:              &numItems,
+		ExternalID:            session.ExternalID,
+		IDWpp:                 session.IDWpp,
+		ClientIP:              session.ClientIP,
+		ClientUserAgent:       session.ClientUserAgent,
+		FBP:                   session.FBP,
+		FBC:                   session.FBC,
+		Email:                 session.Email,
+		Phone:                 session.Phone,
+		FirstName:             session.FirstName,
+		LastName:              session.LastName,
+		Country:               session.Country,
+		State:                 session.State,
+		City:                  session.City,
+		PostalCode:            session.PostalCode,
+		TTClid:                session.TTClid,
+		TTP:                   session.TTP,
+		GCLID:                 session.GCLID,
+		WBraid:                session.WBraid,
+		GBraid:                session.GBraid,
+		GA4ClientID:           session.GA4ClientID,
+		GA4SessionID:          session.GA4SessionID,
+		OverrideGadsAccountID: session.OverrideGadsAccountID,
+		OverrideGadsActionID:  session.OverrideGadsActionID,
+		AggregatedCount:       session.Count,
+		AggregatedItems:       session.Items,
+		CRMSynced:             true,
+	}
+}
+
 func makeProcessAggregatedPurchaseHandler(deps Deps) func(context.Context, *asynq.Task) error {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var payload AggregatedPurchasePayload
@@ -74,59 +124,13 @@ func makeProcessAggregatedPurchaseHandler(deps Deps) func(context.Context, *asyn
 			return fmt.Errorf("unmarshal aggregated session: %w", err)
 		}
 
-		totalVal := session.TotalValue
-		numItems := session.Count
-		in := domain.SendEventInput{
-			PixelName:             session.PixelName,
-			EventName:             domain.EventPurchase,
-			EventID:               session.FirstEventID,
-			EventTime:             session.FirstEventTime,
-			SourceURL:             session.SourceURL,
-			ActionSource:          session.ActionSource,
-			MessagingChannel:      session.MessagingChannel,
-			CtwaClid:              session.CtwaClid,
-			PageID:                session.PageID,
-			Gateway:               session.Gateway,
-			Value:                 &totalVal,
-			Currency:              session.Currency,
-			OrderID:               strings.Join(session.OrderIDs, ","),
-			ContentID:             strings.Join(session.ContentIDs, ","),
-			ContentName:           strings.Join(session.ContentNames, ", "),
-			ContentType:           "product",
-			NumItems:              &numItems,
-			ExternalID:            session.ExternalID,
-			IDWpp:                 session.IDWpp,
-			ClientIP:              session.ClientIP,
-			ClientUserAgent:       session.ClientUserAgent,
-			FBP:                   session.FBP,
-			FBC:                   session.FBC,
-			Email:                 session.Email,
-			Phone:                 session.Phone,
-			FirstName:             session.FirstName,
-			LastName:              session.LastName,
-			Country:               session.Country,
-			State:                 session.State,
-			City:                  session.City,
-			PostalCode:            session.PostalCode,
-			TTClid:                session.TTClid,
-			TTP:                   session.TTP,
-			GCLID:                 session.GCLID,
-			WBraid:                session.WBraid,
-			GBraid:                session.GBraid,
-			GA4ClientID:           session.GA4ClientID,
-			GA4SessionID:          session.GA4SessionID,
-			OverrideGadsAccountID: session.OverrideGadsAccountID,
-			OverrideGadsActionID:  session.OverrideGadsActionID,
-			AggregatedCount:       session.Count,
-			AggregatedItems:       session.Items,
-			CRMSynced:             true,
-		}
+		in := buildMergedSendInput(&session)
 
 		slog.Info("processing aggregated purchase dispatch",
 			"pixel", in.PixelName,
 			"event_id", in.EventID,
 			"items_count", in.AggregatedCount,
-			"total_value", totalVal,
+			"total_value", session.TotalValue,
 		)
 		if err := dispatchSendEventInput(ctx, deps, in); err != nil {
 			if errors.Is(err, asynq.SkipRetry) {

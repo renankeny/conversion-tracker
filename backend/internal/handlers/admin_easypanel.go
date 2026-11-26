@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -12,6 +13,10 @@ import (
 // Informa ao painel administrativo se a API Key do EasyPanel já está vinculada.
 func (h *SetupHandler) GetEasyPanelStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if c, ok := auth.ClaimsFrom(r.Context()); !ok || !c.IsOwner() {
+		writeJSON(w, http.StatusOK, map[string]any{"linked": true, "hint_url": "", "version": util.AppBuildVersion})
+		return
+	}
 	if h.calibrator == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"linked":   true,
@@ -31,6 +36,10 @@ func (h *SetupHandler) GetEasyPanelStatus(w http.ResponseWriter, r *http.Request
 // ConnectEasyPanel POST /api/v1/admin/system/easypanel
 // Valida ao vivo e salva a URL + API Key do EasyPanel (ou marca que não utiliza EasyPanel).
 func (h *SetupHandler) ConnectEasyPanel(w http.ResponseWriter, r *http.Request) {
+	if c, ok := auth.ClaimsFrom(r.Context()); !ok || !c.IsOwner() {
+		writeError(w, http.StatusForbidden, "apenas o proprietário da plataforma pode configurar o EasyPanel")
+		return
+	}
 	var req struct {
 		PanelURL      string `json:"panel_url"`
 		APIToken      string `json:"api_token"`

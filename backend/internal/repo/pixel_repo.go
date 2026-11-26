@@ -55,6 +55,7 @@ const pixelColumns = `id, name, label, public_token, pixel_ids, access_tokens, t
 		dashboard_config, dashboard_share_token,
 		aggregation_enabled, aggregation_window_minutes,
 		sales_goal_enabled, sales_goal_type, sales_goal_target, COALESCE(sales_goal_months, '{}'::jsonb),
+		COALESCE(gateway_fee_pct, 0), COALESCE(gateway_fixed_fee, 0), COALESCE(tax_pct, 0), COALESCE(product_cost, 0),
 		created_at, updated_at`
 
 func encryptSlice(items []string) ([]string, error) {
@@ -128,8 +129,9 @@ func (r *PixelRepo) Create(ctx context.Context, p *domain.Pixel) error {
 	                               google_ads_oauth_email, google_ads_account_id,
 	                               ga4_measurement_id, ga4_api_secret, meta_permanent_token, meta_ad_account_id, meta_account_id,
 	                               aggregation_enabled, aggregation_window_minutes,
-	                               sales_goal_enabled, sales_goal_type, sales_goal_target, sales_goal_months, dashboard_config)
-	           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
+	                               sales_goal_enabled, sales_goal_type, sales_goal_target, sales_goal_months, dashboard_config,
+	                               gateway_fee_pct, gateway_fixed_fee, tax_pct, product_cost)
+	           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)
 	           RETURNING id, created_at, updated_at`
 	return r.pool.QueryRow(ctx, q,
 		p.Name, p.Label, p.PublicToken, nilIfNil(p.PixelIDs), nilIfNil(encAccessTokens), nilIfNil(p.TestCodes),
@@ -141,6 +143,7 @@ func (r *PixelRepo) Create(ctx context.Context, p *domain.Pixel) error {
 		p.GA4MeasurementID, encGA4Secret, encMetaPermanentToken, p.MetaAdAccountID, p.MetaAccountID,
 		p.AggregationEnabled, p.AggregationWindowMinutes,
 		p.SalesGoalEnabled, p.SalesGoalType, p.SalesGoalTarget, goalMonthsJSON, dashCfgJSON,
+		p.GatewayFeePct, p.GatewayFixedFee, p.TaxPct, p.ProductCost,
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
@@ -178,6 +181,7 @@ func (r *PixelRepo) Update(ctx context.Context, p *domain.Pixel) error {
 	               aggregation_enabled=$22, aggregation_window_minutes=$23,
 	               account_id=$24,
 	               sales_goal_enabled=$26, sales_goal_type=$27, sales_goal_target=$28, sales_goal_months=$29, dashboard_config=$30,
+	               gateway_fee_pct=$31, gateway_fixed_fee=$32, tax_pct=$33, product_cost=$34,
 	               updated_at=NOW()
 	           WHERE id=$25
 	           RETURNING updated_at`
@@ -191,6 +195,7 @@ func (r *PixelRepo) Update(ctx context.Context, p *domain.Pixel) error {
 		p.AccountID,
 		p.ID,
 		p.SalesGoalEnabled, p.SalesGoalType, p.SalesGoalTarget, goalMonthsJSON, dashCfgJSON,
+		p.GatewayFeePct, p.GatewayFixedFee, p.TaxPct, p.ProductCost,
 	).Scan(&p.UpdatedAt)
 }
 

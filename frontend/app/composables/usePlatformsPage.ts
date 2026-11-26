@@ -76,7 +76,11 @@ export const usePlatformsPage = () => {
     })),
   ])
 
+  let summarySeq = 0
+  let initialized = false
+
   const fetchSummaryAndPixels = async () => {
+    const seq = ++summarySeq
     loadingSummary.value = true
     const headers = accountHeaders.value
     const acc = effectiveAccountId.value
@@ -88,28 +92,28 @@ export const usePlatformsPage = () => {
           ? api.get<{ data: Pixel[] }>('/admin/pixels', { headers }).catch(() => ({ data: [] as Pixel[] }))
           : Promise.resolve({ data: [] as Pixel[] }),
       ])
+      if (seq !== summarySeq) return
       summaryItems.value = sumRes.items || {}
       accountPixels.value = pixRes.data || []
     } catch {
+      if (seq !== summarySeq) return
       summaryItems.value = {}
     } finally {
-      loadingSummary.value = false
+      if (seq === summarySeq) loadingSummary.value = false
     }
   }
 
   watch(() => tenantStore.switchVersion, () => {
     modal.showModal.value = false
     modal.selectedPixelSlug.value = ''
-    fetchSummaryAndPixels()
   })
 
-  watch(effectiveAccountId, (next, prev) => {
-    if (next && next !== prev) {
-      modal.selectedPixelSlug.value = ''
-      fetchSummaryAndPixels()
-      if (modal.showModal.value && modal.selectedPlatform.value) {
-        modal.loadSelectedPlatformToken(modal.selectedPlatform.value.id)
-      }
+  watch([effectiveAccountId, () => tenantStore.switchVersion], ([next], [prev]) => {
+    if (!initialized) return
+    modal.selectedPixelSlug.value = ''
+    void fetchSummaryAndPixels()
+    if (next && next !== prev && modal.showModal.value && modal.selectedPlatform.value) {
+      modal.loadSelectedPlatformToken(modal.selectedPlatform.value.id)
     }
   })
 
@@ -120,6 +124,7 @@ export const usePlatformsPage = () => {
     if (!tenantStore.activeAccountId && tenantStore.accounts[0]?.id) {
       localAccountId.value = String(tenantStore.accounts[0].id)
     }
+    initialized = true
     await fetchSummaryAndPixels()
   })
 

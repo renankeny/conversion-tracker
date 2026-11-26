@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -82,8 +83,13 @@ func (h *Webhooks) Lastlink(w http.ResponseWriter, r *http.Request) {
 
 	ev := strings.ToLower(strings.TrimSpace(p.Event))
 	st := strings.ToLower(strings.TrimSpace(util.FirstNonEmpty(p.Status, p.Data.Order.Status, p.Order.Status)))
-	approved := ev == "purchase_order_confirmed" || st == "paid" || st == "approved"
-	if !approved {
+	eventName := ""
+	if ev == "purchase_order_confirmed" || st == "paid" || st == "approved" {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(ev, st)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -139,6 +145,7 @@ func (h *Webhooks) Lastlink(w http.ResponseWriter, r *http.Request) {
 	orderID := util.FirstNonEmpty(p.Data.Purchase.PaymentID, p.Data.Purchase.ID, p.Data.Order.ID, p.Order.ID, p.ID)
 	in := purchaseInput{
 		GatewayName: "lastlink",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     orderID,
 		Value:       value,

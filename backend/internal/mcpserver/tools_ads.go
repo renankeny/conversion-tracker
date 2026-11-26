@@ -37,22 +37,29 @@ func buildPixelsAndAdsTools() []ToolDef {
 			Name:        "create_trackable_link",
 			Scope:       domain.APIScopePixels,
 			IsWrite:     true,
-			Description: "Cria um novo link rastreável para WhatsApp (com rodízio de instâncias) ou página externa.",
+			Description: "Cria um novo link rastreável para WhatsApp (com rodízio automático do Pixel, instância específica ou telefone fixo).",
 			InputSchema: objSchema(map[string]any{
-				"pixel_id":              propInt("ID numérico do pixel"),
-				"name":                  propStr("Nome interno do link (ex: Link na Bio Instagram)"),
-				"destination_type":      propStr("Tipo de destino: whatsapp ou url"),
-				"destination_url":       propStr("URL final quando destination_type = url"),
-				"prefilled_message":     propStr("Mensagem inicial pré-preenchida no WhatsApp"),
-				"whatsapp_instance_ids": propArrInt("IDs das instâncias de WhatsApp para atendimento/rodízio"),
-			}, "pixel_id", "name", "destination_type"),
+				"pixel_id":             propInt("ID numérico do pixel"),
+				"name":                 propStr("Nome interno do link (ex: Link na Bio Instagram)"),
+				"routing_mode":         propStr("Modo de roteamento: auto_pixel, specific_instance ou manual_phone"),
+				"whatsapp_instance_id": propInt("ID da instância WhatsApp (quando routing_mode = specific_instance)"),
+				"fallback_phone":       propStr("Telefone com DDI ex: 5511999998888 (obrigatório em manual_phone)"),
+				"prefill_message":      propStr("Mensagem inicial pré-preenchida no WhatsApp"),
+				"utm_source":           propStr("UTM Source opcional"),
+				"utm_medium":           propStr("UTM Medium opcional"),
+				"utm_campaign":         propStr("UTM Campaign opcional"),
+				"event_trigger_mode":   propStr("Quando disparar evento: on_first_message ou on_click"),
+				"event_name":           propStr("Nome do evento de conversão (ex: Lead, Contact)"),
+			}, "pixel_id", "name"),
 			Handler: func(s *Server, origReq *http.Request, args map[string]any) (string, bool) {
 				id, ok := argInt64(args, "pixel_id")
 				if !ok || id <= 0 {
 					return `{"error":"pixel_id inválido"}`, true
 				}
 				return s.callAPI(origReq, http.MethodPost, fmt.Sprintf("/api/v1/admin/pixels/%d/trackable-links", id), nil, pickBody(
-					args, "name", "destination_type", "destination_url", "prefilled_message", "whatsapp_instance_ids",
+					args, "name", "routing_mode", "whatsapp_instance_id", "fallback_phone",
+					"prefill_message", "utm_source", "utm_medium", "utm_campaign",
+					"event_trigger_mode", "event_name",
 				))
 			},
 		},

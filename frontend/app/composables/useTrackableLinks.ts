@@ -19,7 +19,7 @@ export const useTrackableLinks = () => {
     api.put<TrackableLink>(`/admin/pixels/${pixelId}/trackable-links/${linkId}`, input)
 
   const remove = (pixelId: number, linkId: number) =>
-    api.del<{ deleted: boolean }>(`/admin/pixels/${pixelId}/trackable-links/${linkId}`)
+    api.delete<{ deleted: boolean }>(`/admin/pixels/${pixelId}/trackable-links/${linkId}`)
 
   const dashboardStats = (
     filters: { pixel_name?: string; from?: string; to?: string } = {},

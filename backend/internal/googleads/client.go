@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
@@ -136,6 +137,7 @@ func (c *Client) SendWithOptions(ctx context.Context, account *domain.GoogleAdsA
 		res.Err = fmt.Errorf("%s", formatGoogleDataManagerError(res.StatusCode, res.Body, action, operatingID))
 	} else if res.StatusCode >= 200 && res.StatusCode < 300 {
 		if pfMsg := detectPartialFailure(res.Body); pfMsg != "" {
+			res.StatusCode = http.StatusBadRequest
 			res.Err = fmt.Errorf("google ads partial failure: %s", pfMsg)
 		}
 	}

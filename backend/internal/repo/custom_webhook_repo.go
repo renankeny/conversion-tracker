@@ -92,28 +92,27 @@ func (r *CustomWebhookRepo) Create(ctx context.Context, t *CustomWebhookTemplate
 }
 
 func (r *CustomWebhookRepo) Update(ctx context.Context, t *CustomWebhookTemplate) error {
-	query := `
+	if t.AccountID == nil {
+		const qGlobal = `
+			UPDATE custom_webhook_templates
+			SET name = $1, mapping_config = $2, updated_at = NOW()
+			WHERE id = $3 AND account_id IS NULL
+			RETURNING updated_at`
+		return r.pool.QueryRow(ctx, qGlobal, t.Name, t.MappingConfig, t.ID).Scan(&t.UpdatedAt)
+	}
+	const qTenant = `
 		UPDATE custom_webhook_templates
 		SET name = $1, mapping_config = $2, updated_at = NOW()
-		WHERE id = $3 AND (account_id IS NULL OR account_id = $4)
-		RETURNING updated_at
-	`
-	// Fallback for global templates where account_id doesn't match the caller?
-	// Wait: If a superadmin updates a global template (account_id = NULL), 
-	// the WHERE clause (account_id IS NULL OR account_id = $4) will match!
-	// So passing accountID=0 or whatever will still match `account_id IS NULL`.
-	var dummyAcc int64
-	if t.AccountID != nil {
-		dummyAcc = *t.AccountID
-	}
-	return r.pool.QueryRow(ctx, query, t.Name, t.MappingConfig, t.ID, dummyAcc).Scan(&t.UpdatedAt)
+		WHERE id = $3 AND account_id = $4
+		RETURNING updated_at`
+	return r.pool.QueryRow(ctx, qTenant, t.Name, t.MappingConfig, t.ID, *t.AccountID).Scan(&t.UpdatedAt)
 }
 
-func (r *CustomWebhookRepo) Delete(ctx context.Context, id string, accountID int64) error {
-	query := `
-		DELETE FROM custom_webhook_templates
-		WHERE id = $1 AND (account_id IS NULL OR account_id = $2)
-	`
-	_, err := r.pool.Exec(ctx, query, id, accountID)
+func (r *CustomWebhookRepo) Delete(ctx context.Context, id string, accountID *int64) error {
+	if accountID == nil {
+		_, err := r.pool.Exec(ctx, `DELETE FROM custom_webhook_templates WHERE id = $1 AND account_id IS NULL`, id)
+		return err
+	}
+	_, err := r.pool.Exec(ctx, `DELETE FROM custom_webhook_templates WHERE id = $1 AND account_id = $2`, id, *accountID)
 	return err
 }

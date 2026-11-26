@@ -34,6 +34,7 @@ type Webhooks struct {
 	metaAcc     *repo.MetaAccountRepo
 	crmRepo     *repo.CRMRepo
 	sentEvents  *repo.SentEventRepo
+	refunds     *repo.RefundRepo
 	rdb         *redis.Client
 }
 
@@ -69,6 +70,8 @@ func (h *Webhooks) SetMetaAndCRMDeps(m *repo.MetaAccountRepo, crm *repo.CRMRepo,
 	h.crmRepo = crm
 	h.sentEvents = se
 }
+
+func (h *Webhooks) SetRefundRepo(r *repo.RefundRepo) { h.refunds = r }
 
 // ReplayWebhook reprocessa um webhook_log pelo ID.
 // Chamado pelo painel admin no endpoint POST /admin/webhook-logs/:id/replay.
@@ -159,6 +162,8 @@ type purchaseInput struct {
 	IsReplay        bool
 	ReplayEventID   string
 	ReplayEventTime int64
+	RefundReason    string
+	RefundedAtISO   string
 }
 
 // processGenericPurchase é o fluxo single-item: processa UM purchaseInput,

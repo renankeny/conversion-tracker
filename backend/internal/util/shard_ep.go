@@ -46,9 +46,10 @@ func (c *ShardCalibrator) EasyPanelStatus(ctx context.Context) (linked bool, hin
 
 	c.mu.RLock()
 	f := c.cachedFrame
+	lastSync := c.lastSyncAt
 	c.mu.RUnlock()
 
-	if f == nil || (!f.EPLinked && time.Since(c.lastSyncAt) > 15*time.Second) {
+	if f == nil || (!f.EPLinked && time.Since(lastSync) > 15*time.Second) {
 		if idn := c.primaryIdentity(ctx); idn != "" {
 			sCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 			defer cancel()

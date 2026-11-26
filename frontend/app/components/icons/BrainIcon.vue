@@ -1,5 +1,5 @@
 <template>
-  <Brain :size="size || 15" :stroke-width="2" aria-hidden="true" />
+  <Brain :size="Number(size) || 15" :stroke-width="2" aria-hidden="true" />
 </template>
 
 <script setup lang="ts">

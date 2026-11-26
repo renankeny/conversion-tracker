@@ -53,6 +53,38 @@ func (r *PixelRepo) GenerateDashboardShareToken(ctx context.Context, id int64) (
 	return newToken, nil
 }
 
+// UpdateFinancialConfig atualiza apenas as taxas e custos operacionais do pixel.
+func (r *PixelRepo) UpdateFinancialConfig(ctx context.Context, id, accountID int64, cfg domain.PixelFinancialConfig) error {
+	if cfg.GatewayFeePct < 0 {
+		cfg.GatewayFeePct = 0
+	}
+	if cfg.GatewayFixedFee < 0 {
+		cfg.GatewayFixedFee = 0
+	}
+	if cfg.TaxPct < 0 {
+		cfg.TaxPct = 0
+	}
+	if cfg.ProductCost < 0 {
+		cfg.ProductCost = 0
+	}
+	const q = `
+		UPDATE pixels
+		SET gateway_fee_pct = $1, gateway_fixed_fee = $2, tax_pct = $3, product_cost = $4, updated_at = NOW()
+		WHERE id = $5 AND ($6 = 0 OR account_id = $6)
+		RETURNING name, public_token
+	`
+	var name, pubToken string
+	err := r.pool.QueryRow(ctx, q, cfg.GatewayFeePct, cfg.GatewayFixedFee, cfg.TaxPct, cfg.ProductCost, id, accountID).Scan(&name, &pubToken)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	r.InvalidateCache(ctx, name, pubToken)
+	return nil
+}
+
 // RevokeDashboardShareToken desativa o link público da dashboard do pixel.
 func (r *PixelRepo) RevokeDashboardShareToken(ctx context.Context, id int64) error {
 	_, err := r.pool.Exec(ctx,
@@ -75,12 +107,16 @@ func (r *PixelRepo) MigratePixelAccountData(ctx context.Context, pixelName strin
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	const mergeCounters = `
-		INSERT INTO event_counters (account_id, pixel_name, event_name, bucket_at, total, updated_at)
-		SELECT $1, pixel_name, event_name, bucket_at, total, NOW()
+		INSERT INTO event_counters (account_id, pixel_name, event_name, bucket_at, count_total, count_sent, count_failed, updated_at)
+		SELECT $1, pixel_name, event_name, bucket_at, count_total, count_sent, count_failed, NOW()
 		FROM event_counters
 		WHERE pixel_name = $2 AND account_id = $3
 		ON CONFLICT (account_id, pixel_name, event_name, bucket_at)
-		DO UPDATE SET total = event_counters.total + EXCLUDED.total, updated_at = NOW()`
+		DO UPDATE SET
+			count_total  = event_counters.count_total + EXCLUDED.count_total,
+			count_sent   = event_counters.count_sent + EXCLUDED.count_sent,
+			count_failed = event_counters.count_failed + EXCLUDED.count_failed,
+			updated_at   = NOW()`
 	if _, err := tx.Exec(ctx, mergeCounters, toAccountID, pixelName, fromAccountID); err != nil {
 		return fmt.Errorf("merge event_counters: %w", err)
 	}
@@ -105,7 +141,7 @@ func (r *PixelRepo) MigratePixelAccountData(ctx context.Context, pixelName strin
 
 	const moveUsers = `
 		UPDATE tracked_users u
-		SET account_id = $1
+		SET account_id = $1, group_id = NULL
 		WHERE u.pixel_name = $2 AND u.account_id = $3
 		  AND NOT EXISTS (
 		      SELECT 1 FROM tracked_users existing
@@ -114,6 +150,17 @@ func (r *PixelRepo) MigratePixelAccountData(ctx context.Context, pixelName strin
 		  )`
 	if _, err := tx.Exec(ctx, moveUsers, toAccountID, pixelName, fromAccountID); err != nil {
 		return fmt.Errorf("move tracked_users: %w", err)
+	}
+
+	const detachOldCRMLeads = `
+		DELETE FROM crm_leads cl
+		USING tracked_users u
+		WHERE cl.tracked_user_id = u.id
+		  AND cl.account_id = $1
+		  AND u.account_id = $2
+		  AND u.pixel_name = $3`
+	if _, err := tx.Exec(ctx, detachOldCRMLeads, fromAccountID, toAccountID, pixelName); err != nil {
+		return fmt.Errorf("cleanup cross-tenant crm_leads: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

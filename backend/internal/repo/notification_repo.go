@@ -71,6 +71,7 @@ func (r *NotificationRepo) GetPreferences(ctx context.Context, userID int64) (do
 	err := r.pool.QueryRow(ctx, `
 		SELECT user_id, account_scope_mode, COALESCE(enabled_account_ids, '{}'),
 			whatsapp_connection, lead_created, ai_lead_qualified, sale_approved,
+			COALESCE(sale_refunded, TRUE),
 			meta_account_lifecycle, google_ads_account_lifecycle, pixel_lifecycle,
 			event_dispatch_error, updated_at
 		FROM user_notification_preferences
@@ -78,6 +79,7 @@ func (r *NotificationRepo) GetPreferences(ctx context.Context, userID int64) (do
 	`, userID).Scan(
 		&p.UserID, &p.AccountScopeMode, &p.EnabledAccountIDs,
 		&p.WhatsAppConnection, &p.LeadCreated, &p.AILeadQualified, &p.SaleApproved,
+		&p.SaleRefunded,
 		&p.MetaAccountLifecycle, &p.GoogleAdsAccountLifecycle, &p.PixelLifecycle,
 		&p.EventDispatchError, &p.UpdatedAt,
 	)
@@ -102,10 +104,10 @@ func (r *NotificationRepo) UpsertPreferences(ctx context.Context, p domain.Notif
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO user_notification_preferences (
 			user_id, account_scope_mode, enabled_account_ids,
-			whatsapp_connection, lead_created, ai_lead_qualified, sale_approved,
+			whatsapp_connection, lead_created, ai_lead_qualified, sale_approved, sale_refunded,
 			meta_account_lifecycle, google_ads_account_lifecycle, pixel_lifecycle,
 			event_dispatch_error, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
 		ON CONFLICT (user_id) DO UPDATE SET
 			account_scope_mode           = EXCLUDED.account_scope_mode,
 			enabled_account_ids          = EXCLUDED.enabled_account_ids,
@@ -113,6 +115,7 @@ func (r *NotificationRepo) UpsertPreferences(ctx context.Context, p domain.Notif
 			lead_created                 = EXCLUDED.lead_created,
 			ai_lead_qualified            = EXCLUDED.ai_lead_qualified,
 			sale_approved                = EXCLUDED.sale_approved,
+			sale_refunded                = EXCLUDED.sale_refunded,
 			meta_account_lifecycle       = EXCLUDED.meta_account_lifecycle,
 			google_ads_account_lifecycle = EXCLUDED.google_ads_account_lifecycle,
 			pixel_lifecycle              = EXCLUDED.pixel_lifecycle,
@@ -121,7 +124,7 @@ func (r *NotificationRepo) UpsertPreferences(ctx context.Context, p domain.Notif
 		RETURNING updated_at
 	`,
 		p.UserID, p.AccountScopeMode, p.EnabledAccountIDs,
-		p.WhatsAppConnection, p.LeadCreated, p.AILeadQualified, p.SaleApproved,
+		p.WhatsAppConnection, p.LeadCreated, p.AILeadQualified, p.SaleApproved, p.SaleRefunded,
 		p.MetaAccountLifecycle, p.GoogleAdsAccountLifecycle, p.PixelLifecycle,
 		p.EventDispatchError,
 	).Scan(&p.UpdatedAt)

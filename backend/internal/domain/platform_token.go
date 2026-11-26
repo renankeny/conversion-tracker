@@ -52,9 +52,10 @@ var supportedCheckoutPlatforms = map[string]struct{}{
 	"appmax":     {},
 	"doppus":     {},
 	"vega":       {},
-	"yampi":      {},
-	"pagtrust":   {},
-	"onixpay":    {},
+	"yampi":          {},
+	"pagtrust":       {},
+	"onixpay":        {},
+	"custom_webhook": {},
 }
 
 // IsSupportedCheckoutPlatform valida se o slug corresponde a um checkout homologado.

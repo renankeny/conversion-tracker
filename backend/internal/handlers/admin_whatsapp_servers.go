@@ -3,12 +3,12 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/evolution"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 type AdminWhatsAppServers struct {
@@ -20,12 +20,8 @@ func NewAdminWhatsAppServers(repo *repo.WhatsAppRepo) *AdminWhatsAppServers {
 }
 
 func validateEvolutionURL(rawURL string) (string, bool) {
-	s := strings.TrimRight(strings.TrimSpace(rawURL), "/")
-	u, err := url.Parse(s)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", false
-	}
-	return s, true
+	clean, err := util.ValidateServiceEndpointURL(rawURL)
+	return clean, err == nil
 }
 
 // Get retorna a configuração do servidor Evolution Go da conta atual (sem expor a api_key).
@@ -41,6 +37,10 @@ func (h *AdminWhatsAppServers) Get(w http.ResponseWriter, r *http.Request) {
 
 // Upsert cria ou atualiza o servidor Evolution Go da conta atual.
 func (h *AdminWhatsAppServers) Upsert(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem configurar servidores WhatsApp")
+		return
+	}
 	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
 	var in struct {
 		Name   string `json:"name"`
@@ -53,14 +53,16 @@ func (h *AdminWhatsAppServers) Upsert(w http.ResponseWriter, r *http.Request) {
 	}
 	cleanURL, ok := validateEvolutionURL(in.URL)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "URL inválida (informe http:// ou https://)")
+		writeError(w, http.StatusBadRequest, "URL inválida ou bloqueada por segurança")
 		return
 	}
 
 	existing, _ := h.repo.GetAccountServer(r.Context(), accID)
-	if existing == nil && strings.TrimSpace(in.APIKey) == "" {
-		writeError(w, http.StatusBadRequest, "API Key da Evolution Go é obrigatória")
-		return
+	if strings.TrimSpace(in.APIKey) == "" {
+		if existing == nil || existing.URL != cleanURL {
+			writeError(w, http.StatusBadRequest, "informe a API Key da Evolution Go ao cadastrar ou alterar a URL do servidor")
+			return
+		}
 	}
 
 	srv := &domain.WhatsAppServer{
@@ -79,6 +81,10 @@ func (h *AdminWhatsAppServers) Upsert(w http.ResponseWriter, r *http.Request) {
 
 // Test testa a conexão e a API Key global com o servidor Evolution Go.
 func (h *AdminWhatsAppServers) Test(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem testar servidores WhatsApp")
+		return
+	}
 	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
 	var in struct {
 		URL    string `json:"url"`
@@ -86,7 +92,7 @@ func (h *AdminWhatsAppServers) Test(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&in)
 
-	targetURL := strings.TrimSpace(in.URL)
+	targetURL := strings.TrimRight(strings.TrimSpace(in.URL), "/")
 	targetKey := strings.TrimSpace(in.APIKey)
 
 	if targetURL == "" || targetKey == "" {
@@ -97,6 +103,9 @@ func (h *AdminWhatsAppServers) Test(w http.ResponseWriter, r *http.Request) {
 		}
 		if targetURL == "" {
 			targetURL = saved.URL
+		} else if targetKey == "" && targetURL != strings.TrimRight(strings.TrimSpace(saved.URL), "/") {
+			writeError(w, http.StatusBadRequest, "informe a API Key ao testar uma URL diferente da salva")
+			return
 		}
 		if targetKey == "" {
 			targetKey = saved.APIKey
@@ -124,6 +133,10 @@ func (h *AdminWhatsAppServers) Test(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminWhatsAppServers) Delete(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem excluir servidores WhatsApp")
+		return
+	}
 	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
 	count, err := h.repo.CountInstances(r.Context(), accID)
 	if err != nil {

@@ -209,6 +209,7 @@ func isQuickIgnorableGroupOrStatus(raw json.RawMessage) bool {
 	var quick struct {
 		Info struct {
 			Chat    string `json:"Chat"`
+			Sender  string `json:"Sender"`
 			IsGroup bool   `json:"IsGroup"`
 		} `json:"Info"`
 	}
@@ -218,9 +219,5 @@ func isQuickIgnorableGroupOrStatus(raw json.RawMessage) bool {
 	if quick.Info.IsGroup {
 		return true
 	}
-	c := strings.ToLower(strings.TrimSpace(quick.Info.Chat))
-	return strings.HasSuffix(c, "@g.us") ||
-		strings.HasSuffix(c, "@broadcast") ||
-		strings.HasSuffix(c, "@newsletter") ||
-		c == "status@broadcast"
+	return queue.IsIgnorableSpecialJID(quick.Info.Chat) || queue.IsIgnorableSpecialJID(quick.Info.Sender)
 }

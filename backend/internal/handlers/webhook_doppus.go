@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -71,15 +72,15 @@ func (h *Webhooks) Doppus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Na Doppus, quando o webhook é disparado apenas na rota de venda aprovada, status pode vir omitido.
-	approved := st == "approved" ||
-		st == "paid" ||
-		st == "aprovado" ||
-		st == "complete" ||
-		ev == "purchase_approved" ||
-		ev == "sale_approved" ||
-		(st == "" && ev == "" && p.TransactionCode != "" && value > 0)
-
-	if !approved {
+	eventName := ""
+	if st == "approved" || st == "paid" || st == "aprovado" || st == "complete" ||
+		ev == "purchase_approved" || ev == "sale_approved" ||
+		(st == "" && ev == "" && p.TransactionCode != "" && value > 0) {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(ev, st)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -110,6 +111,7 @@ func (h *Webhooks) Doppus(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "doppus",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(p.TransactionCode, anyString(p.ID)),
 		Value:       value,

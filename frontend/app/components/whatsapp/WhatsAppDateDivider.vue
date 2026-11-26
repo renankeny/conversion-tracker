@@ -5,19 +5,25 @@
 </template>
 
 <script setup lang="ts">
+import { SP_TIMEZONE, dateKeySP } from '~/utils/formatDate'
+
 const props = defineProps<{
   date: string | Date
 }>()
+
+const ymdToEpochDays = (ymd: string): number => {
+  const [y = 1970, m = 1, d = 1] = ymd.split('-').map(Number)
+  return Math.round(Date.UTC(y, m - 1, d) / 86_400_000)
+}
 
 const label = computed(() => {
   if (!props.date) return ''
   const d = new Date(props.date)
   if (isNaN(d.getTime())) return ''
 
-  const now = new Date()
-  const dDay = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const diffDays = Math.round((nowDay.getTime() - dDay.getTime()) / (1000 * 60 * 60 * 24))
+  const dYmd = dateKeySP(d)
+  const nowYmd = dateKeySP(new Date())
+  const diffDays = ymdToEpochDays(nowYmd) - ymdToEpochDays(dYmd)
 
   if (diffDays === 0) return 'Hoje'
   if (diffDays === 1) return 'Ontem'
@@ -25,8 +31,8 @@ const label = computed(() => {
   return new Intl.DateTimeFormat('pt-BR', {
     day: 'numeric',
     month: 'long',
-    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-    timeZone: 'America/Sao_Paulo',
+    year: dYmd.slice(0, 4) !== nowYmd.slice(0, 4) ? 'numeric' : undefined,
+    timeZone: SP_TIMEZONE,
   }).format(d)
 })
 </script>

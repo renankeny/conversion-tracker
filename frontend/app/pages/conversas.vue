@@ -106,6 +106,8 @@ const {
 } = useConversationsAudit()
 
 watch(() => tenantStore.switchVersion, () => {
+  drawerOpen.value = false
+  selectedItem.value = null
   selectedPixel.value = ''
   selectedInstanceId.value = ''
   page.value = 1

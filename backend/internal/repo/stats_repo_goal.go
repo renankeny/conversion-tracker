@@ -78,4 +78,53 @@ func (s *StatsRepo) populateMonthlyGoalStats(ctx context.Context, f StatsFilter,
 		) m
 	`
 	_ = s.pool.QueryRow(ctx, q, args...).Scan(&dst.Revenue, &dst.Purchases)
+
+	// Abate reembolsos e chargebacks reais do mês da meta.
+	var refCount int64
+	var refAmt float64
+	_ = s.pool.QueryRow(ctx, `
+		SELECT COALESCE(COUNT(*), 0), COALESCE(SUM(amount), 0)
+		FROM sale_refunds
+		WHERE ($1 = 0 OR account_id = $1)
+		  AND ($2 = '' OR pixel_name = $2)
+		  AND refunded_at >= $3 AND refunded_at < $4
+	`, f.AccountID, f.PixelName, mStart, mEnd).Scan(&refCount, &refAmt)
+	if dst.Revenue -= refAmt; dst.Revenue < 0 {
+		dst.Revenue = 0
+	}
+	if dst.Purchases -= refCount; dst.Purchases < 0 {
+		dst.Purchases = 0
+	}
+}
+
+func (s *StatsRepo) populatePeriodRefunds(ctx context.Context, f StatsFilter, out *Overview) {
+	if out == nil {
+		return
+	}
+	args := []any{}
+	conds := []string{"1=1"}
+	idx := 0
+	add := func(v any) string {
+		args = append(args, v)
+		idx++
+		return "$" + itoa(idx)
+	}
+	if !f.From.IsZero() {
+		conds = append(conds, "refunded_at >= "+add(f.From))
+	}
+	if !f.To.IsZero() {
+		conds = append(conds, "refunded_at < "+add(f.To))
+	}
+	if f.PixelName != "" {
+		conds = append(conds, "pixel_name = "+add(f.PixelName))
+	}
+	if f.AccountID != 0 {
+		conds = append(conds, "account_id = "+add(f.AccountID))
+	}
+	q := `SELECT COALESCE(COUNT(*), 0), COALESCE(SUM(amount), 0) FROM sale_refunds WHERE ` + strings.Join(conds, " AND ")
+	_ = s.pool.QueryRow(ctx, q, args...).Scan(&out.RefundCount, &out.RefundAmount)
+	out.NetRevenue = out.TotalRevenue - out.RefundAmount
+	if out.NetRevenue < 0 {
+		out.NetRevenue = 0
+	}
 }

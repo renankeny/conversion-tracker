@@ -170,16 +170,19 @@
 
   function generateCustomId() {
     var c = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    var id = "";
     var cryptoObj = window.crypto || window.msCrypto;
-    if (cryptoObj && cryptoObj.getRandomValues) {
-      var bytes = new Uint8Array(10);
-      cryptoObj.getRandomValues(bytes);
-      for (var i = 0; i < 10; i++) id += c.charAt(bytes[i] % c.length);
-      return id;
+    for (var attempt = 0; attempt < 8; attempt++) {
+      var id = "";
+      if (cryptoObj && cryptoObj.getRandomValues) {
+        var bytes = new Uint8Array(10);
+        cryptoObj.getRandomValues(bytes);
+        for (var i = 0; i < 10; i++) id += c.charAt(bytes[i] % c.length);
+      } else {
+        for (var j = 0; j < 10; j++) id += c.charAt(Math.floor(Math.random() * c.length));
+      }
+      if (/[A-Z]/.test(id) && /[0-9]/.test(id)) return id;
     }
-    for (var j = 0; j < 10; j++) id += c.charAt(Math.floor(Math.random() * c.length));
-    return id;
+    return "A9" + Math.random().toString(36).substring(2, 10).toUpperCase();
   }
 
   function getUserData() {

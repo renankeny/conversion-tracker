@@ -121,7 +121,7 @@ func (r *PixelRepo) FindByDashboardShareToken(ctx context.Context, token string)
 		return nil, ErrNotFound
 	}
 	loader := func(c context.Context) (*domain.Pixel, error) {
-		q := `SELECT ` + pixelColumns + ` FROM pixels WHERE dashboard_share_token = $1`
+		q := `SELECT ` + pixelColumns + ` FROM pixels WHERE dashboard_share_token = $1 AND dashboard_share_token <> ''`
 		return scanPixel(r.pool.QueryRow(c, q, token))
 	}
 	if r.cache != nil {
@@ -150,6 +150,7 @@ func scanPixel(row rowScanner) (*domain.Pixel, error) {
 		&dashCfgJSON, &p.DashboardShareToken,
 		&p.AggregationEnabled, &p.AggregationWindowMinutes,
 		&p.SalesGoalEnabled, &p.SalesGoalType, &p.SalesGoalTarget, &goalMonthsJSON,
+		&p.GatewayFeePct, &p.GatewayFixedFee, &p.TaxPct, &p.ProductCost,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

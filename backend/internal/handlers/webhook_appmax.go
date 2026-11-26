@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -56,17 +57,14 @@ func (h *Webhooks) Appmax(w http.ResponseWriter, r *http.Request) {
 
 	ev := strings.ToLower(strings.TrimSpace(p.Event))
 	st := strings.ToLower(strings.TrimSpace(d.Status))
-	approved := ev == "orderpaid" ||
-		ev == "orderapproved" ||
-		ev == "order.paid" ||
-		ev == "order_paid" ||
-		ev == "order_approved" ||
-		st == "aprovado" ||
-		st == "integrado" ||
-		st == "pago" ||
-		st == "paid"
-
-	if !approved {
+	eventName := ""
+	if ev == "orderpaid" || ev == "orderapproved" || ev == "order.paid" || ev == "order_paid" || ev == "order_approved" ||
+		st == "aprovado" || st == "integrado" || st == "pago" || st == "paid" {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(ev, st)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -106,6 +104,7 @@ func (h *Webhooks) Appmax(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "appmax",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(anyString(d.OrderID), anyString(d.ID)),
 		Value:       value,

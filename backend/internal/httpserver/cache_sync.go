@@ -60,6 +60,7 @@ type routeHandlers struct {
 	adminCounters       *handlers.AdminCounters
 	adminAPIKeys        *handlers.AdminAPIKeys
 	adminNotifications  *handlers.AdminNotifications
+	adminCampaigns      *handlers.AdminCampaigns
 	adminDashboardMeta   *handlers.AdminDashboardMeta
 	adminDashboardGoogle *handlers.AdminDashboardGoogle
 	apiEvents            *handlers.APIEvents

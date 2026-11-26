@@ -56,6 +56,8 @@ const fmt = (sec: number): string => {
 const formattedCurrent = computed(() => fmt(currentSec.value))
 const formattedDuration = computed(() => fmt(durationSec.value))
 
+const AUDIO_PLAY_EVENT = 'tf:wa-audio-play'
+
 const togglePlay = async () => {
   const el = audioEl.value
   if (!el) return
@@ -64,6 +66,9 @@ const togglePlay = async () => {
     playing.value = false
   } else {
     try {
+      if (import.meta.client) {
+        window.dispatchEvent(new CustomEvent(AUDIO_PLAY_EVENT, { detail: el }))
+      }
       el.playbackRate = playbackRate.value
       await el.play()
       playing.value = true
@@ -72,6 +77,18 @@ const togglePlay = async () => {
     }
   }
 }
+
+const onOtherAudioPlay = (ev: Event) => {
+  const other = (ev as CustomEvent<HTMLAudioElement>).detail
+  if (audioEl.value && other !== audioEl.value && !audioEl.value.paused) {
+    audioEl.value.pause()
+    playing.value = false
+  }
+}
+
+onMounted(() => {
+  window.addEventListener(AUDIO_PLAY_EVENT, onOtherAudioPlay)
+})
 
 const onTimeUpdate = () => {
   if (audioEl.value) currentSec.value = audioEl.value.currentTime || 0
@@ -98,6 +115,7 @@ const cycleRate = () => {
 }
 
 onUnmounted(() => {
+  window.removeEventListener(AUDIO_PLAY_EVENT, onOtherAudioPlay)
   audioEl.value?.pause()
 })
 </script>

@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
@@ -27,11 +28,22 @@ func NewAdminAPIKeys(r *repo.APIKeyRepo) *AdminAPIKeys {
 
 func (h *AdminAPIKeys) SetNotify(n *notify.Service) { h.notify = n }
 
+func requireAPIKeysManager(w http.ResponseWriter, r *http.Request) bool {
+	if !auth.CanManageUsers(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem gerenciar API Keys")
+		return false
+	}
+	return true
+}
+
 func (h *AdminAPIKeys) List(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKeysManager(w, r) {
+		return
+	}
 	scope := TenantFromContext(r.Context())
-	list, err := h.repo.ListByAccount(r.Context(), scope.AccountID)
+	list, err := h.repo.ListByAccount(r.Context(), scope.EffectiveAccountID(0))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list error: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "erro ao listar chaves de API")
 		return
 	}
 	if list == nil {
@@ -48,6 +60,9 @@ type apiKeyUpsertInput struct {
 }
 
 func (h *AdminAPIKeys) Create(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKeysManager(w, r) {
+		return
+	}
 	var in apiKeyUpsertInput
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
@@ -83,6 +98,9 @@ func (h *AdminAPIKeys) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminAPIKeys) Update(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKeysManager(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeError(w, http.StatusBadRequest, "id inválido")
@@ -123,6 +141,9 @@ func (h *AdminAPIKeys) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminAPIKeys) Regenerate(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKeysManager(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || id <= 0 {
 		writeError(w, http.StatusBadRequest, "id inválido")
@@ -155,6 +176,9 @@ func (h *AdminAPIKeys) Regenerate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminAPIKeys) Revoke(w http.ResponseWriter, r *http.Request) {
+	if !requireAPIKeysManager(w, r) {
+		return
+	}
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid id")

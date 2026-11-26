@@ -50,39 +50,55 @@ type Client struct {
 	IssuedAt    int64
 	PixelFilter string
 	Send        chan []byte
+	closeOnce   sync.Once
+}
+
+func (c *Client) closeSend() {
+	c.closeOnce.Do(func() {
+		close(c.Send)
+	})
 }
 
 type Hub struct {
-	mu         sync.RWMutex
-	clients    map[*Client]struct{}
-	register   chan *Client
-	unregister chan *Client
-	done       chan struct{}
-	redis      *redis.Client
+	mu      sync.RWMutex
+	clients map[*Client]struct{}
+	done    chan struct{}
+	redis   *redis.Client
 }
 
 func New(rc *redis.Client) *Hub {
 	return &Hub{
-		clients:    make(map[*Client]struct{}),
-		register:   make(chan *Client, 64),
-		unregister: make(chan *Client, 64),
-		done:       make(chan struct{}),
-		redis:      rc,
+		clients: make(map[*Client]struct{}),
+		done:    make(chan struct{}),
+		redis:   rc,
 	}
 }
 
 func (h *Hub) Register(c *Client) {
-	select {
-	case h.register <- c:
-	case <-h.done:
+	if c == nil {
+		return
 	}
+	select {
+	case <-h.done:
+		c.closeSend()
+		return
+	default:
+	}
+	h.mu.Lock()
+	h.clients[c] = struct{}{}
+	h.mu.Unlock()
 }
 
 func (h *Hub) Unregister(c *Client) {
-	select {
-	case h.unregister <- c:
-	case <-h.done:
+	if c == nil {
+		return
 	}
+	h.mu.Lock()
+	if _, ok := h.clients[c]; ok {
+		delete(h.clients, c)
+		c.closeSend()
+	}
+	h.mu.Unlock()
 }
 
 func Publish(ctx context.Context, rc *redis.Client, e LiveEvent) {
@@ -152,19 +168,6 @@ func (h *Hub) runSession(ctx context.Context) (reconnect bool) {
 		select {
 		case <-ctx.Done():
 			return false
-
-		case c := <-h.register:
-			h.mu.Lock()
-			h.clients[c] = struct{}{}
-			h.mu.Unlock()
-
-		case c := <-h.unregister:
-			h.mu.Lock()
-			if _, ok := h.clients[c]; ok {
-				delete(h.clients, c)
-				close(c.Send)
-			}
-			h.mu.Unlock()
 
 		case msg, ok := <-ch:
 			if !ok {

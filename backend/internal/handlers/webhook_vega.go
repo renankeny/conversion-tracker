@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -53,15 +54,14 @@ func (h *Webhooks) Vega(w http.ResponseWriter, r *http.Request) {
 
 	st := strings.ToLower(strings.TrimSpace(util.FirstNonEmpty(p.Status, p.PaymentStatus)))
 	ev := strings.ToLower(strings.TrimSpace(p.Event))
-	approved := st == "approved" ||
-		st == "paid" ||
-		st == "pago" ||
-		st == "aprovado" ||
-		ev == "order.approved" ||
-		ev == "sale.approved" ||
-		ev == "purchase_approved"
-
-	if !approved {
+	eventName := ""
+	if st == "approved" || st == "paid" || st == "pago" || st == "aprovado" ||
+		ev == "order.approved" || ev == "sale.approved" || ev == "purchase_approved" {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(ev, st)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -108,6 +108,7 @@ func (h *Webhooks) Vega(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "vega",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(p.TransactionID, p.OrderID, anyString(p.ID), p.CheckoutID),
 		Value:       value,

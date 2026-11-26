@@ -150,6 +150,7 @@ func registerAdminAndMCPRoutes(r chi.Router, deps Deps, h routeHandlers, mcpSrv 
 				r.Post("/admin/pixels/{id}/test-event", h.adminPixelTest.SendTestEvent)
 				registerOAuthLongAdminRoutes(r, h)
 				registerWhatsAppLongHumanRoutes(r, h)
+				registerCampaignsLongRoutes(r, h)
 			})
 		})
 	})

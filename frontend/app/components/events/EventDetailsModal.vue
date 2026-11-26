@@ -158,8 +158,11 @@ const buildPublicDetail = (src: GroupedEvent): EventDetail => ({
   })),
 })
 
+let detailSeq = 0
+
 const fetchDetails = async () => {
   if (!props.source) return
+  const seq = ++detailSeq
   errorMessage.value = ''; expandedChannel.value = null; trackedUser.value = null
   if (props.publicMode) { event.value = buildPublicDetail(props.source); loading.value = false; return }
   loading.value = true
@@ -169,11 +172,15 @@ const fetchDetails = async () => {
       eventsApi.findByEventID(props.source.event_id, props.source.pixel_name),
       props.allowUserDetails && externalId ? trackedUsersApi.lookup({ external_id: externalId }).catch(() => null) : Promise.resolve(null),
     ])
+    if (seq !== detailSeq) return
     event.value = ev; trackedUser.value = tu
   } catch (e: unknown) {
+    if (seq !== detailSeq) return
     errorMessage.value = extractErrorMessage(e, 'Erro ao carregar detalhes do evento')
     event.value = null
-  } finally { loading.value = false }
+  } finally {
+    if (seq === detailSeq) loading.value = false
+  }
 }
 
 const retryFailedChannels = async () => {

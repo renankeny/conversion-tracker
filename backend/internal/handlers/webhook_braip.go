@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -52,13 +53,18 @@ func (h *Webhooks) Braip(w http.ResponseWriter, r *http.Request) {
 	stText := strings.ToLower(strings.TrimSpace(util.FirstNonEmpty(anyString(p.TransStatus), p.TransStatusName)))
 	stCode := strings.TrimSpace(anyString(p.TransStatusCode))
 
-	approved := stCode == "2" ||
-		stText == "2" ||
-		strings.Contains(stText, "aprovad") ||
-		stText == "pago" ||
-		stText == "paid"
-
-	if !approved {
+	eventName := ""
+	switch {
+	case stCode == "2" || stText == "2" || strings.Contains(stText, "aprovad") || stText == "pago" || stText == "paid":
+		eventName = domain.EventPurchase
+	case stCode == "4" || stText == "4":
+		eventName = domain.EventChargeback
+	case stCode == "5" || stText == "5":
+		eventName = domain.EventRefund
+	default:
+		eventName = detectRefundOrChargeback(stText)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -89,6 +95,7 @@ func (h *Webhooks) Braip(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "braip",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(p.TransKey, p.TransCode, anyString(p.TransID)),
 		Value:       value,

@@ -118,3 +118,38 @@ func TestCaktoUnmarshalInvalid(t *testing.T) {
 		// Só queremos confirmar que algum erro foi propagado.
 	}
 }
+
+// TestCaktoRefundRealPayload valida o formato real de webhook de reembolso da Cakto.
+func TestCaktoRefundRealPayload(t *testing.T) {
+	body := `{
+		"event": "refund",
+		"secret": "test-secret",
+		"data": {
+			"id": "8f10d341-b2d0-428f-8284-a3b0db62ee18",
+			"status": "refunded",
+			"baseAmount": 429,
+			"amount": 429.99,
+			"currency": "BRL",
+			"offer_type": "main",
+			"refundedAt": "2026-11-25T23:16:19.399782-03:00",
+			"refund_reason": "A qualidade do produto não atingiu as minhas expectativas",
+			"utm_source": "direto|userIdOYXRMZSPEW|",
+			"customer": { "name": "Cliente Teste", "email": "teste@exemplo.com", "phone": "5561999990000" },
+			"offer": { "id": "35q3hkt", "name": "Produto Teste", "price": 429, "currency": "BRL" }
+		}
+	}`
+	var p caktoPayload
+	if err := json.Unmarshal([]byte(body), &p); err != nil {
+		t.Fatalf("decode refund error: %v", err)
+	}
+	if len(p.Data) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(p.Data))
+	}
+	it := p.Data[0]
+	if detectRefundOrChargeback(p.Event, it.Status) != "Refund" {
+		t.Fatalf("expected Refund detection")
+	}
+	if it.OfferType != "main" || it.RefundedAt == "" || it.RefundReason == "" || it.BaseAmount != 429 {
+		t.Fatalf("unexpected parsed cakto refund fields: %+v", it)
+	}
+}

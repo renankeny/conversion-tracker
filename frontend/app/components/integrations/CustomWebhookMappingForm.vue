@@ -35,7 +35,9 @@
             v-model="mappingConfig.status_map[key]"
             :options="[
               { value: 'Purchase', label: 'Purchase (Venda Aprovada)' },
-              { value: 'InitiateCheckout', label: 'InitiateCheckout (Boleto/Pix)' }
+              { value: 'InitiateCheckout', label: 'InitiateCheckout (Boleto/Pix)' },
+              { value: 'Refund', label: 'Refund (Reembolso)' },
+              { value: 'Chargeback', label: 'Chargeback (Contestação)' }
             ]"
           />
         </div>

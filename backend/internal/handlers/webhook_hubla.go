@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -59,12 +60,16 @@ func (h *Webhooks) Hubla(w http.ResponseWriter, r *http.Request) {
 	evType := strings.ToLower(strings.TrimSpace(p.Type))
 	invStatus := strings.ToLower(strings.TrimSpace(p.Event.Invoice.Status))
 
-	approved := (evType == "invoice.status_updated" && invStatus == "paid") ||
+	eventName := ""
+	if (evType == "invoice.status_updated" && invStatus == "paid") ||
 		evType == "invoice.payment_succeeded" ||
 		evType == "newsale" ||
-		(evType == "" && invStatus == "paid")
-
-	if !approved {
+		(evType == "" && invStatus == "paid") {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(evType, invStatus)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -110,6 +115,7 @@ func (h *Webhooks) Hubla(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "hubla",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     orderID,
 		Value:       value,

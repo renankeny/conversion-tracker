@@ -152,13 +152,14 @@ func (r *SentEventRepo) ListSalesForConfirmation(ctx context.Context, accountID 
 	baseCond := `
 		WHERE e.event_name IN ('AddPaymentInfo', 'Purchase')
 		  AND e.status <> 'contested'
-		  AND (e.account_id = $1 OR $1 = 0 OR e.account_id IS NULL)
+		  AND ($1 = 0 OR e.account_id = $1)
 		  AND ($2 = '' OR e.pixel_name = $2)
 		  AND NOT (
 			e.event_name = 'AddPaymentInfo'
 			AND EXISTS (
 				SELECT 1 FROM sent_events p
-				WHERE p.event_id = 'pur_' || e.event_id
+				WHERE p.account_id = e.account_id
+				  AND p.event_id = 'pur_' || e.event_id
 				  AND p.pixel_name = e.pixel_name
 				  AND p.event_name = 'Purchase'
 				  AND p.status <> 'contested'
@@ -178,7 +179,7 @@ func (r *SentEventRepo) ListSalesForConfirmation(ctx context.Context, accountID 
 				e.event_id, e.event_name, e.pixel_name, e.external_id, COALESCE(e.purchase_value, 0), e.created_at,
 				COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), COALESCE(u.email, ''), COALESCE(u.phone, '')
 			FROM sent_events e
-			LEFT JOIN tracked_users u ON e.external_id = u.external_id AND e.pixel_name = u.pixel_name
+			LEFT JOIN tracked_users u ON u.account_id = e.account_id AND e.external_id = u.external_id
 			` + baseCond + `
 			ORDER BY e.event_id, (CASE WHEN e.event_name = 'Purchase' THEN 1 ELSE 2 END) ASC, e.created_at DESC
 		) t
@@ -216,7 +217,7 @@ func (r *SentEventRepo) MarkAsConfirmed(ctx context.Context, eventID, pixelName 
 		_, err = r.pool.Exec(ctx, `
 			UPDATE sent_events
 			SET event_name = 'Purchase', updated_at = NOW()
-			WHERE event_id = $1 AND ($2 = '' OR pixel_name = $2) AND (account_id = $3 OR account_id = 0 OR account_id IS NULL)
+			WHERE account_id = $3 AND event_id = $1 AND ($2 = '' OR pixel_name = $2)
 		`, eventID, pixelName, accountID)
 	} else {
 		_, err = r.pool.Exec(ctx, `

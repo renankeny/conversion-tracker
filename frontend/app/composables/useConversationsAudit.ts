@@ -148,16 +148,25 @@ export const useConversationsAudit = (publicToken?: string) => {
   const toggleSort = (col: string) => {
     if (sortBy.value === col) sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc'
     else { sortBy.value = col; sortDir.value = 'desc' }
-    page.value = 1
-    void fetchConversations(false)
+    if (page.value !== 1) page.value = 1
+    else void fetchConversations(false)
   }
 
   const clearFilters = () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    const hadWatchedChange = Boolean(
+      slaStatus.value !== 'all' || stageId.value || tagId.value || origin.value !== 'all'
+      || campaign.value || utm.value || (!publicToken && (selectedPixel.value || selectedInstanceId.value))
+      || page.value !== 1,
+    )
     search.value = ''; slaStatus.value = 'all'; stageId.value = ''; tagId.value = ''
     origin.value = 'all'; campaign.value = ''; utm.value = ''
     if (!publicToken) { selectedPixel.value = ''; selectedInstanceId.value = '' }
     page.value = 1
-    void fetchConversations(false)
+    if (!hadWatchedChange) {
+      if (searchTimer) clearTimeout(searchTimer)
+      void fetchConversations(false)
+    }
   }
 
   const exportCSV = async () => {
@@ -185,8 +194,8 @@ export const useConversationsAudit = (publicToken?: string) => {
   })
 
   watch([period, customFrom, customTo, selectedPixel, selectedInstanceId, slaStatus, stageId, tagId, origin, campaign, utm], () => {
-    page.value = 1
-    void fetchConversations(false)
+    if (page.value !== 1) page.value = 1
+    else void fetchConversations(false)
   })
 
   watch(page, () => { void fetchConversations(false) })

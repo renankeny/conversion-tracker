@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -53,14 +54,13 @@ func (h *Webhooks) Guru(w http.ResponseWriter, r *http.Request) {
 	paySt := strings.ToLower(strings.TrimSpace(p.Payment.Status))
 	ev := strings.ToLower(strings.TrimSpace(p.Event))
 
-	approved := st == "approved" ||
-		st == "complete" ||
-		st == "paid" ||
-		paySt == "approved" ||
-		paySt == "paid" ||
-		ev == "order_approved"
-
-	if !approved {
+	eventName := ""
+	if st == "approved" || st == "complete" || st == "paid" || paySt == "approved" || paySt == "paid" || ev == "order_approved" {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(st, paySt, ev)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -104,6 +104,7 @@ func (h *Webhooks) Guru(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "guru",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(anyString(p.ID), p.Payment.TID),
 		Value:       value,

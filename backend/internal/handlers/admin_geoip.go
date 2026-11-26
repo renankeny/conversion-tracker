@@ -8,7 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/geoip"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 const (
@@ -36,8 +38,11 @@ func NewAdminGeoIP(licenseKey, dbPath string, lookup *geoip.Lookup) *AdminGeoIP 
 // Status retorna informações sobre a base atualmente carregada
 // (path, exists, size, modified). Útil pro painel mostrar estado.
 func (h *AdminGeoIP) Status(w http.ResponseWriter, r *http.Request) {
+	if c, ok := auth.ClaimsFrom(r.Context()); !ok || !c.IsOwner() {
+		writeError(w, http.StatusForbidden, "acesso restrito ao proprietário da plataforma")
+		return
+	}
 	out := map[string]any{
-		"path":            h.dbPath,
 		"license_key_set": h.licenseKey != "",
 		"loaded":          h.lookup != nil && h.lookup.Available(),
 	}
@@ -56,6 +61,10 @@ func (h *AdminGeoIP) Status(w http.ResponseWriter, r *http.Request) {
 // Refresh baixa a base GeoLite2-City da MaxMind, valida SHA256, extrai o
 // .mmdb e substitui o arquivo em h.dbPath. Recarrega o reader em memória.
 func (h *AdminGeoIP) Refresh(w http.ResponseWriter, r *http.Request) {
+	if c, ok := auth.ClaimsFrom(r.Context()); !ok || !c.IsOwner() {
+		writeError(w, http.StatusForbidden, "acesso restrito ao proprietário da plataforma")
+		return
+	}
 	if h.licenseKey == "" {
 		writeError(w, http.StatusBadRequest, "MAXMIND_LICENSE_KEY não configurada no servidor")
 		return
@@ -96,7 +105,7 @@ func (h *AdminGeoIP) StartScheduler(ctx context.Context) {
 	if h.licenseKey == "" || h.dbPath == "" {
 		return
 	}
-	go func() {
+	util.SafeGo("geoip_scheduler", func() {
 		for {
 			now := time.Now()
 			loc, err := time.LoadLocation("America/Sao_Paulo")
@@ -105,12 +114,13 @@ func (h *AdminGeoIP) StartScheduler(ctx context.Context) {
 			}
 			nowSP := now.In(loc)
 			next := time.Date(nowSP.Year(), nowSP.Month(), nowSP.Day()+1, 0, 0, 0, 0, loc)
-			duration := next.Sub(nowSP)
+			timer := time.NewTimer(next.Sub(nowSP))
 
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return
-			case <-time.After(duration):
+			case <-timer.C:
 				slog.Info("Running scheduled GeoIP update")
 				if h.refreshing.CompareAndSwap(false, true) {
 					refreshCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -130,5 +140,5 @@ func (h *AdminGeoIP) StartScheduler(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }

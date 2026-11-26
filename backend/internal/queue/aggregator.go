@@ -91,10 +91,10 @@ func NormalizeCustomerKey(in domain.SendEventInput) string {
 	return "evt:" + in.EventID
 }
 
-func SessionKey(pixelName string, in domain.SendEventInput) string {
+func SessionKey(accountID int64, pixelName string, in domain.SendEventInput) string {
 	customerKey := NormalizeCustomerKey(in)
 	hash := sha256.Sum256([]byte(customerKey))
-	return fmt.Sprintf("agg_purchase:%s:%s", pixelName, hex.EncodeToString(hash[:8]))
+	return fmt.Sprintf("agg_purchase:%d:%s:%s", accountID, pixelName, hex.EncodeToString(hash[:8]))
 }
 
 func (e *Enqueuer) AggregateOrEnqueue(ctx context.Context, pixel *domain.Pixel, in domain.SendEventInput, rdb *redis.Client) (bool, error) {
@@ -109,7 +109,7 @@ func (e *Enqueuer) AggregateOrEnqueue(ctx context.Context, pixel *domain.Pixel, 
 		windowMin = 30
 	}
 
-	key := SessionKey(pixel.Name, in)
+	key := SessionKey(pixel.AccountID, pixel.Name, in)
 	val := 0.0
 	if in.Value != nil {
 		val = *in.Value
@@ -131,10 +131,16 @@ func (e *Enqueuer) AggregateOrEnqueue(ctx context.Context, pixel *domain.Pixel, 
 		taskPayload, _ := json.Marshal(AggregatedPurchasePayload{SessionKey: key, PixelName: pixel.Name})
 		task := asynq.NewTask(TypeProcessAggregatedPurchase, taskPayload)
 		delay := time.Duration(windowMin) * time.Minute
-		_, err = e.client.EnqueueContext(ctx, task, asynq.Queue(QueueDefault), asynq.ProcessIn(delay), asynq.MaxRetry(3))
+		_, err = e.client.EnqueueContext(ctx, task, asynq.Queue(QueueDefault), asynq.ProcessIn(delay), asynq.MaxRetry(3), asynq.Timeout(45*time.Second))
 		if err != nil {
 			slog.Error("failed to schedule aggregated purchase task", "err", err, "key", key)
-			_ = rdb.Unlink(ctx, key).Err()
+			if raw, gerr := rdb.GetDel(ctx, key).Bytes(); gerr == nil && len(raw) > 0 {
+				var snap AggregatedSession
+				if json.Unmarshal(raw, &snap) == nil && snap.Count > 1 {
+					merged := buildMergedSendInput(&snap)
+					return false, e.EnqueueSendEvent(ctx, merged)
+				}
+			}
 			return false, e.EnqueueSendEvent(ctx, in)
 		}
 		slog.Info("scheduled aggregated purchase window", "pixel", pixel.Name, "customer_key", NormalizeCustomerKey(in), "window_minutes", windowMin, "event_id", in.EventID)

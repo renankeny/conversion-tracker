@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -65,8 +66,8 @@ func (qc *QueryCache) GetOrLoadWithNegCache(
 		}
 	}
 	raw, err := qc.GetOrLoadBytes(ctx, key, ttl, loader)
-	if err != nil && qc != nil && qc.rdb != nil && negTTL > 0 && len(fallbackJSON) > 0 {
-		_ = qc.rdb.Set(ctx, negKey, "1", negTTL).Err()
+	if err != nil && !errors.Is(err, context.Canceled) && qc != nil && qc.rdb != nil && negTTL > 0 && len(fallbackJSON) > 0 {
+		_ = qc.rdb.Set(context.Background(), negKey, "1", negTTL).Err()
 	}
 	return raw, err
 }

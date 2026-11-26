@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
@@ -18,10 +20,11 @@ func NewAdminCustomWebhooks(r *repo.CustomWebhookRepo, logRepo *repo.WebhookLogR
 }
 
 func (h *AdminCustomWebhooks) List(w http.ResponseWriter, r *http.Request) {
-	scope := TenantFromContext(r.Context())
-	list, err := h.repo.ListByAccount(r.Context(), scope.AccountID)
+	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
+	list, err := h.repo.ListByAccount(r.Context(), accID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "list error: "+err.Error())
+		slog.Error("list custom webhooks", "err", err)
+		writeError(w, http.StatusInternalServerError, "erro ao listar webhooks customizados")
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
@@ -29,11 +32,11 @@ func (h *AdminCustomWebhooks) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminCustomWebhooks) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	scope := TenantFromContext(r.Context())
-	
-	t, err := h.repo.GetByAccount(r.Context(), id, scope.AccountID)
+	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
+
+	t, err := h.repo.GetByAccount(r.Context(), id, accID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "webhook nao encontrado")
+		writeError(w, http.StatusNotFound, "webhook não encontrado")
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
@@ -46,12 +49,17 @@ type CustomWebhookPayload struct {
 }
 
 func (h *AdminCustomWebhooks) Create(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem criar integrações")
+		return
+	}
 	var body CustomWebhookPayload
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	
+
+	body.Name = strings.TrimSpace(body.Name)
 	if body.Name == "" {
 		writeError(w, http.StatusBadRequest, "nome é obrigatório")
 		return
@@ -62,11 +70,10 @@ func (h *AdminCustomWebhooks) Create(w http.ResponseWriter, r *http.Request) {
 
 	scope := TenantFromContext(r.Context())
 	var accountID *int64
-	// Se for owner e marcou is_global, cria como null
 	if scope.IsOwner && body.IsGlobal {
 		accountID = nil
 	} else {
-		acc := scope.AccountID
+		acc := scope.EffectiveAccountID(0)
 		accountID = &acc
 	}
 
@@ -77,66 +84,77 @@ func (h *AdminCustomWebhooks) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.repo.Create(r.Context(), t); err != nil {
-		writeError(w, http.StatusInternalServerError, "create error: "+err.Error())
+		slog.Error("create custom webhook", "err", err)
+		writeError(w, http.StatusInternalServerError, "erro ao criar integração customizada")
 		return
 	}
 	writeJSON(w, http.StatusCreated, t)
 }
 
 func (h *AdminCustomWebhooks) Update(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem editar integrações")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	var body CustomWebhookPayload
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	
+
 	scope := TenantFromContext(r.Context())
-	
-	// Valida acesso primeiro
-	existing, err := h.repo.GetByAccount(r.Context(), id, scope.AccountID)
+	accID := scope.EffectiveAccountID(0)
+
+	existing, err := h.repo.GetByAccount(r.Context(), id, accID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	
-	// Apenas owner pode editar globais
+
 	if existing.AccountID == nil && !scope.IsOwner {
 		writeError(w, http.StatusForbidden, "apenas superadmin pode editar templates globais")
 		return
 	}
 
-	if body.Name != "" {
-		existing.Name = body.Name
+	if strings.TrimSpace(body.Name) != "" {
+		existing.Name = strings.TrimSpace(body.Name)
 	}
 	if len(body.MappingConfig) > 0 {
 		existing.MappingConfig = body.MappingConfig
 	}
 
 	if err := h.repo.Update(r.Context(), existing); err != nil {
-		writeError(w, http.StatusInternalServerError, "update error: "+err.Error())
+		slog.Error("update custom webhook", "id", id, "err", err)
+		writeError(w, http.StatusInternalServerError, "erro ao atualizar integração customizada")
 		return
 	}
 	writeJSON(w, http.StatusOK, existing)
 }
 
 func (h *AdminCustomWebhooks) Delete(w http.ResponseWriter, r *http.Request) {
+	if isEmployeeRole(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem excluir integrações")
+		return
+	}
 	id := chi.URLParam(r, "id")
 	scope := TenantFromContext(r.Context())
-	
-	existing, err := h.repo.GetByAccount(r.Context(), id, scope.AccountID)
+	accID := scope.EffectiveAccountID(0)
+
+	existing, err := h.repo.GetByAccount(r.Context(), id, accID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
-	
+
 	if existing.AccountID == nil && !scope.IsOwner {
 		writeError(w, http.StatusForbidden, "apenas superadmin pode deletar templates globais")
 		return
 	}
 
-	if err := h.repo.Delete(r.Context(), id, scope.AccountID); err != nil {
-		writeError(w, http.StatusInternalServerError, "delete error: "+err.Error())
+	if err := h.repo.Delete(r.Context(), id, existing.AccountID); err != nil {
+		slog.Error("delete custom webhook", "id", id, "err", err)
+		writeError(w, http.StatusInternalServerError, "erro ao excluir integração customizada")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -145,11 +163,12 @@ func (h *AdminCustomWebhooks) Delete(w http.ResponseWriter, r *http.Request) {
 // Logs retorna o histórico de auditoria de uma integração
 func (h *AdminCustomWebhooks) Logs(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	scope := TenantFromContext(r.Context())
+	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
 
-	logs, err := h.logRepo.ListByCustomWebhook(r.Context(), id, scope.AccountID, 50)
+	logs, err := h.logRepo.ListByCustomWebhook(r.Context(), id, accID, 50)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao buscar logs: "+err.Error())
+		slog.Error("list custom webhook logs", "id", id, "err", err)
+		writeError(w, http.StatusInternalServerError, "erro ao buscar logs")
 		return
 	}
 	if logs == nil {

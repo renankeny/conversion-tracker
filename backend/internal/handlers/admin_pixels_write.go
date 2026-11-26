@@ -167,6 +167,7 @@ func (h *AdminPixels) Update(w http.ResponseWriter, r *http.Request) {
 		if migErr := h.repo.MigratePixelAccountData(r.Context(), existing.Name, prevAccountID, existing.AccountID); migErr != nil {
 			slog.Warn("migrate pixel account data", "pixel_name", existing.Name, "error", migErr)
 		}
+		h.repo.BumpDashboardCache(r.Context(), prevAccountID)
 	}
 	h.refreshDomains(r.Context())
 	h.repo.InvalidateCache(r.Context(), existing.Name, existing.PublicToken, existing.DashboardShareToken)

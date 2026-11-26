@@ -185,8 +185,14 @@ func TestOnixPay_HTTPIgnoredEventAndSupportedPlatform(t *testing.T) {
 	if !domain.IsSupportedCheckoutPlatform("onixpay") {
 		t.Fatalf("expected onixpay to be registered in supportedCheckoutPlatforms")
 	}
+	if ev, ok := resolveOnixPayEventName("TRANSACTION_REFUNDED", "REFUNDED"); !ok || ev != domain.EventRefund {
+		t.Fatalf("expected TRANSACTION_REFUNDED -> Refund, got %q (ok=%v)", ev, ok)
+	}
+	if ev, ok := resolveOnixPayEventName("TRANSACTION_CHARGEBACK", "CHARGEBACK"); !ok || ev != domain.EventChargeback {
+		t.Fatalf("expected TRANSACTION_CHARGEBACK -> Chargeback, got %q (ok=%v)", ev, ok)
+	}
 	h := NewWebhooks(nil, nil, nil, nil, GatewaySecrets{}, nil)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/onixpay?acc=1", bytes.NewBufferString(`{"event":"TRANSACTION_REFUNDED","transaction":{"status":"REFUNDED"}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/onixpay?acc=1", bytes.NewBufferString(`{"event":"TRANSACTION_EXPIRED","transaction":{"status":"EXPIRED"}}`))
 	rec := httptest.NewRecorder()
 	h.OnixPay(rec, req)
 	if rec.Code != http.StatusOK {

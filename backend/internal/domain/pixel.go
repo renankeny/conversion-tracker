@@ -92,6 +92,12 @@ type Pixel struct {
 	SalesGoalTarget  float64            `json:"sales_goal_target"`
 	SalesGoalMonths  map[string]float64 `json:"sales_goal_months"`
 
+	// Custos operacionais por Pixel (para cálculo de Lucro Líquido Real em /campanhas)
+	GatewayFeePct   float64 `json:"gateway_fee_pct"`
+	GatewayFixedFee float64 `json:"gateway_fixed_fee"`
+	TaxPct          float64 `json:"tax_pct"`
+	ProductCost     float64 `json:"product_cost"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -152,6 +158,10 @@ func (p Pixel) PublicView() map[string]any {
 		"sales_goal_type":            NormalizeSalesGoalType(p.SalesGoalType),
 		"sales_goal_target":          p.SalesGoalTarget,
 		"sales_goal_months":          NormalizeSalesGoalMonths(p.SalesGoalMonths),
+		"gateway_fee_pct":            p.GatewayFeePct,
+		"gateway_fixed_fee":          p.GatewayFixedFee,
+		"tax_pct":                    p.TaxPct,
+		"product_cost":               p.ProductCost,
 		"created_at":                 p.CreatedAt,
 		"updated_at":                 p.UpdatedAt,
 	}

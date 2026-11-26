@@ -78,7 +78,7 @@
 
 <script setup lang="ts">
 import {
-  LayoutDashboard, Plug, Zap, Users, Settings,
+  LayoutDashboard, Megaphone, Plug, Zap, Users, Settings,
   Sun, Moon, LogOut, Kanban, Building2, Bell, MessageSquare,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
@@ -104,6 +104,7 @@ interface PrimaryNavLink {
 const primaryLinks = computed<PrimaryNavLink[]>(() => {
   const links: PrimaryNavLink[] = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/campanhas', label: 'Campanhas', icon: Megaphone },
     { to: '/crm', label: 'CRM', icon: Kanban },
     { to: '/conversas', label: 'Conversas', icon: MessageSquare },
     { to: '/events', label: 'Eventos', icon: Zap },

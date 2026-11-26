@@ -210,9 +210,9 @@ func (h *PublicDashboard) CRMCreateLead(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "informe telefone ou e-mail")
 		return
 	}
-	tu := h.crmH.resolveOrCreateCRMTrackedUser(ctx, p.AccountID, firstName, lastName, email, phone, "", p.Name)
+	tu := h.crmH.resolveOrCreateCRMTrackedUserStrictPixel(ctx, p.AccountID, firstName, lastName, email, phone, p.Name)
 	if tu == nil {
-		writeError(w, http.StatusInternalServerError, "erro ao criar contato")
+		writeError(w, http.StatusConflict, "este contato já pertence a outro projeto da conta")
 		return
 	}
 	if tu.PixelName == "" {

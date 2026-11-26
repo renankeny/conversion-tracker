@@ -6,8 +6,8 @@ RUN go install mvdan.cc/garble@v0.15.0
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN GOGARBLE=github.com/renankeny/conversion-tracker/backend CGO_ENABLED=0 GOOS=linux garble -literals -tiny -seed=random build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
-RUN GOGARBLE=github.com/renankeny/conversion-tracker/backend CGO_ENABLED=0 GOOS=linux garble -literals -tiny -seed=random build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
+RUN GOGARBLE=github.com/renankeny/conversion-tracker/backend CGO_ENABLED=0 GOOS=linux garble -literals -seed=random build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+RUN GOGARBLE=github.com/renankeny/conversion-tracker/backend CGO_ENABLED=0 GOOS=linux garble -literals -seed=random build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
 
 # ---- api ----
 FROM alpine:3.20 AS api

@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // ResolvePurchaseStageID localiza a etapa de Vendas ("Purchase" / "Venda Fechada") da conta,
@@ -152,6 +153,19 @@ func (r *CRMRepo) SyncOrCreateLeadOnPurchase(
 				updated_at = NOW()
 			RETURNING id
 		`, accountID, trackedUserID, targetStageID, val, groupID).Scan(&newID)
+		if err != nil && groupID != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				err = r.pool.QueryRow(ctx, `
+					UPDATE crm_leads
+					SET stage_id = $3,
+					    value    = CASE WHEN $4 > 0 THEN $4 ELSE value END,
+					    updated_at = NOW()
+					WHERE account_id = $1 AND group_id = $2
+					RETURNING id
+				`, accountID, *groupID, targetStageID, val).Scan(&newID)
+			}
+		}
 		if err != nil || newID == 0 {
 			return 0, false
 		}

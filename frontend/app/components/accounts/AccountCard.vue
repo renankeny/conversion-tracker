@@ -13,13 +13,11 @@
             <BaseBadge :variant="account.enabled ? 'success' : 'danger'">
               {{ account.enabled ? 'Ativa' : 'Desativada' }}
             </BaseBadge>
-            <BaseBadge v-if="account.id === 1" variant="neutral">Principal</BaseBadge>
+            <BaseBadge v-if="account.id === 1" variant="default">Principal</BaseBadge>
           </div>
         </div>
 
         <div class="account-meta-row">
-          <span class="meta-item">ID <strong>#{{ account.id }}</strong></span>
-          <span class="meta-sep">·</span>
           <span class="meta-item">Slug <code>{{ account.slug }}</code></span>
           <span class="meta-sep">·</span>
           <span class="meta-item">
@@ -48,7 +46,7 @@
       >
         Selecionar no painel
       </BaseButton>
-      <BaseButton variant="secondary" size="sm" @click="$emit('edit', account)">
+      <BaseButton variant="outline" size="sm" @click="$emit('edit', account)">
         Editar
       </BaseButton>
       <BaseButton

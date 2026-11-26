@@ -77,20 +77,22 @@ func (r *AccountRepo) ListByHierarchy(ctx context.Context, c *auth.Claims) ([]do
 		rows, err = r.pool.Query(ctx, q, c.AccountID)
 	} else if c.Role == "employee" {
 		q := `SELECT ` + accountColumns + ` FROM accounts
-		      WHERE id = $2
-		         OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $1)
-		         OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $1 AND ua.account_id = accounts.id)
+		      WHERE enabled = TRUE AND (
+		            id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $1)
+		            OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $1 AND ua.account_id = accounts.id)
+		      )
 		      ORDER BY id ASC`
-		rows, err = r.pool.Query(ctx, q, c.UserID, c.AccountID)
+		rows, err = r.pool.Query(ctx, q, c.UserID)
 	} else {
 		q := `SELECT ` + accountColumns + ` FROM accounts
-		      WHERE owner_id = $1
-		         OR owner_id IN (SELECT id FROM admin_users WHERE parent_id = $1)
-		         OR id = $2
-		         OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $1)
-		         OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $1 AND ua.account_id = accounts.id)
+		      WHERE enabled = TRUE AND (
+		            owner_id = $1
+		            OR owner_id IN (SELECT id FROM admin_users WHERE parent_id = $1)
+		            OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $1)
+		            OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $1 AND ua.account_id = accounts.id)
+		      )
 		      ORDER BY id ASC`
-		rows, err = r.pool.Query(ctx, q, c.UserID, c.AccountID)
+		rows, err = r.pool.Query(ctx, q, c.UserID)
 	}
 	if err != nil {
 		return nil, err
@@ -106,14 +108,17 @@ func (r *AccountRepo) CanAccess(ctx context.Context, c *auth.Claims, accountID i
 	if c.IsAPIKey() || c.Role == "member" {
 		return c.AccountID == accountID
 	}
-	if c.IsOwner() || c.AccountID == accountID {
+	if c.IsOwner() {
 		return true
+	}
+	if r.pool == nil {
+		return c.AccountID == accountID
 	}
 	var ok bool
 	if c.Role == "employee" {
 		const qEmp = `SELECT EXISTS(
 			SELECT 1 FROM accounts
-			WHERE id = $1 AND (
+			WHERE id = $1 AND enabled = TRUE AND (
 				id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
 				OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $2 AND ua.account_id = accounts.id)
 			)
@@ -123,7 +128,7 @@ func (r *AccountRepo) CanAccess(ctx context.Context, c *auth.Claims, accountID i
 	}
 	const q = `SELECT EXISTS(
 		SELECT 1 FROM accounts
-		WHERE id = $1 AND (
+		WHERE id = $1 AND enabled = TRUE AND (
 			owner_id = $2
 			OR owner_id IN (SELECT id FROM admin_users WHERE parent_id = $2)
 			OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
@@ -178,11 +183,18 @@ func (r *AccountRepo) Delete(ctx context.Context, id int64) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	cleanupQueries := []string{
+		`DELETE FROM whatsapp_link_clicks WHERE account_id = $1`,
+		`DELETE FROM whatsapp_ai_events WHERE account_id = $1`,
+		`DELETE FROM crm_leads WHERE account_id = $1`,
+		`DELETE FROM whatsapp_chats WHERE account_id = $1`,
+		`DELETE FROM whatsapp_trackable_links WHERE account_id = $1`,
+		`DELETE FROM whatsapp_instances WHERE account_id = $1`,
 		`DELETE FROM sent_events WHERE account_id = $1`,
 		`DELETE FROM event_counters WHERE account_id = $1`,
+		`DELETE FROM webhook_logs WHERE account_id = $1`,
 		`DELETE FROM url_mappings WHERE account_id = $1`,
-		`DELETE FROM whatsapp_instances WHERE account_id = $1`,
 		`DELETE FROM tracked_users WHERE account_id = $1`,
+		`DELETE FROM groups WHERE account_id = $1`,
 		`DELETE FROM pixels WHERE account_id = $1`,
 		`DELETE FROM meta_accounts WHERE account_id = $1`,
 		`DELETE FROM google_ads_accounts WHERE account_id = $1`,

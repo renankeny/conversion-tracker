@@ -155,7 +155,10 @@ func (r *APIKeyRepo) FindActiveByPlaintext(ctx context.Context, plaintext string
 		}
 	}
 
-	q := `SELECT ` + apiKeyColumns + ` FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL LIMIT 1`
+	q := `SELECT ` + apiKeyColumns + ` FROM api_keys
+	      WHERE key_hash = $1 AND revoked_at IS NULL
+	        AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = api_keys.account_id AND a.enabled = TRUE)
+	      LIMIT 1`
 	k, err := scanAPIKey(r.pool.QueryRow(ctx, q, hash))
 	if err != nil {
 		return nil, err
@@ -167,6 +170,28 @@ func (r *APIKeyRepo) FindActiveByPlaintext(ctx context.Context, plaintext string
 		}
 	}
 	return k, nil
+}
+
+// InvalidateByAccount remove do Redis o cache das chaves S2S pertencentes à empresa desativada/excluída.
+func (r *APIKeyRepo) InvalidateByAccount(ctx context.Context, accountID int64) {
+	if r.rdb == nil || r.pool == nil || accountID <= 0 {
+		return
+	}
+	rows, err := r.pool.Query(ctx, `SELECT key_hash FROM api_keys WHERE account_id = $1`, accountID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var h string
+		if rows.Scan(&h) == nil && h != "" {
+			keys = append(keys, "api_key_hash:"+h)
+		}
+	}
+	if len(keys) > 0 {
+		r.rdb.Del(ctx, keys...)
+	}
 }
 
 func (r *APIKeyRepo) FindByID(ctx context.Context, id int64) (*domain.APIKey, error) {

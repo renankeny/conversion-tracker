@@ -43,6 +43,10 @@ func makeWhatsAppEventHandler(deps Deps) func(context.Context, *asynq.Task) erro
 			if err != nil || parsed == nil {
 				return nil
 			}
+			if payload.Event == "SendMessage" {
+				parsed.IsFromMe = true
+				sanitizeParsedMessageDirection(parsed)
+			}
 			return processParsedWhatsAppMessage(ctx, deps, inst, parsed)
 		case "UazapiConnection":
 			syncUazapiMetaFromWebhook(ctx, deps, inst, payload.Data)
@@ -180,8 +184,8 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	}
 	inserted, err := deps.WhatsApp.CreateMessage(ctx, dbMsg)
 	if err != nil {
-		slog.Warn("save whatsapp message failed", "msg_id", parsed.MessageID, "err", err)
-		return nil
+		slog.Warn("save whatsapp message failed, will retry", "msg_id", parsed.MessageID, "err", err)
+		return fmt.Errorf("save whatsapp message %s: %w", parsed.MessageID, err)
 	}
 	if inserted {
 		_ = deps.WhatsApp.RefreshChatSLAMetrics(ctx, chatID)

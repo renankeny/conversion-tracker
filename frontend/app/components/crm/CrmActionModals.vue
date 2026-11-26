@@ -21,7 +21,7 @@
   />
 
   <ConfirmModal
-    :model-value="showDeleteStage"
+    :model-value="Boolean(showDeleteStage)"
     title="Excluir Etapa?"
     message="Tem certeza que deseja excluir esta etapa? Os leads dela serão movidos automaticamente para a primeira coluna do funil."
     confirm-label="Excluir Etapa"

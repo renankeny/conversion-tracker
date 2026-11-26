@@ -124,7 +124,7 @@
 
 <script setup lang="ts">
 import {
-  LayoutDashboard, Kanban, MessageSquare, Zap, Users,
+  LayoutDashboard, Megaphone, Kanban, MessageSquare, Zap, Users,
   Plug, Settings, X, Sun, Moon, LogOut,
   Building2, ChevronDown, Bell,
 } from 'lucide-vue-next'
@@ -158,6 +158,7 @@ const notifStore = useNotificationsStore()
 const primaryLinks = computed<Array<{ to: string; label: string; icon: Component; badge?: number }>>(() => {
   const links: Array<{ to: string; label: string; icon: Component; badge?: number }> = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/campanhas', label: 'Campanhas', icon: Megaphone },
     { to: '/crm', label: 'CRM', icon: Kanban },
     { to: '/conversas', label: 'Conversas', icon: MessageSquare },
     { to: '/events', label: 'Eventos', icon: Zap },

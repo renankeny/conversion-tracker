@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -60,6 +61,17 @@ func (r *CRMRepo) CreateOrUpdateLeadAPI(ctx context.Context, accountID, trackedU
 			updated_at = NOW()
 		RETURNING id
 	`, accountID, trackedUserID, stageID, value, groupID).Scan(&id)
+	if err != nil && groupID != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			err = r.pool.QueryRow(ctx, `
+				UPDATE crm_leads
+				SET stage_id = $3, value = $4, updated_at = NOW()
+				WHERE account_id = $1 AND group_id = $2
+				RETURNING id
+			`, accountID, *groupID, stageID, value).Scan(&id)
+		}
+	}
 	return id, prevStageID, err
 }
 
@@ -79,24 +91,18 @@ func (r *CRMRepo) UpdateLeadStageAndValue(ctx context.Context, leadID, accountID
 }
 
 // UpdateLeadPIIAndValue atualiza valor e contato preservando capitalização natural e normalizando telefone E.164 (DDI 55).
-func (r *CRMRepo) UpdateLeadPIIAndValue(
-	ctx context.Context,
-	leadID, accountID int64,
-	firstName, lastName, email, phone string,
-	value float64,
-) (externalID, normPhone, normEmail string, err error) {
-	normEmail = util.NormalizeEmail(email)
-	normPhone = util.NormalizePhone(phone)
-	firstName = strings.TrimSpace(firstName)
-	lastName = strings.TrimSpace(lastName)
+func (r *CRMRepo) UpdateLeadPIIAndValue(ctx context.Context, leadID, accountID int64, firstName, lastName, email, phone string, value float64) (externalID, normPhone, normEmail string, err error) {
+	normEmail, normPhone = util.NormalizeEmail(email), util.NormalizePhone(phone)
+	firstName, lastName = strings.TrimSpace(firstName), strings.TrimSpace(lastName)
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var trackedUserID int64
-	err = r.pool.QueryRow(ctx, `
-		UPDATE crm_leads
-		SET value = $3, updated_at = NOW()
-		WHERE id = $1 AND account_id = $2
-		RETURNING tracked_user_id
-	`, leadID, accountID, value).Scan(&trackedUserID)
+	err = tx.QueryRow(ctx, `UPDATE crm_leads SET value = $3, updated_at = NOW() WHERE id = $1 AND account_id = $2 RETURNING tracked_user_id`, leadID, accountID, value).Scan(&trackedUserID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", "", ErrNotFound
 	}
@@ -104,13 +110,11 @@ func (r *CRMRepo) UpdateLeadPIIAndValue(
 		return "", "", "", err
 	}
 
-	err = r.pool.QueryRow(ctx, `
-		UPDATE tracked_users
-		SET first_name = $2, last_name = $3, email = $4, phone = $5, updated_at = NOW()
-		WHERE id = $1 AND account_id = $6
-		RETURNING COALESCE(external_id, '')
-	`, trackedUserID, firstName, lastName, normEmail, normPhone, accountID).Scan(&externalID)
-	return externalID, normPhone, normEmail, err
+	err = tx.QueryRow(ctx, `UPDATE tracked_users SET first_name = $2, last_name = $3, email = $4, phone = $5, updated_at = NOW() WHERE id = $1 AND account_id = $6 RETURNING COALESCE(external_id, '')`, trackedUserID, firstName, lastName, normEmail, normPhone, accountID).Scan(&externalID)
+	if err != nil {
+		return "", "", "", err
+	}
+	return externalID, normPhone, normEmail, tx.Commit(ctx)
 }
 
 func (r *CRMRepo) DeleteLead(ctx context.Context, id, accountID int64) error {

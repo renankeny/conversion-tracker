@@ -7,16 +7,22 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 // caktoItem é um pedido individual da Cakto (suporta v1 objeto único e v2 array).
 type caktoItem struct {
-	ID         string  `json:"id"`
-	Amount     float64 `json:"amount"`     // valor cobrado (com juros)
-	BaseAmount float64 `json:"baseAmount"` // preço original da oferta
-	Status     string  `json:"status"`
-	Type       string  `json:"type"` // main, order_bump, upsell
+	ID            string  `json:"id"`
+	Amount        float64 `json:"amount"`     // valor cobrado (com juros)
+	BaseAmount    float64 `json:"baseAmount"` // preço original da oferta
+	Status        string  `json:"status"`
+	Currency      string  `json:"currency"`
+	Type          string  `json:"type"`       // main, order_bump, upsell
+	OfferType     string  `json:"offer_type"` // main, order_bump, upsell (payload atual Cakto)
+	RefundedAt    string  `json:"refundedAt"`
+	ChargedbackAt string  `json:"chargedbackAt"`
+	RefundReason  string  `json:"refund_reason"`
 	Customer   struct {
 		Name  string `json:"name"`
 		Email string `json:"email"`
@@ -100,7 +106,12 @@ func (h *Webhooks) Cakto(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ev := strings.ToLower(p.Event)
-	approvedEvent := ev == "purchase_approved" || ev == "pedido_aprovado" || ev == "approved"
+	topEventName := ""
+	if ev == "purchase_approved" || ev == "pedido_aprovado" || ev == "approved" {
+		topEventName = domain.EventPurchase
+	} else {
+		topEventName = detectRefundOrChargeback(ev)
+	}
 
 	if len(p.Data) == 0 {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -123,7 +134,7 @@ func (h *Webhooks) Cakto(w http.ResponseWriter, r *http.Request) {
 	pixelQuery := webhookPixelQuery(r)
 	for i := range p.Data {
 		item := &p.Data[i]
-		body, status := h.processCaktoItem(r.Context(), item, approvedEvent, pixelQuery, accID, deepUID, raw)
+		body, status := h.processCaktoItem(r.Context(), item, topEventName, pixelQuery, accID, deepUID, raw)
 		body["index"] = i
 		results = append(results, body)
 		if status > highestStatus {
@@ -139,10 +150,20 @@ func (h *Webhooks) Cakto(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Webhooks) processCaktoItem(ctx context.Context, item *caktoItem, approvedEvent bool, pixelQuery string, accountID int64, deepUID string, raw []byte) (map[string]any, int) {
+func (h *Webhooks) processCaktoItem(ctx context.Context, item *caktoItem, topEventName string, pixelQuery string, accountID int64, deepUID string, raw []byte) (map[string]any, int) {
 	st := strings.ToLower(item.Status)
-	approved := approvedEvent || st == "paid" || st == "approved"
-	if !approved {
+	eventName := topEventName
+	if strings.TrimSpace(item.ChargedbackAt) != "" {
+		eventName = domain.EventChargeback
+	}
+	if eventName == "" {
+		if st == "paid" || st == "approved" {
+			eventName = domain.EventPurchase
+		} else {
+			eventName = detectRefundOrChargeback(st)
+		}
+	}
+	if eventName == "" {
 		return map[string]any{
 			"received": true,
 			"queued":   false,
@@ -160,9 +181,10 @@ func (h *Webhooks) processCaktoItem(ctx context.Context, item *caktoItem, approv
 		value = item.Offer.Price
 	}
 
-	offerType := strings.ToLower(strings.TrimSpace(item.Type))
+	offerType := strings.ToLower(strings.TrimSpace(util.FirstNonEmpty(item.OfferType, item.Type)))
 	in := purchaseInput{
 		GatewayName: "cakto",
+		EventName:   eventName,
 		ExternalID: util.FirstNonEmpty(
 			util.ExtractUserIDFromAny(
 				item.UTMSource, item.UTMTerm, item.UTMContent,
@@ -171,23 +193,25 @@ func (h *Webhooks) processCaktoItem(ctx context.Context, item *caktoItem, approv
 			),
 			deepUID,
 		),
-		OrderID:     item.ID,
-		Value:       value,
-		Currency:    util.FirstNonEmpty(item.Offer.Currency, "BRL"),
-		FirstName:   first,
-		LastName:    last,
-		Email:       item.Customer.Email,
-		Phone:       item.Customer.Phone,
-		FBC:         strings.TrimSpace(item.FBC),
-		FBP:         strings.TrimSpace(item.FBP),
-		ProductID:   util.FirstNonEmpty(anyString(item.Product.ID), item.Offer.ID),
-		ProductName: util.FirstNonEmpty(item.Product.Name, item.Offer.Name),
-		IsOrderBump: offerType == "order_bump" || offerType == "orderbump",
-		IsUpsell:    offerType == "upsell",
-		OfferType:   offerType,
-		AccountID:   accountID,
-		PixelQuery:  pixelQuery,
-		RawPayload:  raw,
+		OrderID:       item.ID,
+		Value:         value,
+		Currency:      util.FirstNonEmpty(item.Currency, item.Offer.Currency, "BRL"),
+		FirstName:     first,
+		LastName:      last,
+		Email:         item.Customer.Email,
+		Phone:         item.Customer.Phone,
+		FBC:           strings.TrimSpace(item.FBC),
+		FBP:           strings.TrimSpace(item.FBP),
+		ProductID:     util.FirstNonEmpty(anyString(item.Product.ID), item.Offer.ID),
+		ProductName:   util.FirstNonEmpty(item.Product.Name, item.Offer.Name),
+		IsOrderBump:   offerType == "order_bump" || offerType == "orderbump",
+		IsUpsell:      offerType == "upsell",
+		OfferType:     offerType,
+		AccountID:     accountID,
+		PixelQuery:    pixelQuery,
+		RawPayload:    raw,
+		RefundReason:  strings.TrimSpace(item.RefundReason),
+		RefundedAtISO: util.FirstNonEmpty(strings.TrimSpace(item.ChargedbackAt), strings.TrimSpace(item.RefundedAt)),
 	}
 	return h.enqueueGenericPurchase(ctx, in, fromPurchaseInput(in))
 }

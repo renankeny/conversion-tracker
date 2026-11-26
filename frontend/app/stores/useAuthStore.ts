@@ -10,6 +10,8 @@ import { useMetaAdsStore } from '~/stores/useMetaAdsStore'
 import { useGoogleAdsStore } from '~/stores/useGoogleAdsStore'
 import { useCustomWebhooksStore } from '~/stores/customWebhooks'
 import { useSystemAlertsStore } from '~/stores/useSystemAlertsStore'
+import { useNotificationsStore } from '~/stores/useNotificationsStore'
+import { useWhatsAppStore } from '~/stores/useWhatsAppStore'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(null)
@@ -98,6 +100,8 @@ export const useAuthStore = defineStore('auth', () => {
     useGoogleAdsStore().invalidate()
     useCustomWebhooksStore().invalidate()
     useSystemAlertsStore().invalidate()
+    useWhatsAppStore().invalidate()
+    useNotificationsStore().reset()
   }
 
   async function login(credentials: LoginRequest): Promise<LoginResponse> {

@@ -82,7 +82,7 @@ func (s *StatsRepo) populateAdMessagesAudit(ctx context.Context, f StatsFilter, 
 	args := append([]any{f.From, f.To}, scopeArgs...)
 	q := `
 		WITH chats AS (
-			SELECT c.id AS chat_id, p.name AS pixel_name, i.account_id, u.id AS uid, COALESCE(u.group_id, u.id) AS gkey,
+			SELECT c.id AS chat_id, p.name AS pixel_name, i.account_id, u.id AS uid, COALESCE(u.group_id, -u.id) AS gkey,
 				` + waChatIsMetaSQL + ` AS is_meta,
 				` + waChatIsGoogleSQL + ` AS raw_google,
 				` + waChatIsTikTokSQL + ` AS is_tiktok
@@ -97,21 +97,21 @@ func (s *StatsRepo) populateAdMessagesAudit(ctx context.Context, f StatsFilter, 
 				(uid IS NOT NULL AND EXISTS (
 					SELECT 1 FROM tracked_users ug
 					JOIN sent_events se ON se.external_id = ug.external_id AND se.account_id = ug.account_id
-					WHERE ug.account_id = chats.account_id AND COALESCE(ug.group_id, ug.id) = chats.gkey
+					WHERE ug.account_id = chats.account_id AND COALESCE(ug.group_id, -ug.id) = chats.gkey
 					  AND se.pixel_name = chats.pixel_name AND se.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead', 'Purchase')
 					  AND ` + metaSentSQL + `
 				)) AS has_meta_sent,
 				(uid IS NOT NULL AND EXISTS (
 					SELECT 1 FROM tracked_users ug
 					JOIN sent_events se ON se.external_id = ug.external_id AND se.account_id = ug.account_id
-					WHERE ug.account_id = chats.account_id AND COALESCE(ug.group_id, ug.id) = chats.gkey
+					WHERE ug.account_id = chats.account_id AND COALESCE(ug.group_id, -ug.id) = chats.gkey
 					  AND se.pixel_name = chats.pixel_name AND se.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead', 'Purchase')
 					  AND ` + googleSentSQL + `
 				)) AS has_google_sent,
 				(uid IS NOT NULL AND EXISTS (
 					SELECT 1 FROM tracked_users ug
 					JOIN sent_events se ON se.external_id = ug.external_id AND se.account_id = ug.account_id
-					WHERE ug.account_id = chats.account_id AND COALESCE(ug.group_id, ug.id) = chats.gkey
+					WHERE ug.account_id = chats.account_id AND COALESCE(ug.group_id, -ug.id) = chats.gkey
 					  AND se.pixel_name = chats.pixel_name AND se.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead', 'Purchase')
 					  AND ` + extSentSQL + `
 				)) AS has_ext_sent
@@ -143,12 +143,12 @@ func (s *StatsRepo) populateLeadsAudit(ctx context.Context, f StatsFilter, dst *
 	args := append([]any{f.From, f.To}, scopeArgs...)
 	q := `
 		WITH raw_leads AS (
-			SELECT 'u:' || COALESCE(u.group_id, u.id)::text AS lkey, cl.account_id, COALESCE(u.group_id, u.id) AS gkey,
+			SELECT 'u:' || COALESCE(u.group_id, -u.id)::text AS lkey, cl.account_id, COALESCE(u.group_id, -u.id) AS gkey,
 				FALSE AS d_ext, FALSE AS d_meta, FALSE AS d_google, (` + metaSourceSQL + `) AS is_meta, (` + googleSourceSQL + `) AS is_google
 			FROM crm_leads cl JOIN tracked_users u ON u.id = cl.tracked_user_id
 			WHERE cl.created_at >= $1 AND cl.created_at < $2` + clScope + `
 			UNION ALL
-			SELECT 'u:' || COALESCE(u.group_id, u.id)::text AS lkey, i.account_id, COALESCE(u.group_id, u.id) AS gkey,
+			SELECT 'u:' || COALESCE(u.group_id, -u.id)::text AS lkey, i.account_id, COALESCE(u.group_id, -u.id) AS gkey,
 				FALSE AS d_ext, FALSE AS d_meta, FALSE AS d_google,
 				` + waChatIsMetaSQL + ` AS is_meta,
 				` + waChatIsGoogleSQL + ` AS is_google
@@ -156,8 +156,8 @@ func (s *StatsRepo) populateLeadsAudit(ctx context.Context, f StatsFilter, dst *
 			JOIN whatsapp_instances i ON c.instance_id = i.id JOIN pixels p ON i.pixel_id = p.id JOIN tracked_users u ON c.tracked_user_id = u.id
 			WHERE ` + waChatPeriodEntrySQL("$1", "$2") + waScope + `
 			UNION ALL
-			SELECT CASE WHEN u.id IS NOT NULL THEN 'u:' || COALESCE(u.group_id, u.id)::text ELSE 'e:' || se.event_id END AS lkey,
-				se.account_id, COALESCE(u.group_id, u.id, 0) AS gkey,
+			SELECT CASE WHEN u.id IS NOT NULL THEN 'u:' || COALESCE(u.group_id, -u.id)::text ELSE 'e:' || se.event_id END AS lkey,
+				se.account_id, COALESCE(u.group_id, -u.id, 0) AS gkey,
 				` + extSentSQL + ` AS d_ext, ` + metaSentSQL + ` AS d_meta, ` + googleSentSQL + ` AS d_google,
 				COALESCE(` + metaSourceSQL + `, FALSE) AS is_meta, COALESCE(` + googleSourceSQL + `, FALSE) AS is_google
 			FROM sent_events se LEFT JOIN tracked_users u ON se.external_id = u.external_id AND se.account_id = u.account_id
@@ -172,19 +172,19 @@ func (s *StatsRepo) populateLeadsAudit(ctx context.Context, f StatsFilter, dst *
 		),
 		evaluated AS (
 			SELECT is_meta, (NOT is_meta AND raw_google) AS is_google,
-				(d_meta OR (gkey > 0 AND EXISTS (
+				(d_meta OR (gkey <> 0 AND EXISTS (
 					SELECT 1 FROM tracked_users ug JOIN sent_events se ON se.external_id = ug.external_id AND se.account_id = ug.account_id
-					WHERE ug.account_id = dedup.account_id AND COALESCE(ug.group_id, ug.id) = dedup.gkey` + pxCond + `
+					WHERE ug.account_id = dedup.account_id AND COALESCE(ug.group_id, -ug.id) = dedup.gkey` + pxCond + `
 					  AND se.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead', 'Purchase') AND ` + metaSentSQL + `
 				))) AS has_meta_sent,
-				(d_google OR (gkey > 0 AND EXISTS (
+				(d_google OR (gkey <> 0 AND EXISTS (
 					SELECT 1 FROM tracked_users ug JOIN sent_events se ON se.external_id = ug.external_id AND se.account_id = ug.account_id
-					WHERE ug.account_id = dedup.account_id AND COALESCE(ug.group_id, ug.id) = dedup.gkey` + pxCond + `
+					WHERE ug.account_id = dedup.account_id AND COALESCE(ug.group_id, -ug.id) = dedup.gkey` + pxCond + `
 					  AND se.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead', 'Purchase') AND ` + googleSentSQL + `
 				))) AS has_google_sent,
-				(d_ext OR (gkey > 0 AND EXISTS (
+				(d_ext OR (gkey <> 0 AND EXISTS (
 					SELECT 1 FROM tracked_users ug JOIN sent_events se ON se.external_id = ug.external_id AND se.account_id = ug.account_id
-					WHERE ug.account_id = dedup.account_id AND COALESCE(ug.group_id, ug.id) = dedup.gkey` + pxCond + `
+					WHERE ug.account_id = dedup.account_id AND COALESCE(ug.group_id, -ug.id) = dedup.gkey` + pxCond + `
 					  AND se.event_name IN ('Lead', 'LeadSubmitted', 'QualifiedLead', 'Purchase') AND ` + extSentSQL + `
 				))) AS has_ext_sent
 			FROM dedup

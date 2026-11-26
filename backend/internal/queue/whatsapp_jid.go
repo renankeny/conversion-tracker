@@ -49,23 +49,23 @@ func ResolveContactJID(
 	}
 
 	chatBare := NormalizeBareJID(msg.ChatJID)
-	if chatBare == "" ||
-		strings.HasSuffix(chatBare, "@g.us") ||
-		strings.HasSuffix(chatBare, "@broadcast") ||
-		strings.HasSuffix(chatBare, "@newsletter") ||
-		chatBare == "status@broadcast" {
-		return "", "", "", true
-	}
-
 	ownerBare := NormalizeBareJID(ownerJID)
 	senderBare := NormalizeBareJID(msg.SenderJID)
 	senderAltBare := NormalizeBareJID(msg.SenderAltJID)
 	recipAltBare := NormalizeBareJID(msg.RecipientAltJID)
 	deviceDestBare := NormalizeBareJID(msg.DeviceDestJID)
 
+	if chatBare == "" || IsIgnorableSpecialJID(chatBare) || IsIgnorableSpecialJID(senderBare) || IsIgnorableSpecialJID(senderAltBare) {
+		return "", "", "", true
+	}
+
 	var phoneJID, lidJID string
 
 	if !msg.IsFromMe {
+		// Bloqueia conversa consigo mesmo ("Mensagem para você mesmo") mesmo quando vem com @lid paralelo.
+		if ownerBare != "" && (chatBare == ownerBare || senderBare == ownerBare || senderAltBare == ownerBare) {
+			return "", "", "", true
+		}
 		for _, cand := range []string{senderBare, senderAltBare, chatBare} {
 			if strings.HasSuffix(cand, "@s.whatsapp.net") && cand != ownerBare {
 				phoneJID = cand
@@ -79,6 +79,9 @@ func ResolveContactJID(
 			}
 		}
 	} else {
+		if IsIgnorableSpecialJID(recipAltBare) || IsIgnorableSpecialJID(deviceDestBare) {
+			return "", "", "", true
+		}
 		// Quando IsFromMe == true, whatsmeow.go pode ter trocado Chat pelo número do próprio
 		// atendente (SenderAlt). Priorizamos RecipientAlt e DeviceSentMeta.DestinationJID!
 		for _, cand := range []string{recipAltBare, deviceDestBare, chatBare} {
@@ -160,54 +163,4 @@ func extractMediaSubMessage(msgMap map[string]json.RawMessage, out *ParsedWhatsA
 			return
 		}
 	}
-}
-
-func applyContextInfo(ctxInfo *evoContextInfo, out *ParsedWhatsAppMessage) {
-	if ctxInfo == nil {
-		return
-	}
-	if clid := strings.TrimSpace(ctxInfo.CtwaClidDirect); clid != "" {
-		out.HasMsgAdReferral = true
-		if out.CtwaClid == "" {
-			out.CtwaClid = clid
-		}
-	}
-	applyReferral(&ctxInfo.ExternalAdReply, util.FirstNonEmpty(ctxInfo.ConversionApp, ctxInfo.ConversionSrc, ctxInfo.ConversionFB), out)
-}
-
-func applyReferral(ref *evoAdReferral, fallbackApp string, out *ParsedWhatsAppMessage) {
-	if ref == nil {
-		return
-	}
-	if clid := strings.TrimSpace(util.FirstNonEmpty(ref.CtwaClid, ref.CtwaClidSnake)); clid != "" {
-		out.HasMsgAdReferral = true
-		if out.CtwaClid == "" {
-			out.CtwaClid = clid
-		}
-	}
-	if sid := strings.TrimSpace(util.FirstNonEmpty(ref.SourceID, ref.SourceIdAlt, ref.SourceIDSnake)); sid != "" {
-		out.HasMsgAdReferral = true
-		if out.SourceID == "" {
-			out.SourceID = sid
-		}
-	}
-	if surl := util.FirstNonEmpty(ref.SourceURL, ref.SourceUrlAlt); surl != "" && out.SourceURL == "" {
-		out.SourceURL = strings.TrimSpace(surl)
-	}
-	if app := util.FirstNonEmpty(ref.SourceApp, ref.SourceAppAlt, fallbackApp); app != "" && out.SourceApp == "" {
-		out.SourceApp = strings.ToLower(strings.TrimSpace(app))
-	}
-	if thumb := util.FirstNonEmpty(ref.ThumbnailURL, ref.OriginalImageURL, ref.MediaURL); thumb != "" && out.AdThumbnailURL == "" {
-		out.AdThumbnailURL = strings.TrimSpace(thumb)
-	}
-}
-
-var rxProtocol = regexp.MustCompile(`(?i)(?:protocolo(?:\s+de\s+atendimento)?|c[oó]d(?:igo)?\s+de\s+atendimento|ref(?:er[eê]ncia)?)\s*[:#\-]?\s*\*?([A-Za-z0-9_-]{6,36})\*?`)
-
-func ExtractProtocolCode(text string) string {
-	m := rxProtocol.FindStringSubmatch(text)
-	if len(m) < 2 {
-		return ""
-	}
-	return strings.TrimSpace(m[1])
 }

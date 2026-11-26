@@ -209,6 +209,8 @@ const {
 
 const tenantStore = useTenantStore()
 watch(() => tenantStore.switchVersion, () => {
+  modals.closeAllModals()
+  cancelPurchase()
   void resetPixelAndFetchBoard()
   void loadGadsAccounts()
   void loadAllTags()

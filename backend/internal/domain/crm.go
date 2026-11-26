@@ -25,9 +25,11 @@ type CRMLead struct {
 	ID            int64     `json:"id"`
 	AccountID     int64     `json:"account_id"`
 	TrackedUserID int64     `json:"tracked_user_id"`
-	StageID       *int64    `json:"stage_id"`
-	Value         float64   `json:"value"`
-	CreatedAt     time.Time `json:"created_at"`
+	StageID        *int64    `json:"stage_id"`
+	Value          float64   `json:"value"`
+	RefundStatus   string    `json:"refund_status"`
+	RefundedAmount float64   `json:"refunded_amount"`
+	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 
 	TrackedUser *TrackedUser `json:"tracked_user,omitempty"`

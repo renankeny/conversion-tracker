@@ -24,6 +24,8 @@ const (
 	EventAddToWishlist        = "AddToWishlist"
 	EventCompleteRegistration = "CompleteRegistration"
 	EventPurchase             = "Purchase"
+	EventRefund               = "Refund"
+	EventChargeback           = "Chargeback"
 	EventSearch               = "Search"
 	EventSubscribe            = "Subscribe"
 	EventStartTrial           = "StartTrial"
@@ -78,6 +80,11 @@ func IsValidEventType(name string) bool {
 // (Init e UpdateUserData fazem só side effects no servidor).
 func IsInternalEvent(name string) bool {
 	return name == EventInit || name == EventUpdateUserData
+}
+
+// IsRefundEvent indica se o evento representa estorno (reembolso ou chargeback).
+func IsRefundEvent(name string) bool {
+	return name == EventRefund || name == EventChargeback
 }
 
 // SendEventInput é o payload normalizado pronto pra ser enviado pra Meta.

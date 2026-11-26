@@ -204,7 +204,9 @@ onMounted(() => {
     if (offset.value === 0 && !modalOpen.value) void fetchUsers(true)
   })
   _pollingTimer = setInterval(() => {
-    if (offset.value === 0 && !modalOpen.value) void fetchUsers(true)
+    if (!liveStore.connected && !document.hidden && offset.value === 0 && !modalOpen.value) {
+      void fetchUsers(true)
+    }
   }, 30_000)
 })
 

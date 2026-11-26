@@ -4,7 +4,7 @@
     :label="label"
     :options="pixelOptions"
     :disabled="pixelStore.loading"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="emit('update:modelValue', String($event ?? ''))"
   />
 </template>
 

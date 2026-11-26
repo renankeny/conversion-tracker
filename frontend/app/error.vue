@@ -26,7 +26,7 @@
           Tentar novamente
         </BaseButton>
 
-        <BaseButton :variant="isNotFound ? 'primary' : 'secondary'" @click="goHome">
+        <BaseButton :variant="isNotFound ? 'primary' : 'outline'" @click="goHome">
           <template #iconLeft>
             <Home :size="15" />
           </template>

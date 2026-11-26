@@ -76,23 +76,23 @@ func (r *UserRepo) ResolveAndLink(ctx context.Context, accountID int64, external
 
 	args := []any{accountID}
 	conds := make([]string, 0, 3)
-	addCond := func(col, val string) {
-		args = append(args, val)
-		conds = append(conds, col+" = $"+itoa(len(args)))
-	}
 	if externalID != "" {
-		addCond("external_id", externalID)
+		args = append(args, externalID)
+		conds = append(conds, "external_id = $"+itoa(len(args)))
 	}
 	if phone != "" {
-		addCond("phone", phone)
+		args = append(args, phone)
+		conds = append(conds, "(phone <> '' AND phone = $"+itoa(len(args))+")")
 	}
 	if email != "" {
-		addCond("email", email)
+		args = append(args, email)
+		conds = append(conds, "(email <> '' AND email = $"+itoa(len(args))+")")
 	}
 
 	q := `SELECT ` + userColumns + ` FROM tracked_users
 	      WHERE account_id = $1 AND (` + strings.Join(conds, " OR ") + `)
-	      ORDER BY updated_at DESC`
+	      ORDER BY id ASC
+	      FOR UPDATE`
 	rows, err := tx.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -113,6 +113,9 @@ func (r *UserRepo) ResolveAndLink(ctx context.Context, accountID int64, external
 	if len(matches) == 0 {
 		return nil, ErrNotFound
 	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		return matches[i].UpdatedAt.After(matches[j].UpdatedAt)
+	})
 
 	pick := func() *domain.TrackedUser {
 		for i := range matches {
@@ -173,25 +176,29 @@ func (r *UserRepo) ResolveAndLink(ctx context.Context, accountID int64, external
 		if gid == canonicalGroupID {
 			continue
 		}
-		if _, err := tx.Exec(ctx, `UPDATE tracked_users SET group_id = $1 WHERE group_id = $2`, canonicalGroupID, gid); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE tracked_users SET group_id = $1 WHERE group_id = $2 AND account_id = $3`, canonicalGroupID, gid, accountID); err != nil {
 			return nil, err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE crm_leads SET group_id = $1 WHERE group_id = $2`, canonicalGroupID, gid); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE crm_leads SET group_id = $1 WHERE group_id = $2 AND account_id = $3`, canonicalGroupID, gid, accountID); err != nil {
 			return nil, err
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM groups WHERE id = $1`, gid); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM groups WHERE id = $1 AND account_id = $2`, gid, accountID); err != nil {
 			return nil, err
 		}
 	}
 
+	needUpdateIDs := make([]int64, 0, len(matches))
 	for _, m := range matches {
 		if m.GroupID == nil || *m.GroupID != canonicalGroupID {
-			if _, err := tx.Exec(ctx,
-				`UPDATE tracked_users SET group_id = $1, updated_at = NOW() WHERE id = $2`,
-				canonicalGroupID, m.ID,
-			); err != nil {
-				return nil, err
-			}
+			needUpdateIDs = append(needUpdateIDs, m.ID)
+		}
+	}
+	if len(needUpdateIDs) > 0 {
+		if _, err := tx.Exec(ctx,
+			`UPDATE tracked_users SET group_id = $1, updated_at = NOW() WHERE id = ANY($2::bigint[]) AND account_id = $3`,
+			canonicalGroupID, needUpdateIDs, accountID,
+		); err != nil {
+			return nil, err
 		}
 	}
 

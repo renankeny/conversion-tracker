@@ -224,6 +224,14 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
     }
   }
 
+  const closeAllModals = () => {
+    reopenPipelineAfterStage = false
+    showPipelineModal.value = false; showStageModal.value = false; showCreateLeadModal.value = false
+    showLeadModal.value = false; showTrackedUserModal.value = false; showCreateTagModal.value = false
+    showDeleteLeadModal.value = false; showDeleteNoteModal.value = false; showDeleteStageModal.value = false
+    selectedLeadId.value = null; selectedLeadTrackedUser.value = null; selectedTrackedUser.value = null
+  }
+
   return {
     showPipelineModal, showStageModal, isCreatingStage, isSavingStage, isLoadingGadsActions,
     selectedStage, gadsActions, onStageGoogleAdsAccountChange,
@@ -232,6 +240,7 @@ export const useCrmModals = (deps: UseCrmModalsDeps) => {
     showLeadModal, selectedLeadId, selectedLeadTrackedUser, showTrackedUserModal, selectedTrackedUser,
     leadEdit, showCreateTagModal, isCreatingTag, newTag, selectedTagToAdd, newNoteContent,
     isSavingLead, isAddingNote, showDeleteLeadModal, showDeleteNoteModal, showDeleteStageModal, noteToDeleteId,
+    closeAllModals,
     getOriginalStageId: () => originalLeadStageId,
     setOriginalStageId: (id: number | null) => { originalLeadStageId = id },
   }

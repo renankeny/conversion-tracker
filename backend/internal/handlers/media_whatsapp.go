@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -72,16 +74,41 @@ func (h *WhatsAppMediaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	if msg.MediaMimeType != nil && *msg.MediaMimeType != "" {
 		contentType = *msg.MediaMimeType
 	}
-	if contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	}
-	w.Header().Set("Cache-Control", "private, max-age=3600")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-
-	filename := msg.MediaFilename
+	filename := strings.Map(func(r rune) rune {
+		if r == '"' || r == '\\' || r == '\r' || r == '\n' {
+			return '_'
+		}
+		return r
+	}, msg.MediaFilename)
 	if filename == "" {
 		filename = fmt.Sprintf("whatsapp_%d", msg.ID)
 	}
+
+	safeMime, inlineSafe := sanitizeServedMediaMime(contentType)
+	w.Header().Set("Content-Type", safeMime)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; media-src 'self'; img-src 'self'; style-src 'unsafe-inline'; sandbox")
+	if !inlineSafe {
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	}
 	http.ServeContent(w, r, filename, stat.LastModified, obj)
+}
+
+func sanitizeServedMediaMime(raw string) (string, bool) {
+	base, _, err := mime.ParseMediaType(strings.TrimSpace(raw))
+	if err != nil || base == "" {
+		return "application/octet-stream", false
+	}
+	base = strings.ToLower(base)
+	switch base {
+	case "image/jpeg", "image/png", "image/webp", "image/gif",
+		"video/mp4", "video/webm", "video/3gpp", "application/pdf":
+		return raw, true
+	}
+	if strings.HasPrefix(base, "audio/") {
+		return raw, true
+	}
+	return "application/octet-stream", false
 }
 

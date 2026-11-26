@@ -1,3 +1,6 @@
+import { computeSaoPauloRange } from '~/stores/useDashboardStore'
+import { SP_TIMEZONE } from '~/utils/formatDate'
+
 export type PeriodPresetId = 'today' | '24h' | '7d' | '30d'
 
 export const EVENT_FILTER_OPTIONS = [
@@ -54,11 +57,10 @@ export const PERIOD_PRESETS: Array<{ id: PeriodPresetId; label: string }> = [
 ]
 
 export function buildPresetFromISO(preset: PeriodPresetId): string {
-  const now = new Date()
   if (preset === 'today') {
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
-    return start.toISOString()
+    return computeSaoPauloRange('today').from
   }
+  const now = new Date()
   const hoursMap: Record<Exclude<PeriodPresetId, 'today'>, number> = {
     '24h': 24,
     '7d': 24 * 7,
@@ -71,16 +73,15 @@ export function isoToLocalInput(iso?: string): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return (
-    d.getFullYear() +
-    '-' +
-    pad(d.getMonth() + 1) +
-    '-' +
-    pad(d.getDate()) +
-    'T' +
-    pad(d.getHours()) +
-    ':' +
-    pad(d.getMinutes())
-  )
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SP_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d)
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || '00'
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`
 }

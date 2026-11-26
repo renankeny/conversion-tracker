@@ -71,15 +71,17 @@ func StripHeavyBase64FromEventData(raw json.RawMessage) json.RawMessage {
 }
 
 type evoAdReferral struct {
-	CtwaClid      string `json:"ctwaClid"`
-	CtwaClidSnake string `json:"ctwa_clid"`
-	SourceID      string `json:"sourceID"`
-	SourceIdAlt   string `json:"sourceId"`
-	SourceIDSnake string `json:"source_id"`
-	SourceURL     string `json:"sourceURL"`
-	SourceUrlAlt  string `json:"sourceUrl"`
-	SourceApp     string `json:"sourceApp"`
-	SourceAppAlt  string `json:"source_app"`
+	CtwaClid         string `json:"ctwaClid"`
+	CtwaClidSnake    string `json:"ctwa_clid"`
+	SourceID         string `json:"sourceID"`
+	SourceIdAlt      string `json:"sourceId"`
+	SourceIDSnake    string `json:"source_id"`
+	SourceType       string `json:"sourceType"`
+	SourceTypeSnake  string `json:"source_type"`
+	SourceURL        string `json:"sourceURL"`
+	SourceUrlAlt     string `json:"sourceUrl"`
+	SourceApp        string `json:"sourceApp"`
+	SourceAppAlt     string `json:"source_app"`
 	ThumbnailURL     string `json:"thumbnailURL"`
 	OriginalImageURL string `json:"originalImageURL"`
 	MediaURL         string `json:"mediaURL"`
@@ -90,6 +92,8 @@ type evoContextInfo struct {
 	ConversionSrc   string        `json:"entryPointConversionSource"`
 	ConversionFB    string        `json:"conversionSource"`
 	CtwaClidDirect  string        `json:"ctwaClid"`
+	IsForwarded     bool          `json:"isForwarded"`
+	ForwardingScore int           `json:"forwardingScore"`
 	ExternalAdReply evoAdReferral `json:"externalAdReply"`
 }
 
@@ -147,8 +151,9 @@ func ParseEvolutionMessageEvent(rawData json.RawMessage) (*ParsedWhatsAppMessage
 
 	extractMessageContentAndMedia(unwrapMessageContainers(env.Message, out, 0), out)
 	if env.Referral != nil {
-		applyReferral(env.Referral, "", out)
+		applyReferral(env.Referral, true, "", out)
 	}
+	sanitizeParsedMessageDirection(out)
 	if out.Content == "" && !out.HasMedia && out.CtwaClid == "" && out.SourceID == "" {
 		return nil, nil
 	}

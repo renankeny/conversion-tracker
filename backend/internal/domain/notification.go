@@ -8,6 +8,7 @@ const (
 	NotifLeadCreated               = "lead_created"
 	NotifAILeadQualified           = "ai_lead_qualified"
 	NotifSaleApproved              = "sale_approved"
+	NotifSaleRefunded              = "sale_refunded"
 	NotifMetaAccountLifecycle      = "meta_account_lifecycle"
 	NotifGoogleAdsAccountLifecycle = "google_ads_account_lifecycle"
 	NotifPixelLifecycle            = "pixel_lifecycle"
@@ -32,6 +33,7 @@ func IsConfigurableNotificationCategory(category string) bool {
 		NotifLeadCreated,
 		NotifAILeadQualified,
 		NotifSaleApproved,
+		NotifSaleRefunded,
 		NotifMetaAccountLifecycle,
 		NotifGoogleAdsAccountLifecycle,
 		NotifPixelLifecycle,
@@ -61,6 +63,7 @@ type NotificationPreferences struct {
 	LeadCreated               bool      `json:"lead_created"`
 	AILeadQualified           bool      `json:"ai_lead_qualified"`
 	SaleApproved              bool      `json:"sale_approved"`
+	SaleRefunded              bool      `json:"sale_refunded"`
 	MetaAccountLifecycle      bool      `json:"meta_account_lifecycle"`
 	GoogleAdsAccountLifecycle bool      `json:"google_ads_account_lifecycle"`
 	PixelLifecycle            bool      `json:"pixel_lifecycle"`
@@ -77,6 +80,7 @@ func DefaultNotificationPreferences(userID int64) NotificationPreferences {
 		LeadCreated:               true,
 		AILeadQualified:           true,
 		SaleApproved:              true,
+		SaleRefunded:              true,
 		MetaAccountLifecycle:      true,
 		GoogleAdsAccountLifecycle: true,
 		PixelLifecycle:            true,
@@ -97,6 +101,8 @@ func (p NotificationPreferences) AllowsCategory(category string) bool {
 		return p.AILeadQualified
 	case NotifSaleApproved:
 		return p.SaleApproved
+	case NotifSaleRefunded:
+		return p.SaleRefunded
 	case NotifMetaAccountLifecycle:
 		return p.MetaAccountLifecycle
 	case NotifGoogleAdsAccountLifecycle:

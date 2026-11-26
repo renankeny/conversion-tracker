@@ -67,6 +67,26 @@ func (h *AdminCRM) resolveOrCreateCRMTrackedUser(
 	return trackedUser
 }
 
+// resolveOrCreateCRMTrackedUserStrictPixel impede que o portal público (/cliente/{token})
+// altere ou dispare eventos CAPI em leads pertencentes a outro pixel da mesma agência.
+func (h *AdminCRM) resolveOrCreateCRMTrackedUserStrictPixel(
+	ctx context.Context,
+	accountID int64,
+	firstName, lastName, email, phone, pixelName string,
+) *domain.TrackedUser {
+	var existing *domain.TrackedUser
+	if email != "" {
+		existing, _ = h.users.FindByEmailByAccount(ctx, email, accountID)
+	}
+	if existing == nil && phone != "" {
+		existing, _ = h.users.FindByPhoneVariantsByAccount(ctx, util.PhoneVariants(phone), accountID)
+	}
+	if existing != nil && existing.PixelName != "" && existing.PixelName != "api_import" && existing.PixelName != pixelName {
+		return nil
+	}
+	return h.resolveOrCreateCRMTrackedUser(ctx, accountID, firstName, lastName, email, phone, "", pixelName)
+}
+
 func (h *AdminCRM) resolveCRMDispatchPixel(ctx context.Context, accountID int64, tu *domain.TrackedUser) (*domain.Pixel, string) {
 	pixelName := tu.PixelName
 	var resolvedPixel *domain.Pixel

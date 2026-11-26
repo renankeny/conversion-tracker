@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -55,8 +56,13 @@ func (h *Webhooks) Cartpanda(w http.ResponseWriter, r *http.Request) {
 
 	ev := strings.ToLower(strings.TrimSpace(p.Event))
 	finSt := strings.ToLower(strings.TrimSpace(util.FirstNonEmpty(ord.FinancialStatus, ord.Status)))
-	approved := ev == "order.paid" || ev == "order_paid" || finSt == "paid"
-	if !approved {
+	eventName := ""
+	if ev == "order.paid" || ev == "order_paid" || finSt == "paid" {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(ev, finSt)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -100,6 +106,7 @@ func (h *Webhooks) Cartpanda(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "cartpanda",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(anyString(ord.ID), anyString(ord.Number)),
 		Value:       value,

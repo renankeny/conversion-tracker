@@ -72,8 +72,8 @@ export const useEvents = () => {
   }
 }
 
-const buildQuery = (params: Record<string, unknown>): string => {
-  const entries = Object.entries(params).filter(
+const buildQuery = <T extends object>(params: T): string => {
+  const entries = Object.entries(params as Record<string, unknown>).filter(
     ([, v]) => v !== undefined && v !== '' && v !== null,
   )
   if (entries.length === 0) return ''

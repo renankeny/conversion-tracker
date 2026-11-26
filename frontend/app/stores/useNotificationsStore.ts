@@ -23,24 +23,18 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray
 }
 
+const defaultPrefs = (): NotificationPreferences => ({
+  user_id: 0, account_scope_mode: 'all', enabled_account_ids: [],
+  whatsapp_connection: true, lead_created: true, ai_lead_qualified: true, sale_approved: true, sale_refunded: true,
+  meta_account_lifecycle: true, google_ads_account_lifecycle: true, pixel_lifecycle: true, event_dispatch_error: false,
+})
+
 export const useNotificationsStore = defineStore('notifications', () => {
   const api = useAPI()
 
   const vapidPublicKey = ref('')
   const unreadCount = ref(0)
-  const preferences = ref<NotificationPreferences>({
-    user_id: 0,
-    account_scope_mode: 'all',
-    enabled_account_ids: [],
-    whatsapp_connection: true,
-    lead_created: true,
-    ai_lead_qualified: true,
-    sale_approved: true,
-    meta_account_lifecycle: true,
-    google_ads_account_lifecycle: true,
-    pixel_lifecycle: true,
-    event_dispatch_error: false,
-  })
+  const preferences = ref<NotificationPreferences>(defaultPrefs())
   const subscriptions = ref<PushSubscriptionItem[]>([])
   const notifications = ref<UserNotificationItem[]>([])
 
@@ -234,11 +228,20 @@ export const useNotificationsStore = defineStore('notifications', () => {
     }
   }
 
+  function reset(): void {
+    unreadCount.value = 0
+    notifications.value = []
+    subscriptions.value = []
+    preferences.value = defaultPrefs()
+    loaded.value = false
+    loading.value = false
+  }
+
   return {
     vapidPublicKey, unreadCount, preferences, subscriptions, notifications,
     loaded, loading, savingPrefs, subscribing, testingCategory,
     pushSupported, permissionState, isIOS, isStandalonePWA, canInstallPWA, isThisDeviceSubscribed, currentEndpoint,
     initClientPWA, fetchOverview, savePreferences, installPWA, subscribeThisDevice,
-    removeSubscription, markRead, markAllRead, sendTest, pushIncomingRealtime,
+    removeSubscription, markRead, markAllRead, sendTest, pushIncomingRealtime, reset,
   }
 })

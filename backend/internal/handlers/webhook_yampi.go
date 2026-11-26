@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -60,7 +61,13 @@ func (h *Webhooks) Yampi(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.EqualFold(p.Event, "order.paid") {
+	eventName := ""
+	if strings.EqualFold(p.Event, "order.paid") {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(p.Event)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -109,6 +116,7 @@ func (h *Webhooks) Yampi(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "yampi",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     orderID,
 		Value:       value,

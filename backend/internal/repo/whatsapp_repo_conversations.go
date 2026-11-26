@@ -118,7 +118,7 @@ func (r *WhatsAppRepo) ListChats(ctx context.Context, accountID int64) ([]*domai
 		SELECT `+selectChatColumns+`
 		FROM whatsapp_chats c
 		JOIN whatsapp_instances i ON c.instance_id = i.id
-		WHERE i.account_id = $1 AND c.tracked_user_id IS NOT NULL
+		WHERE c.account_id = $1 AND i.account_id = $1 AND c.tracked_user_id IS NOT NULL
 		ORDER BY c.last_message_time DESC
 		LIMIT 200
 	`, accountID)

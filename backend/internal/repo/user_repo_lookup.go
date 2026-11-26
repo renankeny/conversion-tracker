@@ -74,8 +74,15 @@ func (r *UserRepo) FindByEmailByAccount(ctx context.Context, email string, accou
 
 // FindByIDWpp busca um tracked user pelo id_wpp (10 chars [A-Z0-9]).
 func (r *UserRepo) FindByIDWpp(ctx context.Context, idWpp string) (*domain.TrackedUser, error) {
-	q := `SELECT ` + userColumns + ` FROM tracked_users WHERE id_wpp = $1 AND id_wpp <> ''`
-	return scanUser(r.pool.QueryRow(ctx, q, idWpp))
+	return r.FindByIDWppByAccount(ctx, idWpp, 0)
+}
+
+// FindByIDWppByAccount busca um tracked user por id_wpp isolando por account_id se accountID > 0.
+func (r *UserRepo) FindByIDWppByAccount(ctx context.Context, idWpp string, accountID int64) (*domain.TrackedUser, error) {
+	q := `SELECT ` + userColumns + ` FROM tracked_users
+	      WHERE id_wpp <> '' AND id_wpp = $1 AND ($2 = 0 OR account_id = $2)
+	      ORDER BY updated_at DESC LIMIT 1`
+	return scanUser(r.pool.QueryRow(ctx, q, idWpp, accountID))
 }
 
 // FindByID busca pelo PK numérico (não pelo external_id). Usado pelo

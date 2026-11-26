@@ -28,10 +28,14 @@ func TestPurchaseAggregatorSessionAndDeduplication(t *testing.T) {
 		t.Fatalf("NormalizeCustomerKey = %q, want em:buyer@example.com", got)
 	}
 
-	key1 := SessionKey("main-pixel", mainInput)
-	key2 := SessionKey("main-pixel", domain.SendEventInput{Email: "buyer@example.com"})
-	if key1 != key2 || !strings.HasPrefix(key1, "agg_purchase:main-pixel:") {
+	key1 := SessionKey(1, "main-pixel", mainInput)
+	key2 := SessionKey(1, "main-pixel", domain.SendEventInput{Email: "buyer@example.com"})
+	keyOtherTenant := SessionKey(2, "main-pixel", mainInput)
+	if key1 != key2 || !strings.HasPrefix(key1, "agg_purchase:1:main-pixel:") {
 		t.Fatalf("SessionKey mismatch: %q vs %q", key1, key2)
+	}
+	if key1 == keyOtherTenant {
+		t.Fatalf("expected tenant-isolated SessionKey, got identical key %q", key1)
 	}
 
 	itemMain := buildAggregatedItem(mainInput, 197.00)

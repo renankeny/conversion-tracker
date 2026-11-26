@@ -17,7 +17,9 @@ export default defineEventHandler(async (event) => {
   let bg = '#121214'
 
   try {
-    const res = await fetch(`${apiOrigin}/api/v1/branding`)
+    const res = await fetch(`${apiOrigin}/api/v1/branding`, {
+      signal: AbortSignal.timeout(2500),
+    })
     if (res.ok) {
       const b = await res.json()
       if (b?.platform_name) name = String(b.platform_name)

@@ -95,8 +95,7 @@ func (h *AdminDashboardGoogle) resolveGoogleSource(r *http.Request) (*domain.Goo
 
 func (h *AdminDashboardGoogle) loadCachedSummary(ctx context.Context, acc *domain.GoogleAdsAccount, since, until string) ([]byte, error) {
 	prevSince, prevUntil := previousYMDWindow(since, until)
-	ver := h.qcache.DashboardVersion(ctx, acc.AccountID)
-	key := cache.HashQueryKey("gads:insights:v5", strconv.FormatInt(acc.AccountID, 10), ver, strconv.FormatInt(acc.ID, 10), acc.CustomerID, acc.LoginCustomerID, since, until)
+	key := cache.HashQueryKey("gads:insights:v6", strconv.FormatInt(acc.AccountID, 10), strconv.FormatInt(acc.ID, 10), acc.CustomerID, acc.LoginCustomerID, since, until)
 	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte(`{"connected":false}`), func(lctx context.Context) ([]byte, error) {
 		summary, ferr := h.gadsCli.FetchLiveInsights(lctx, acc, since, until)
 		if ferr != nil {
@@ -153,16 +152,25 @@ func (h *AdminDashboardGoogle) LiveInsights(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *AdminDashboardGoogle) loadCachedKeywords(ctx context.Context, acc *domain.GoogleAdsAccount, px *domain.Pixel, since, until string, fromTime, toTime time.Time) ([]byte, error) {
+	rawRemoteKey := cache.HashQueryKey("gads:raw_keywords:v1", strconv.FormatInt(px.AccountID, 10), strconv.FormatInt(acc.ID, 10), acc.CustomerID, acc.LoginCustomerID, since, until)
 	ver := h.qcache.DashboardVersion(ctx, px.AccountID)
-	key := cache.HashQueryKey("gads:keywords:v4", strconv.FormatInt(px.AccountID, 10), ver, strconv.FormatInt(acc.ID, 10), px.Name, acc.CustomerID, acc.LoginCustomerID, since, until)
+	key := cache.HashQueryKey("gads:keywords:v5", strconv.FormatInt(px.AccountID, 10), ver, strconv.FormatInt(acc.ID, 10), px.Name, acc.CustomerID, acc.LoginCustomerID, since, until)
 	return h.qcache.GetOrLoadWithNegCache(ctx, key, 3*time.Minute, 20*time.Second, []byte("[]"), func(lctx context.Context) ([]byte, error) {
-		kw, ferr := h.gadsCli.FetchKeywordRanking(lctx, acc, since, until)
-		if ferr != nil {
-			return nil, ferr
+		rawList, rerr := h.qcache.GetOrLoadWithNegCache(lctx, rawRemoteKey, 3*time.Minute, 20*time.Second, []byte("[]"), func(fctx context.Context) ([]byte, error) {
+			fetched, ferr := h.gadsCli.FetchKeywordRanking(fctx, acc, since, until)
+			if ferr != nil {
+				return nil, ferr
+			}
+			if len(fetched) > 5 {
+				fetched = fetched[:5]
+			}
+			return json.Marshal(fetched)
+		})
+		if rerr != nil {
+			return nil, rerr
 		}
-		if len(kw) > 5 {
-			kw = kw[:5]
-		}
+		var kw []googleads.KeywordInsight
+		_ = json.Unmarshal(rawList, &kw)
 		if h.statsRepo != nil && len(kw) > 0 {
 			h.statsRepo.EnrichGoogleKeywordsWithTrackedConversions(lctx, repo.StatsFilter{
 				AccountID: px.AccountID, PixelName: px.Name, From: fromTime, To: toTime,

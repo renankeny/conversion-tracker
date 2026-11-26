@@ -26,7 +26,9 @@ export default defineEventHandler(async (event) => {
 
   let branding: RemoteBranding = {}
   try {
-    const res = await fetch(`${apiOrigin}/api/v1/branding`)
+    const res = await fetch(`${apiOrigin}/api/v1/branding`, {
+      signal: AbortSignal.timeout(2500),
+    })
     if (res.ok) {
       branding = (await res.json()) as RemoteBranding
     }

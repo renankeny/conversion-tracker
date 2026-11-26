@@ -124,7 +124,7 @@ func enrichCTWAAdMetadata(
 	oauthAcc, _ := resolvePixelMetaOAuth(ctx, deps, pixel)
 	var metaInfo cachedAdMetadata
 	if sourceID != "" {
-		metaInfo = fetchAdMetadataCached(ctx, deps, sourceID, oauthAcc, pixel.MetaPermanentToken)
+		metaInfo = fetchAdMetadataCached(ctx, deps, inst.AccountID, sourceID, oauthAcc, pixel.MetaPermanentToken)
 		if metaInfo.PageID == "" && oauthAcc != nil && oauthAcc.DefaultPageID != "" {
 			metaInfo.PageID = oauthAcc.DefaultPageID
 		}

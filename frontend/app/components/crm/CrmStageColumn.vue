@@ -60,7 +60,7 @@
       </div>
 
       <draggable
-        v-model="stageLeads"
+        v-model="displayedStageLeads"
         class="kanban-list"
         group="leads"
         item-key="id"
@@ -84,6 +84,9 @@
           />
         </template>
       </draggable>
+      <button v-if="hiddenCount > 0" type="button" class="load-more-btn" @click="renderLimit += PAGE_STEP">
+        Mostrar mais ({{ hiddenCount }})
+      </button>
     </template>
   </div>
 </template>
@@ -119,8 +122,10 @@ const emit = defineEmits<{
   (e: 'lead-drag-end', evt: any): void
 }>()
 
+const PAGE_STEP = 60
 const { formatCurrency, isWonStage, isLostStage } = useCrmHelpers()
 const isDraggingLead = ref(false)
+const renderLimit = ref(PAGE_STEP)
 
 const isTerminalStage = computed(() => isWonStage(props.stage) || isLostStage(props.stage))
 
@@ -129,7 +134,19 @@ const stageLeads = computed({
   set: (val) => emit('update:modelValue', val),
 })
 
+const displayedStageLeads = computed({
+  get: () => stageLeads.value.slice(0, renderLimit.value),
+  set: (val) => {
+    const tail = stageLeads.value.slice(renderLimit.value)
+    emit('update:modelValue', tail.length ? [...val, ...tail] : val)
+  },
+})
+
 const visibleStageLeads = computed(() => stageLeads.value.filter(props.matchesFilter))
+const hiddenCount = computed(() => {
+  const renderedVisible = displayedStageLeads.value.filter(props.matchesFilter).length
+  return Math.max(0, visibleStageLeads.value.length - renderedVisible)
+})
 
 const stageTotalValue = computed(() => {
   return visibleStageLeads.value.reduce((acc, l) => acc + (Number(l.value) || 0), 0)
@@ -203,6 +220,12 @@ const onLeadDragEnd = (evt: any) => {
   flex: 1; padding: 0.75rem; overflow-y: auto; min-height: 120px;
   display: flex; flex-direction: column; gap: 0.625rem;
 }
+.load-more-btn {
+  margin: 0 0.75rem 0.625rem; padding: 0.4rem 0.75rem; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+  color: var(--text-2); font-size: var(--fs-xs); font-weight: var(--fw-medium); cursor: pointer;
+}
+.load-more-btn:hover { background: var(--surface-3); color: var(--text-strong); }
 :deep(.ghost-card) { opacity: 0.35; background: var(--brand-soft); border: 2px dashed var(--brand); }
 @media (max-width: 1023px) {
   .kanban-column {

@@ -2,12 +2,16 @@ import { getRequestHeader, getRequestURL, setResponseHeader, setResponseStatus }
 
 const FORWARDED_HEADERS = [
   'user-agent',
+  'accept-language',
   'referer',
   'cookie',
   'purpose',
   'sec-purpose',
   'x-purpose',
   'x-moz',
+  'sec-ch-ua',
+  'sec-ch-ua-mobile',
+  'sec-ch-ua-platform',
   'cf-connecting-ip',
   'x-forwarded-for',
   'x-real-ip',
@@ -55,6 +59,7 @@ export default defineEventHandler(async (event) => {
       method: 'GET',
       headers,
       redirect: 'manual',
+      signal: AbortSignal.timeout(4000),
     })
 
     setResponseStatus(event, upstream.status)

@@ -191,25 +191,38 @@ export function draw3DGlobeFrame(params: {
   return globeRadius
 }
 
+function escapeHtml(raw: unknown): string {
+  return String(raw ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export function build2DChartOption(markers: ProcessedGeoMarker[], eventType: 'PageView' | 'Purchase') {
   const brandColor = getCssVar('--brand', '#10B981')
   const brandStrong = getCssVar('--brand-strong', '#059669')
   const mapAreaColor = getCssVar('--surface-3', '#242b35')
   const mapBorderColor = getCssVar('--border', '#334155')
+  const tooltipBg = getCssVar('--surface-deep', '#111111')
+  const tooltipText = getCssVar('--text-strong', '#ffffff')
 
   return {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'rgba(15,23,42,0.95)',
-      borderColor: 'rgba(255,255,255,0.1)',
-      textStyle: { color: '#fff' },
-      formatter: (params: any) => {
+      backgroundColor: tooltipBg,
+      borderColor: mapBorderColor,
+      textStyle: { color: tooltipText },
+      formatter: (params: { seriesType?: string; name?: string; value?: number[] }) => {
+        const safeName = escapeHtml(params.name)
         if (params.seriesType === 'scatter') {
-          return `<div style="font-weight:var(--fw-bold);margin-bottom:2px;">${params.name}</div>
-                  <div style="font-size:var(--fs-sm);color:var(--brand);">${params.value[2].toLocaleString('pt-BR')} ${eventType === 'Purchase' ? 'compras' : 'visitas'}</div>`
+          const count = Number(params.value?.[2] || 0)
+          return `<div style="font-weight:var(--fw-bold);margin-bottom:2px;">${safeName}</div>
+                  <div style="font-size:var(--fs-sm);color:var(--brand);">${count.toLocaleString('pt-BR')} ${eventType === 'Purchase' ? 'compras' : 'visitas'}</div>`
         }
-        return params.name
+        return safeName
       },
     },
     geo: {

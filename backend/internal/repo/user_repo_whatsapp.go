@@ -11,13 +11,14 @@ import (
 // casando tanto external_id (exato ou uppercase) quanto id_wpp dentro da conta.
 func (r *UserRepo) FindByProtocolByAccount(ctx context.Context, code string, accountID int64) (*domain.TrackedUser, error) {
 	code = strings.TrimSpace(code)
-	if code == "" {
+	if len(code) < 8 || strings.HasPrefix(strings.ToLower(code), "wpp:") {
 		return nil, ErrNotFound
 	}
 	upper := strings.ToUpper(code)
 	q := `SELECT ` + userColumns + ` FROM tracked_users
 	      WHERE account_id = $1
-	        AND (external_id = $2 OR external_id = $3 OR id_wpp = $3)
+	        AND external_id NOT LIKE 'wpp:%'
+	        AND (external_id = $2 OR external_id = $3 OR (id_wpp <> '' AND id_wpp = $3))
 	      ORDER BY updated_at DESC LIMIT 1`
 	return scanUser(r.pool.QueryRow(ctx, q, accountID, code, upper))
 }

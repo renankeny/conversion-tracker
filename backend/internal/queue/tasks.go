@@ -16,6 +16,7 @@ const (
 	TypeWhatsAppEvent            = "whatsapp:process_event"
 	TypeWhatsAppMedia            = "whatsapp:process_media"
 	TypeWhatsAppVerifyDisconnect = "whatsapp:verify_disconnect"
+	TypeProcessRefund            = "refund:process_adjustments"
 
 	QueueCritical       = "critical"
 	QueueWhatsAppEvents = "whatsapp_events"
@@ -35,6 +36,10 @@ type WhatsAppVerifyDisconnectPayload struct {
 	InstanceID      int64  `json:"instance_id"`
 	Event           string `json:"event"`
 	TriggeredAtUnix int64  `json:"triggered_at_unix"`
+}
+
+type RefundAdjustmentPayload struct {
+	RefundID int64 `json:"refund_id"`
 }
 
 type WhatsAppMediaPayload struct {
@@ -77,6 +82,7 @@ func (e *Enqueuer) EnqueueSendEvent(ctx context.Context, in domain.SendEventInpu
 	_, err = e.client.EnqueueContext(ctx, task,
 		asynq.Queue(QueueCritical),
 		asynq.MaxRetry(5),
+		asynq.Timeout(45*time.Second),
 	)
 	return err
 }
@@ -127,6 +133,24 @@ func (e *Enqueuer) EnqueueWhatsAppDisconnectCheck(ctx context.Context, in WhatsA
 		asynq.ProcessIn(delay),
 		asynq.MaxRetry(2),
 		asynq.Timeout(30*time.Second),
+	)
+	return err
+}
+
+// EnqueueRefundAdjustment agenda retratação externa (Google Ads v26 RETRACTION + GA4 refund) e notificação.
+func (e *Enqueuer) EnqueueRefundAdjustment(ctx context.Context, refundID int64) error {
+	if e == nil || e.client == nil || refundID <= 0 {
+		return nil
+	}
+	payload, err := json.Marshal(RefundAdjustmentPayload{RefundID: refundID})
+	if err != nil {
+		return fmt.Errorf("marshal refund adjustment: %w", err)
+	}
+	task := asynq.NewTask(TypeProcessRefund, payload)
+	_, err = e.client.EnqueueContext(ctx, task,
+		asynq.Queue(QueueDefault),
+		asynq.MaxRetry(4),
+		asynq.Timeout(45*time.Second),
 	)
 	return err
 }

@@ -18,6 +18,9 @@ func (h *Webhooks) enqueueGenericPurchase(ctx context.Context, in purchaseInput,
 	in.Currency = domain.NormalizeWhatsAppCurrency(orDefaultCurrency(in.Currency))
 	in.Phone = util.NormalizePhone(in.Phone)
 	in.Email = util.NormalizeEmail(in.Email)
+	if domain.IsRefundEvent(in.EventName) {
+		return h.processGenericRefund(ctx, in, rawInput)
+	}
 
 	resolvedQueryPixel, status, reason := h.resolveWebhookAccount(ctx, &in)
 	if status != 0 {

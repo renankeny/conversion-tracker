@@ -107,20 +107,27 @@ func (qc *QueryCache) GetOrLoadBytes(ctx context.Context, key string, ttl time.D
 	if qc == nil {
 		return loader(ctx)
 	}
-	val, err, _ := qc.sf.Do(key, func() (any, error) {
-		b, lerr := loader(ctx)
+	ch := qc.sf.DoChan(key, func() (any, error) {
+		loadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		b, lerr := loader(loadCtx)
 		if lerr != nil {
 			return nil, lerr
 		}
 		if qc.rdb != nil && key != "" && len(b) > 0 && ttl > 0 {
-			_ = qc.rdb.Set(ctx, key, b, ttl).Err()
+			_ = qc.rdb.Set(loadCtx, key, b, ttl).Err()
 		}
 		return b, nil
 	})
-	if err != nil {
-		return nil, err
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		out, _ := res.Val.([]byte)
+		return out, nil
 	}
-	out, _ := val.([]byte)
-	return out, nil
 }
 

@@ -57,4 +57,5 @@ func registerHumanFastAdminRoutes(r chi.Router, h routeHandlers) {
 
 	registerNotificationAdminRoutes(r, h)
 	registerWhatsAppHumanRoutes(r, h)
+	registerCampaignsFastRoutes(r, h)
 }

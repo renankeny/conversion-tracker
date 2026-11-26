@@ -134,6 +134,9 @@ func (h *AdminSentEvents) Retry(w http.ResponseWriter, r *http.Request) {
 		}
 		in.IsReplay = true
 		in.EventTime = util.ClampEventTime(in.EventTime, time.Now())
+		if h.rdb != nil && in.PixelName != "" && in.EventID != "" {
+			cache.ClearDoneTargets(ctx, h.rdb, scope.EffectiveAccountID(0), in.PixelName, in.EventID)
+		}
 		if err := h.enqueuer.EnqueueSendEvent(ctx, in); err != nil {
 			slog.Warn("retry: enqueue failed", "event_id", in.EventID, "err", err)
 			continue

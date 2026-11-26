@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -44,8 +45,18 @@ func (h *Webhooks) PerfectPay(w http.ResponseWriter, r *http.Request) {
 
 	stEnum := strings.TrimSpace(anyString(p.SaleStatusEnum))
 	stDetail := strings.ToLower(strings.TrimSpace(p.SaleStatusDetail))
-	approved := stEnum == "2" || stDetail == "approved" || stDetail == "aprovado" || stDetail == "paid"
-	if !approved {
+	eventName := ""
+	switch {
+	case stEnum == "2" || stDetail == "approved" || stDetail == "aprovado" || stDetail == "paid":
+		eventName = domain.EventPurchase
+	case stEnum == "7":
+		eventName = domain.EventChargeback
+	case stEnum == "9":
+		eventName = domain.EventRefund
+	default:
+		eventName = detectRefundOrChargeback(stDetail)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -73,6 +84,7 @@ func (h *Webhooks) PerfectPay(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "perfectpay",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     p.Code,
 		Value:       util.ParseMoneyAny(p.SaleAmount),

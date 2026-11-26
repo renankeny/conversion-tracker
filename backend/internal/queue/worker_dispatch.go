@@ -51,6 +51,7 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 		hasGA4           bool
 		wg               sync.WaitGroup
 	)
+	retryCount, _ := asynq.GetRetryCount(ctx)
 	alreadySent := make(map[string]bool)
 	var doneTargets map[string]bool
 	if !in.IsReplay {
@@ -59,6 +60,8 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 				alreadySent = sentMap
 			}
 		}
+		doneTargets = cache.LoadDoneTargets(ctx, deps.Redis, pixel.AccountID, pixel.Name, in.EventID)
+	} else if retryCount > 0 {
 		doneTargets = cache.LoadDoneTargets(ctx, deps.Redis, pixel.AccountID, pixel.Name, in.EventID)
 	} else {
 		doneTargets = make(map[string]bool)
@@ -139,7 +142,6 @@ func dispatchSendEventInput(ctx context.Context, deps Deps, in domain.SendEventI
 	hasSuccess := false
 	eventTime := time.Unix(in.EventTime, 0)
 	storeFullPayload := domain.ShouldStoreFullPayload(in.EventName)
-	retryCount, _ := asynq.GetRetryCount(ctx)
 
 	if len(results) == 0 && len(alreadySent) == 0 && len(doneTargets) == 0 && !metaPausedSkip && !hasAnyConfiguredChannel && storeFullPayload {
 		results = append(results, dispatchResult{

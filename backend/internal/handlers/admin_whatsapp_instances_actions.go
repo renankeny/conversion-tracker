@@ -11,10 +11,15 @@ import (
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/uazapi"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 func (h *AdminWhatsAppInstances) Update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if isEmployeeRole(ctx) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem editar conexões WhatsApp")
+		return
+	}
 	accID := TenantFromContext(ctx).EffectiveAccountID(0)
 	instanceID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -54,7 +59,16 @@ func (h *AdminWhatsAppInstances) Update(w http.ResponseWriter, r *http.Request) 
 			inst.Provider = in.Provider
 		}
 		if extURL := strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/"); extURL != "" {
-			inst.ExternalAPIURL = extURL
+			cleanExt, uerr := util.ValidateServiceEndpointURL(extURL)
+			if uerr != nil {
+				writeError(w, http.StatusBadRequest, uerr.Error())
+				return
+			}
+			if cleanExt != inst.ExternalAPIURL && strings.TrimSpace(in.InstanceToken) == "" && inst.InstanceToken != "" {
+				writeError(w, http.StatusBadRequest, "informe o Token da Instância ao alterar a URL da API")
+				return
+			}
+			inst.ExternalAPIURL = cleanExt
 		}
 		if strings.TrimSpace(in.InstanceToken) != "" {
 			inst.InstanceToken = strings.TrimSpace(in.InstanceToken)

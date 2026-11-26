@@ -14,6 +14,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 const tickerTouchTimeout = 5 * time.Second
@@ -52,13 +53,13 @@ func AuthMiddlewareWithSessions(j *auth.JWT, apiKeys *repo.APIKeyRepo, sessions 
 					writeMiddlewareError(w, http.StatusUnauthorized, "invalid api key")
 					return
 				}
-				go func(id int64) {
+				util.SafeGo("api_key_touch", func() {
 					ctx, cancel := context.WithTimeout(context.Background(), tickerTouchTimeout)
 					defer cancel()
-					if err := apiKeys.TouchLastUsed(ctx, id); err != nil {
-						slog.Warn("api_key touch last_used failed", "id", id, "err", err)
+					if err := apiKeys.TouchLastUsed(ctx, k.ID); err != nil {
+						slog.Warn("api_key touch last_used failed", "id", k.ID, "err", err)
 					}
-				}(k.ID)
+				})
 
 				claims := &auth.Claims{
 					UserID:         0,
@@ -130,15 +131,16 @@ func TenantMiddlewareWithSessions(pool *pgxpool.Pool, sessions *cache.SessionSto
 			}
 
 			xAcc := strings.TrimSpace(r.Header.Get("X-Account-ID"))
+			var reqAcc int64
 			if xAcc == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			reqAcc, err := strconv.ParseInt(xAcc, 10, 64)
-			if err != nil || reqAcc <= 0 {
-				writeMiddlewareError(w, http.StatusForbidden, "X-Account-ID inválido")
-				return
+				reqAcc = c.AccountID
+			} else {
+				parsedAcc, err := strconv.ParseInt(xAcc, 10, 64)
+				if err != nil || parsedAcc <= 0 {
+					writeMiddlewareError(w, http.StatusForbidden, "X-Account-ID inválido")
+					return
+				}
+				reqAcc = parsedAcc
 			}
 
 			if c.IsAPIKey() {
@@ -151,17 +153,29 @@ func TenantMiddlewareWithSessions(pool *pgxpool.Pool, sessions *cache.SessionSto
 			}
 
 			if c.IsOwner() {
-				c.AccountID = reqAcc
+				if xAcc != "" {
+					c.AccountID = reqAcc
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			if reqAcc == c.AccountID {
+			if reqAcc <= 0 {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			if c.Role != "admin" && c.Role != "manager" && c.Role != "employee" {
+			// Modo isolado de testes unitários (sem pool e sem SessionStore): mantém validação estática da claim.
+			if pool == nil && sessions == nil {
+				if reqAcc == c.AccountID {
+					next.ServeHTTP(w, r)
+					return
+				}
+				writeMiddlewareError(w, http.StatusForbidden, "sem acesso à empresa informada em X-Account-ID")
+				return
+			}
+
+			if reqAcc != c.AccountID && c.Role != "admin" && c.Role != "manager" && c.Role != "employee" {
 				writeMiddlewareError(w, http.StatusForbidden, "sem permissão para alternar de empresa")
 				return
 			}
@@ -169,7 +183,7 @@ func TenantMiddlewareWithSessions(pool *pgxpool.Pool, sessions *cache.SessionSto
 			if sessions != nil {
 				if allowed, cached := sessions.GetTenantAccess(r.Context(), c.UserID, reqAcc); cached {
 					if !allowed {
-						writeMiddlewareError(w, http.StatusForbidden, "sem acesso à empresa informada em X-Account-ID")
+						writeMiddlewareError(w, http.StatusForbidden, "sem acesso à empresa informada")
 						return
 					}
 					c.AccountID = reqAcc
@@ -179,7 +193,11 @@ func TenantMiddlewareWithSessions(pool *pgxpool.Pool, sessions *cache.SessionSto
 			}
 
 			if pool == nil {
-				writeMiddlewareError(w, http.StatusForbidden, "sem acesso à empresa informada em X-Account-ID")
+				if reqAcc == c.AccountID {
+					next.ServeHTTP(w, r)
+					return
+				}
+				writeMiddlewareError(w, http.StatusForbidden, "sem acesso à empresa informada")
 				return
 			}
 
@@ -188,7 +206,7 @@ func TenantMiddlewareWithSessions(pool *pgxpool.Pool, sessions *cache.SessionSto
 			if c.Role == "employee" {
 				query = `SELECT EXISTS(
 					SELECT 1 FROM accounts
-					WHERE id = $1 AND (
+					WHERE id = $1 AND enabled = TRUE AND (
 						id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)
 						OR EXISTS (SELECT 1 FROM admin_user_accounts ua WHERE ua.user_id = $2 AND ua.account_id = accounts.id)
 					)
@@ -196,7 +214,7 @@ func TenantMiddlewareWithSessions(pool *pgxpool.Pool, sessions *cache.SessionSto
 			} else {
 				query = `SELECT EXISTS(
 					SELECT 1 FROM accounts
-					WHERE id = $1 AND (
+					WHERE id = $1 AND enabled = TRUE AND (
 						owner_id = $2
 						OR owner_id IN (SELECT id FROM admin_users WHERE parent_id = $2)
 						OR id = (SELECT COALESCE(account_id, 0) FROM admin_users WHERE id = $2)

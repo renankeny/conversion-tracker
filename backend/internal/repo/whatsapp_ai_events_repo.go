@@ -49,14 +49,15 @@ func (r *WhatsAppAIRepo) ListCandidateChats(ctx context.Context, accountID int64
 			) AS has_pending_media
 		FROM whatsapp_chats c
 		JOIN whatsapp_instances i ON c.instance_id = i.id
-		WHERE i.account_id = $1
+		WHERE c.account_id = $1
+		  AND i.account_id = $1
 		  AND i.enabled = TRUE
 		  AND c.tracked_user_id IS NOT NULL
 		  AND EXISTS (
 		    SELECT 1 FROM whatsapp_messages m2
 		    WHERE m2.chat_id = c.id AND m2.id > c.ai_last_analyzed_msg_id
 		  )
-		ORDER BY c.last_message_time ASC
+		ORDER BY c.last_message_time DESC
 		LIMIT $2
 	`, accountID, limit)
 	if err != nil {
@@ -212,20 +213,18 @@ func (r *WhatsAppAIRepo) ContestAIEvent(ctx context.Context, accountID, id, user
 		return nil, err
 	}
 	if addRule && strings.TrimSpace(reason) != "" {
-		s, _ := r.GetSettings(ctx, accountID)
-		if s != nil {
-			rule := domain.AILearnedRule{
-				ID: fmt.Sprintf("r_%d", ev.ID), EventType: ev.EventType,
-				Rule: strings.TrimSpace(reason), AuthorEmail: authorEmail, CreatedAt: ev.CreatedAt,
-			}
-			s.LearnedRules = append(s.LearnedRules, rule)
-			if raw, merr := json.Marshal(s.LearnedRules); merr == nil {
-				_, _ = r.pool.Exec(ctx, `
-					INSERT INTO account_ai_settings (account_id, learned_rules, updated_at)
-					VALUES ($1, $2, NOW())
-					ON CONFLICT (account_id) DO UPDATE SET learned_rules = $2, updated_at = NOW()
-				`, accountID, raw)
-			}
+		rule := domain.AILearnedRule{
+			ID: fmt.Sprintf("r_%d", ev.ID), EventType: ev.EventType,
+			Rule: strings.TrimSpace(reason), AuthorEmail: authorEmail, CreatedAt: ev.CreatedAt,
+		}
+		if raw, merr := json.Marshal([]domain.AILearnedRule{rule}); merr == nil {
+			_, _ = r.pool.Exec(ctx, `
+				INSERT INTO account_ai_settings (account_id, learned_rules, updated_at)
+				VALUES ($1, $2::jsonb, NOW())
+				ON CONFLICT (account_id) DO UPDATE
+				SET learned_rules = COALESCE(account_ai_settings.learned_rules, '[]'::jsonb) || EXCLUDED.learned_rules,
+				    updated_at = NOW()
+			`, accountID, raw)
 		}
 	}
 	return &ev, nil

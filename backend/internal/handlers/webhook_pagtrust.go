@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -69,7 +70,13 @@ func (h *Webhooks) PagTrust(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.EqualFold(p.Event, "PURCHASE_APPROVED") {
+	eventName := ""
+	if strings.EqualFold(p.Event, "PURCHASE_APPROVED") {
+		eventName = domain.EventPurchase
+	} else {
+		eventName = detectRefundOrChargeback(p.Event)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -112,6 +119,7 @@ func (h *Webhooks) PagTrust(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "pagtrust",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(p.Data.Purchase.Transaction, p.ID),
 		Value:       value,

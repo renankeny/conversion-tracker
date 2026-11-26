@@ -120,7 +120,7 @@ func (h *AdminUsers) Update(w http.ResponseWriter, r *http.Request) {
 
 	if h.sessions != nil {
 		h.sessions.InvalidateUserTenantAccess(r.Context(), id, append(prevAccountIDs, accountIDs...)...)
-		if in.Password != "" || role != targetRole {
+		if in.Password != "" || role != targetRole || in.Permissions != nil || !sameAccountIDSet(prevAccountIDs, accountIDs) {
 			h.sessions.RevokeUserSessions(r.Context(), id)
 		}
 	}
@@ -153,6 +153,10 @@ func (h *AdminUsers) Delete(w http.ResponseWriter, r *http.Request) {
 	c, ok := auth.ClaimsFrom(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	if id == c.UserID {
+		writeError(w, http.StatusBadRequest, "você não pode excluir sua própria conta de acesso")
 		return
 	}
 
@@ -201,4 +205,20 @@ func (h *AdminUsers) Delete(w http.ResponseWriter, r *http.Request) {
 		h.sessions.RevokeUserSessions(r.Context(), id)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func sameAccountIDSet(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[int64]struct{}, len(a))
+	for _, v := range a {
+		seen[v] = struct{}{}
+	}
+	for _, v := range b {
+		if _, ok := seen[v]; !ok {
+			return false
+		}
+	}
+	return true
 }

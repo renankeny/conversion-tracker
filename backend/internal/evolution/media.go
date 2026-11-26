@@ -21,7 +21,11 @@ func (c *Client) DownloadMedia(ctx context.Context, instanceToken string, rawMes
 			Base64 string `json:"base64"`
 		} `json:"data"`
 	}
-	if err := c.doWithKey(ctx, c.mediaClient, instanceToken, http.MethodPost, "/message/downloadmedia", body, &resp); err != nil {
+	maxJSONBytes := int64(32 << 20)
+	if maxBytes > 0 {
+		maxJSONBytes = (maxBytes*4)/3 + (2 << 20)
+	}
+	if err := c.doWithKeyLimit(ctx, c.mediaClient, instanceToken, http.MethodPost, "/message/downloadmedia", body, &resp, maxJSONBytes); err != nil {
 		return nil, "", err
 	}
 	rawB64 := strings.TrimSpace(resp.Data.Base64)

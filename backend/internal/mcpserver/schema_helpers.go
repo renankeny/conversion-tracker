@@ -132,10 +132,6 @@ func propArrStr(desc string) map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
 }
 
-func propArrInt(desc string) map[string]any {
-	return map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": desc}
-}
-
 func argStr(args map[string]any, key string) string {
 	v, ok := args[key]
 	if !ok || v == nil {

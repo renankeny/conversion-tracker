@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -57,16 +58,19 @@ func (h *Webhooks) Monetizze(w http.ResponseWriter, r *http.Request) {
 	stCode := anyString(p.Venda.CodigoStatus)
 	postbackCode := anyString(p.TipoPostback.Codigo)
 
-	approved := st == "finalizada" ||
-		st == "completa" ||
-		st == "aprovada" ||
-		st == "pago" ||
-		st == "paid" ||
-		stCode == "2" ||
-		stCode == "6" ||
-		postbackCode == "2"
-
-	if !approved {
+	eventName := ""
+	switch {
+	case st == "finalizada" || st == "completa" || st == "aprovada" || st == "pago" || st == "paid" ||
+		stCode == "2" || stCode == "6" || postbackCode == "2":
+		eventName = domain.EventPurchase
+	case stCode == "4":
+		eventName = domain.EventRefund
+	case stCode == "8" || stCode == "9":
+		eventName = domain.EventChargeback
+	default:
+		eventName = detectRefundOrChargeback(st, p.TipoPostback.Nome)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -101,6 +105,7 @@ func (h *Webhooks) Monetizze(w http.ResponseWriter, r *http.Request) {
 
 	in := purchaseInput{
 		GatewayName: "monetizze",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     anyString(p.Venda.Codigo),
 		Value:       value,

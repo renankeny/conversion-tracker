@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
@@ -82,7 +83,16 @@ func (h *Webhooks) Hotmart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.EqualFold(p.Event, "PURCHASE_APPROVED") {
+	eventName := ""
+	switch strings.ToUpper(strings.TrimSpace(p.Event)) {
+	case "PURCHASE_APPROVED":
+		eventName = domain.EventPurchase
+	case "PURCHASE_CHARGEBACK", "PURCHASE_PROTEST":
+		eventName = domain.EventChargeback
+	default:
+		eventName = detectRefundOrChargeback(p.Event)
+	}
+	if eventName == "" {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"received": true,
 			"queued":   false,
@@ -137,6 +147,7 @@ func (h *Webhooks) Hotmart(w http.ResponseWriter, r *http.Request) {
 	productID := util.FirstNonEmpty(anyString(p.Data.Product.ID), p.Data.Product.Ucode)
 	in := purchaseInput{
 		GatewayName: "hotmart",
+		EventName:   eventName,
 		ExternalID:  externalID,
 		OrderID:     util.FirstNonEmpty(p.Data.Purchase.Transaction, p.ID),
 		Value:       value,

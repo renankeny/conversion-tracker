@@ -23,8 +23,8 @@ type cachedAdMetadata struct {
 	ThumbnailURL string `json:"thumbnail_url"`
 }
 
-func fetchAdMetadataCached(ctx context.Context, deps Deps, sourceID string, oauthAcc *domain.MetaAccount, legacyToken string) cachedAdMetadata {
-	cacheKey := "tf:meta:ad:" + sourceID
+func fetchAdMetadataCached(ctx context.Context, deps Deps, accountID int64, sourceID string, oauthAcc *domain.MetaAccount, legacyToken string) cachedAdMetadata {
+	cacheKey := fmt.Sprintf("tf:meta:ad:%d:%s", accountID, sourceID)
 	if deps.Redis != nil {
 		if raw, err := deps.Redis.Get(ctx, cacheKey).Bytes(); err == nil && len(raw) > 0 {
 			var cached cachedAdMetadata

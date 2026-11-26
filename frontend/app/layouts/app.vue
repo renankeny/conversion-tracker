@@ -52,6 +52,7 @@ watch(token, async (newToken) => {
     }
     if (token.value === newToken) {
       void liveStore.connect(newToken)
+      void notifStore.fetchOverview(true).catch(() => {})
     }
   } else {
     liveStore.disconnect()

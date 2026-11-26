@@ -2,12 +2,14 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/googleads"
+	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 )
 
 func gadsDigits(s string) string {
@@ -30,8 +32,11 @@ func dispatchGoogleAds(ctx context.Context, deps Deps, pixel *domain.Pixel, in d
 	}
 	account, ferr := deps.GoogleAdsAcc.FindByID(ctx, *accID)
 	if ferr != nil {
-		slog.Warn("google ads account lookup failed", "err", ferr, "pixel", pixel.Name, "account_id", *accID)
-		return nil
+		if errors.Is(ferr, repo.ErrNotFound) {
+			return nil
+		}
+		slog.Warn("google ads account lookup transient failure", "err", ferr, "pixel", pixel.Name, "account_id", *accID)
+		return []googleads.SendResult{{ActionID: "account_lookup", Err: ferr}}
 	}
 	if in.OverrideGadsAccountID == nil {
 		if pxCid := gadsDigits(pixel.GoogleAdsCustomerID); pxCid != "" && pxCid != gadsDigits(account.CustomerID) {

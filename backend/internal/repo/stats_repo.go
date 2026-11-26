@@ -48,6 +48,9 @@ type Overview struct {
 	PerDay         []DailyBucket         `json:"per_day"`
 	TotalEvents    int64                 `json:"total_events"`
 	TotalRevenue   float64               `json:"total_revenue"`
+	RefundCount    int64                 `json:"refund_count"`
+	RefundAmount   float64               `json:"refund_amount"`
+	NetRevenue     float64               `json:"net_revenue"`
 	TrackedUsers   int64                 `json:"tracked_users"`
 	TrafficQuality TrafficQualityStats   `json:"traffic_quality"`
 	SourceBreakdown SourceBreakdown      `json:"source_breakdown"`
@@ -136,6 +139,7 @@ func (s *StatsRepo) Overview(ctx context.Context, f StatsFilter) (*Overview, err
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	s.populatePeriodRefunds(ctx, f, out)
 	return out, nil
 }
 

@@ -162,7 +162,7 @@ const onLogout = async () => {
 <style scoped>
 .ep-gate-overlay {
   position: fixed; inset: 0; z-index: 9500; padding: 1.25rem; overflow-y: auto;
-  background: var(--overlay-bg); backdrop-filter: blur(8px);
+  background: var(--surface-overlay); backdrop-filter: blur(8px);
   display: flex; align-items: center; justify-content: center;
 }
 .ep-gate-card {

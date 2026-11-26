@@ -149,11 +149,20 @@ func (r *UserRepo) List(ctx context.Context, f TrackedUserFilter) ([]domain.Trac
 			  AND ($2::bigint = 0 OR account_id = $2)
 		),
 		members AS (
-			SELECT t.account_id, t.external_id, t.created_at, COALESCE(t.group_id, -t.id) AS gkey
+			SELECT t.id AS user_id, t.account_id, t.external_id, t.created_at, COALESCE(t.group_id, -t.id) AS gkey
 			FROM tracked_users t
 			JOIN keys k ON k.gkey = COALESCE(t.group_id, -t.id) AND k.account_id = t.account_id
+		),
+		refunds_by_gkey AS (
+			SELECT sr.account_id, COALESCE(sr.group_id, -sr.tracked_user_id) AS gkey, COALESCE(SUM(sr.amount), 0.0) AS ref_amt
+			FROM sale_refunds sr
+			WHERE ($2::bigint = 0 OR sr.account_id = $2)
+			  AND (sr.tracked_user_id IS NOT NULL OR sr.group_id IS NOT NULL)
+			GROUP BY sr.account_id, COALESCE(sr.group_id, -sr.tracked_user_id)
 		)
-		SELECT m.account_id, m.gkey, COALESCE(SUM(s.max_value), 0.0), MIN(m.created_at), MIN(s.first_purchase_at)
+		SELECT m.account_id, m.gkey,
+		       GREATEST(0.0, COALESCE(SUM(s.max_value), 0.0) - COALESCE(MAX(rf.ref_amt), 0.0)),
+		       MIN(m.created_at), MIN(s.first_purchase_at)
 		FROM members m
 		LEFT JOIN (
 			SELECT se.account_id, se.external_id, se.event_id,
@@ -166,6 +175,7 @@ func (r *UserRepo) List(ctx context.Context, f TrackedUserFilter) ([]domain.Trac
 			  AND se.external_id IN (SELECT external_id FROM members)
 			GROUP BY se.account_id, se.external_id, se.event_id
 		) s ON s.external_id = m.external_id AND s.account_id = m.account_id
+		LEFT JOIN refunds_by_gkey rf ON rf.account_id = m.account_id AND rf.gkey = m.gkey
 		GROUP BY m.account_id, m.gkey
 	`, extIDs, f.AccountID)
 	if err == nil {

@@ -99,6 +99,8 @@ func sampleForCategory(category string) (title, body, actionURL string, ok bool)
 		return "Lead Qualificado pela IA", "A IA qualificou Carlos Eduardo com alta intenção de compra na conversa do WhatsApp.", "/crm", true
 	case domain.NotifSaleApproved:
 		return "Nova Venda: R$ 497,00", "Origem: Hotmart • Produto: Mentoria Completa • Pixel Principal • Cliente: João Silva.", "/events", true
+	case domain.NotifSaleRefunded:
+		return "Reembolso: R$ 429,00", "Origem: Cakto • Pedido: #REF-001 • Pixel Principal • Receita líquida e CRM atualizados.", "/campanhas", true
 	case domain.NotifMetaAccountLifecycle:
 		return "Conta Meta Ads Conectada", "A conta BM Principal #01 foi adicionada às integrações da empresa.", "/integracoes/meta-ads", true
 	case domain.NotifGoogleAdsAccountLifecycle:

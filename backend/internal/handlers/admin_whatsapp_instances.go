@@ -16,6 +16,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/uazapi"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 type AdminWhatsAppInstances struct {
@@ -88,6 +89,7 @@ func (h *AdminWhatsAppInstances) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "erro ao listar instâncias: "+err.Error())
 		return
 	}
+	isEmp := isEmployeeRole(r.Context())
 	for i := range instances {
 		if instances[i].ShareToken == nil || strings.TrimSpace(*instances[i].ShareToken) == "" {
 			tok := randomHexToken(12)
@@ -98,6 +100,10 @@ func (h *AdminWhatsAppInstances) List(w http.ResponseWriter, r *http.Request) {
 			_ = syncInstanceLiveStatus(r.Context(), h.repo, &instances[i], h.publicAPIURL)
 		}
 		h.decorateInstance(&instances[i])
+		if isEmp {
+			instances[i].WebhookSecret = ""
+			instances[i].WebhookURL = ""
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": instances})
 }
@@ -123,6 +129,10 @@ type instanceUpsertInput struct {
 
 func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if isEmployeeRole(ctx) {
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem criar conexões WhatsApp")
+		return
+	}
 	accID := TenantFromContext(ctx).EffectiveAccountID(0)
 
 	var in instanceUpsertInput
@@ -173,6 +183,14 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 			slog.Warn("initial evolution connect warning", "instance", evoName, "err", connErr)
 		}
 	} else {
+		if strings.TrimSpace(in.ExternalAPIURL) != "" {
+			cleanExt, uerr := util.ValidateServiceEndpointURL(in.ExternalAPIURL)
+			if uerr != nil {
+				writeError(w, http.StatusBadRequest, uerr.Error())
+				return
+			}
+			in.ExternalAPIURL = cleanExt
+		}
 		evoName = slug
 		instToken = strings.TrimSpace(in.InstanceToken)
 	}
@@ -187,28 +205,15 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 	}
 
 	inst := &domain.WhatsAppInstance{
-		AccountID:              accID,
-		PixelID:                pixel.ID,
-		PixelName:              pixel.Name,
-		ServerID:               srvID,
-		Provider:               provider,
-		ExternalAPIURL:         strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/"),
-		Currency:               domain.NormalizeWhatsAppCurrency(in.Currency),
-		Name:                   strings.TrimSpace(in.Name),
-		InstanceName:           evoName,
-		EvolutionUUID:          evoUUID,
-		InstanceToken:          instToken,
-		WebhookSecret:          webhookSecret,
-		ShareToken:             &shareToken,
-		ConnectionStatus:       "CONNECTING",
-		PurchaseTrigger:        strings.TrimSpace(in.PurchaseTrigger),
-		LeadTrigger:            strings.TrimSpace(in.LeadTrigger),
-		CustomEventName:        strings.TrimSpace(in.CustomEventName),
-		CustomEventTrigger:     strings.TrimSpace(in.CustomEventTrigger),
-		AutoCreateCRMLead:      autoCRM,
-		DefaultCRMStageID:      in.DefaultCRMStageID,
-		CtwaMinInboundMessages: ctwaMin,
-		Enabled:                true,
+		AccountID: accID, PixelID: pixel.ID, PixelName: pixel.Name, ServerID: srvID,
+		Provider: provider, ExternalAPIURL: strings.TrimRight(strings.TrimSpace(in.ExternalAPIURL), "/"),
+		Currency: domain.NormalizeWhatsAppCurrency(in.Currency), Name: strings.TrimSpace(in.Name),
+		InstanceName: evoName, EvolutionUUID: evoUUID, InstanceToken: instToken,
+		WebhookSecret: webhookSecret, ShareToken: &shareToken, ConnectionStatus: "CONNECTING",
+		PurchaseTrigger: strings.TrimSpace(in.PurchaseTrigger), LeadTrigger: strings.TrimSpace(in.LeadTrigger),
+		CustomEventName: strings.TrimSpace(in.CustomEventName), CustomEventTrigger: strings.TrimSpace(in.CustomEventTrigger),
+		AutoCreateCRMLead: autoCRM, DefaultCRMStageID: in.DefaultCRMStageID,
+		CtwaMinInboundMessages: ctwaMin, Enabled: true,
 	}
 	applyInstanceTriggersInput(inst, in)
 
