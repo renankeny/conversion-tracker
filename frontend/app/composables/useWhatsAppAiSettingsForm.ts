@@ -16,6 +16,8 @@ export const useWhatsAppAiSettingsForm = () => {
   const defaultPrompt = ref('')
   const serverHasKey = ref(false)
   const lastRunAt = ref<string | null>(null)
+  const lastError = ref('')
+  const lastStats = reactive({ analyzed: 0, qualified: 0, sales: 0 })
   const stages = ref<Array<{ id: number; name: string }>>([])
 
   const form = reactive({
@@ -29,6 +31,13 @@ export const useWhatsAppAiSettingsForm = () => {
 
   const keyReady = computed(() => Boolean(hasOpenAiKey.value || serverHasKey.value))
   const lastRunLabel = computed(() => (lastRunAt.value ? formatDateTimeSP(lastRunAt.value) : ''))
+
+  const modelOptions = [
+    { value: 'gpt-4o-mini', label: 'GPT-4o mini (rápido e econômico)' },
+    { value: 'gpt-4o', label: 'GPT-4o (alta precisão para comprovantes/PDFs)' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini (equilibrado)' },
+    { value: 'gpt-4.1', label: 'GPT-4.1 (máxima precisão)' },
+  ]
 
   const qualStageOptions = computed(() => [
     { value: 0, label: 'Detectar etapa de Qualificado automaticamente' },
@@ -60,6 +69,10 @@ export const useWhatsAppAiSettingsForm = () => {
       defaultPrompt.value = cfg.default_prompt || cfg.base_prompt || ''
       serverHasKey.value = Boolean(cfg.has_openai_key)
       lastRunAt.value = cfg.last_run_at || null
+      lastError.value = cfg.last_error || ''
+      lastStats.analyzed = cfg.last_analyzed_count || 0
+      lastStats.qualified = cfg.last_qualified_count || 0
+      lastStats.sales = cfg.last_sales_count || 0
     } catch (e: unknown) {
       toast.error('Erro ao carregar IA', errorMessage(e, 'Não foi possível buscar as configurações.'))
     } finally {
@@ -111,12 +124,25 @@ export const useWhatsAppAiSettingsForm = () => {
     try {
       const res = await wa.runAINow()
       lastRunAt.value = new Date().toISOString()
-      toast.success(
-        'Análise concluída',
-        `${res.analyzed_chats} conversas lidas · ${res.qualifications} qualificações · ${res.sales} vendas.`,
-      )
+      lastError.value = res.last_error || ''
+      lastStats.analyzed = res.analyzed_chats || 0
+      lastStats.qualified = res.qualifications || 0
+      lastStats.sales = res.sales || 0
+      if ((res.errors || 0) > 0 && res.last_error) {
+        toast.error(
+          'Análise com falhas parciais',
+          `${res.analyzed_chats} lidas · ${res.errors} erro(s): ${res.last_error}`,
+        )
+      } else {
+        toast.success(
+          'Análise concluída',
+          `${res.analyzed_chats} conversas lidas · ${res.qualifications} qualificações · ${res.sales} vendas.`,
+        )
+      }
     } catch (e: unknown) {
-      toast.error('Não foi possível analisar', errorMessage(e, 'Configure sua chave da OpenAI na aba Meu Perfil.'))
+      const msg = errorMessage(e, 'Configure sua chave da OpenAI na aba Meu Perfil.')
+      lastError.value = msg
+      toast.error('Não foi possível analisar', msg)
     } finally {
       runningNow.value = false
     }
@@ -124,8 +150,8 @@ export const useWhatsAppAiSettingsForm = () => {
 
   return {
     loading, saving, runningNow, form,
-    keyReady, lastRunLabel,
-    qualStageOptions, saleStageOptions,
+    keyReady, lastRunLabel, lastError, lastStats,
+    modelOptions, qualStageOptions, saleStageOptions,
     restoreDefaultPrompt, removeRule, addRule, onSave, onRunNow,
   }
 }

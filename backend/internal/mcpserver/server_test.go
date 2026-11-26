@@ -170,3 +170,74 @@ func TestMCPLifecycleAndToolDispatch(t *testing.T) {
 		t.Fatalf("expected isError:true when calling write tool with read_only key, got: %s", roWriteRec.Body.String())
 	}
 }
+
+// TestMCPMountedUnderAPIV1Subrouter espelha a árvore real do httpserver (`root.Route("/api/v1", ...)`)
+// para garantir que o RouteContext do chi da requisição `POST /api/v1/mcp` não vaze para os
+// sub-requests internos de `callAPI` (regressão que causava 404 em todas as tools exceto whoami).
+func TestMCPMountedUnderAPIV1Subrouter(t *testing.T) {
+	root := chi.NewRouter()
+	srv := New(root, nil)
+
+	injectKey := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-API-Key") != "trk_test_valid" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			ctx := auth.WithClaims(r.Context(), &auth.Claims{
+				Email:        "api-key:trk_test",
+				Role:         "member",
+				TokenType:    auth.TokenTypeAPIKey,
+				AccountID:    3,
+				APIKeyScopes: []string{"*"},
+			})
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+
+	root.Route("/api/v1", func(r chi.Router) {
+		r.Post("/send-event", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"queued":true,"event_id":"EVT999"}`))
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(injectKey)
+			r.Post("/mcp", srv.ServeHTTP)
+			r.Get("/admin/pixels", func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"data":[{"id":10,"name":"clinica-prime"}]}`))
+			})
+			r.Get("/admin/ext-api/crm/stages", func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"stages":[{"id":2,"name":"Venda Realizada"}]}`))
+			})
+			r.Put("/admin/crm/leads/{id}/move", func(w http.ResponseWriter, req *http.Request) {
+				_, _ = w.Write([]byte(`{"status":"ok","lead_id":"` + chi.URLParam(req, "id") + `"}`))
+			})
+		})
+	})
+
+	postMCP := func(body string) string {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-API-Key", "trk_test_valid")
+		rec := httptest.NewRecorder()
+		root.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("POST /api/v1/mcp status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		return rec.Body.String()
+	}
+
+	if out := postMCP(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami_workspace","arguments":{}}}`); !strings.Contains(out, `clinica-prime`) {
+		t.Fatalf("whoami_workspace should include pixels via internal dispatch, got: %s", out)
+	}
+	if out := postMCP(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_pixels","arguments":{}}}`); !strings.Contains(out, `"isError":false`) || !strings.Contains(out, `clinica-prime`) {
+		t.Fatalf("list_pixels failed under /api/v1 subrouter: %s", out)
+	}
+	if out := postMCP(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"move_crm_lead","arguments":{"lead_id":42,"stage_id":2,"value":199}}}`); !strings.Contains(out, `"isError":false`) || !strings.Contains(out, `\"lead_id\":\"42\"`) {
+		t.Fatalf("move_crm_lead failed under /api/v1 subrouter: %s", out)
+	}
+	batchOut := postMCP(`[{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_crm_stages","arguments":{}}},{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"send_conversion_event","arguments":{"pixel_name":"p1","event_name":"Purchase","external_id":"u1"}}}]`)
+	if !strings.Contains(batchOut, `Venda Realizada`) || !strings.Contains(batchOut, `EVT999`) || strings.Contains(batchOut, `"isError":true`) {
+		t.Fatalf("batch tool dispatch failed under /api/v1 subrouter: %s", batchOut)
+	}
+}

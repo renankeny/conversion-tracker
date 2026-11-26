@@ -164,6 +164,10 @@ export interface AccountAISettings {
   default_prompt?: string
   learned_rules: AILearnedRule[]
   last_run_at?: string | null
+  last_error?: string
+  last_analyzed_count?: number
+  last_qualified_count?: number
+  last_sales_count?: number
   updated_at: string
 }
 
@@ -202,6 +206,9 @@ export interface WhatsAppAIRunSummary {
   analyzed_chats: number
   qualifications: number
   sales: number
+  errors?: number
+  skipped_media?: number
+  last_error?: string
 }
 
 export interface WhatsAppChatWithMessages {

@@ -174,20 +174,26 @@ func (r *CRMRepo) SyncLeadFromEventTrigger(
 		val = *value
 	}
 
-	var leadID int64
+	var leadID, curStageID int64
+	var curOrder int
+	var curIsWon bool
 	groupID, _ := r.groupIDOf(ctx, trackedUserID)
 	if groupID != nil && *groupID > 0 {
 		_ = r.pool.QueryRow(ctx, `
-			SELECT id FROM crm_leads
-			WHERE account_id = $1 AND (group_id = $2 OR tracked_user_id = $3)
-			ORDER BY updated_at DESC LIMIT 1
-		`, accountID, *groupID, trackedUserID).Scan(&leadID)
+			SELECT l.id, COALESCE(l.stage_id, 0), COALESCE(s.order_index, 0),
+			       (LOWER(COALESCE(s.trigger_event, '')) = 'purchase' OR LOWER(COALESCE(s.trigger_event_ctwa, '')) = 'purchase')
+			FROM crm_leads l LEFT JOIN crm_stages s ON s.id = l.stage_id
+			WHERE l.account_id = $1 AND (l.group_id = $2 OR l.tracked_user_id = $3)
+			ORDER BY l.updated_at DESC LIMIT 1
+		`, accountID, *groupID, trackedUserID).Scan(&leadID, &curStageID, &curOrder, &curIsWon)
 	} else {
 		_ = r.pool.QueryRow(ctx, `
-			SELECT id FROM crm_leads
-			WHERE account_id = $1 AND tracked_user_id = $2
+			SELECT l.id, COALESCE(l.stage_id, 0), COALESCE(s.order_index, 0),
+			       (LOWER(COALESCE(s.trigger_event, '')) = 'purchase' OR LOWER(COALESCE(s.trigger_event_ctwa, '')) = 'purchase')
+			FROM crm_leads l LEFT JOIN crm_stages s ON s.id = l.stage_id
+			WHERE l.account_id = $1 AND l.tracked_user_id = $2
 			LIMIT 1
-		`, accountID, trackedUserID).Scan(&leadID)
+		`, accountID, trackedUserID).Scan(&leadID, &curStageID, &curOrder, &curIsWon)
 	}
 
 	if leadID == 0 {
@@ -196,6 +202,14 @@ func (r *CRMRepo) SyncLeadFromEventTrigger(
 		}
 		createdID, _, err := r.CreateOrUpdateLeadAPI(ctx, accountID, trackedUserID, targetStageID, val)
 		return createdID, err == nil && createdID > 0
+	}
+	if targetStageID > 0 {
+		var targetOrder int
+		_ = r.pool.QueryRow(ctx, `SELECT COALESCE(order_index, 0) FROM crm_stages WHERE id = $1 AND account_id = $2`, targetStageID, accountID).Scan(&targetOrder)
+		// Nunca puxa o card para trás (ex: gatilho LeadSubmitted voltando card para Etapa 0) nem tira de Venda Fechada.
+		if curIsWon || (curStageID > 0 && targetOrder <= curOrder) {
+			targetStageID = 0
+		}
 	}
 	if targetStageID == 0 && val <= 0 {
 		return leadID, false

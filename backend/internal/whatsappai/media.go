@@ -1,15 +1,10 @@
 package whatsappai
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
-	"mime/multipart"
-	"net/http"
-	"path/filepath"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -18,109 +13,11 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/storage"
 )
 
-const (
-	maxAudioBytes = 20 * 1024 * 1024
-	maxImageBytes = 8 * 1024 * 1024
-	maxPDFBytes   = 12 * 1024 * 1024
-
-	maxImagesPerAnalysis = 6
-	maxPDFsPerAnalysis   = 4
-)
-
-func readMinIOBytes(ctx context.Context, st *storage.MediaStorage, key string, maxBytes int64) ([]byte, string, error) {
-	if st == nil || !st.Enabled() || strings.TrimSpace(key) == "" {
-		return nil, "", fmt.Errorf("media storage unavailable")
-	}
-	obj, info, err := st.OpenObject(ctx, key)
-	if err != nil {
-		return nil, "", err
-	}
-	defer obj.Close()
-	if info.Size > maxBytes {
-		return nil, "", fmt.Errorf("media exceeds max size (%d > %d)", info.Size, maxBytes)
-	}
-	data, err := io.ReadAll(io.LimitReader(obj, maxBytes+1))
-	if err != nil {
-		return nil, "", err
-	}
-	if int64(len(data)) > maxBytes {
-		return nil, "", fmt.Errorf("media exceeds max size")
-	}
-	return data, info.ContentType, nil
-}
-
-func audioFilenameForMime(mimeStr, origName string) string {
-	m := strings.ToLower(strings.TrimSpace(mimeStr))
-	switch {
-	case strings.Contains(m, "ogg") || strings.Contains(m, "opus"):
-		return "audio.ogg"
-	case strings.Contains(m, "mpeg") || strings.Contains(m, "mp3"):
-		return "audio.mp3"
-	case strings.Contains(m, "mp4") || strings.Contains(m, "m4a") || strings.Contains(m, "aac"):
-		return "audio.m4a"
-	case strings.Contains(m, "wav"):
-		return "audio.wav"
-	case strings.Contains(m, "webm"):
-		return "audio.webm"
-	}
-	ext := strings.ToLower(filepath.Ext(origName))
-	switch ext {
-	case ".ogg", ".oga", ".mp3", ".m4a", ".mp4", ".wav", ".webm":
-		return "audio" + ext
-	}
-	return "audio.ogg"
-}
-
-func transcribeAudioOpenAI(ctx context.Context, apiKey string, audioBytes []byte, filename string) (string, error) {
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	part, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		return "", err
-	}
-	if _, err := part.Write(audioBytes); err != nil {
-		return "", err
-	}
-	_ = writer.WriteField("model", "whisper-1")
-	_ = writer.WriteField("language", "pt")
-	_ = writer.Close()
-
-	reqCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, "https://api.openai.com/v1/audio/transcriptions", &body)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return "", fmt.Errorf("whisper status %d: %s", resp.StatusCode, string(raw))
-	}
-	var out struct {
-		Text string `json:"text"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out.Text), nil
-}
-
-func isPDFMessage(m *domain.WhatsAppMessage) bool {
-	if m == nil {
-		return false
-	}
-	if m.MediaMimeType != nil && strings.Contains(strings.ToLower(*m.MediaMimeType), "pdf") {
-		return true
-	}
-	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(m.MediaFilename)), ".pdf") ||
-		strings.HasSuffix(strings.ToLower(strings.TrimSpace(m.MediaObjectKey)), ".pdf")
+type multimodalBuild struct {
+	Parts          []map[string]any
+	NoPDFParts     []map[string]any
+	HasPDF         bool
+	RetryCursorCap int64
 }
 
 func buildMultimodalUserParts(
@@ -130,13 +27,14 @@ func buildMultimodalUserParts(
 	waRepo *repo.WhatsAppRepo,
 	msgs []*domain.WhatsAppMessage,
 	lastAnalyzedMsgID int64,
-) []map[string]any {
+) multimodalBuild {
 	var transcriptLines strings.Builder
 	transcriptLines.WriteString("HISTÓRICO CRONOLÓGICO DA CONVERSA NO WHATSAPP:\n\n")
 
 	attachments := make([]map[string]any, 0, 6)
-	imgCount := 0
-	pdfCount := 0
+	noPDFAttachments := make([]map[string]any, 0, 6)
+	imgCount, pdfCount := 0, 0
+	var retryCursorCap int64
 
 	for _, m := range msgs {
 		role := "LEAD"
@@ -172,6 +70,11 @@ func buildMultimodalUserParts(
 						if waRepo != nil {
 							_ = waRepo.SaveMessageAITranscript(ctx, m.ID, tr)
 						}
+					} else if terr != nil {
+						slog.Warn("whatsapp ai whisper transcription failed", "msg_id", m.ID, "error", terr)
+						if isNew && (m.CreatedAt.IsZero() || time.Since(m.CreatedAt) <= 2*time.Hour) && (retryCursorCap == 0 || m.ID-1 < retryCursorCap) {
+							retryCursorCap = m.ID - 1
+						}
 					}
 				}
 			}
@@ -182,14 +85,13 @@ func buildMultimodalUserParts(
 			}
 		case "image":
 			caption := strings.TrimSpace(m.Content)
-			if isNew && imgCount < maxImagesPerAnalysis && m.MediaStatus == domain.MediaStatusReady && m.MediaObjectKey != "" {
+			if imgCount < maxImagesPerAnalysis && shouldAttachMedia(m, isNew) {
 				if data, objMime, err := readMinIOBytes(ctx, st, m.MediaObjectKey, maxImageBytes); err == nil && len(data) > 0 {
-					mimeType := normalizeImageMime(m.MediaMimeType, objMime)
-					dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
-					attachments = append(attachments,
-						map[string]any{"type": "text", "text": fmt.Sprintf("Imagem anexada referente à Msg #%d (%s):", m.ID, role)},
-						map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURL, "detail": "auto"}},
-					)
+					dataURL := "data:" + normalizeImageMime(m.MediaMimeType, objMime) + ";base64," + base64.StdEncoding.EncodeToString(data)
+					lbl := map[string]any{"type": "text", "text": fmt.Sprintf("Imagem anexada referente à Msg #%d (%s):", m.ID, role)}
+					img := map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURL, "detail": "auto"}}
+					attachments = append(attachments, lbl, img)
+					noPDFAttachments = append(noPDFAttachments, lbl, img)
 					imgCount++
 				}
 			}
@@ -204,7 +106,7 @@ func buildMultimodalUserParts(
 			fmt.Fprintf(&transcriptLines, "%s%s\n", header, desc)
 		case "document":
 			caption := strings.TrimSpace(m.Content)
-			if isPDFMessage(m) && isNew && pdfCount < maxPDFsPerAnalysis && m.MediaStatus == domain.MediaStatusReady && m.MediaObjectKey != "" {
+			if isPDFMessage(m) && pdfCount < maxPDFsPerAnalysis && shouldAttachMedia(m, isNew) {
 				if data, _, err := readMinIOBytes(ctx, st, m.MediaObjectKey, maxPDFBytes); err == nil && len(data) > 0 {
 					fname := strings.TrimSpace(m.MediaFilename)
 					if fname == "" || !strings.HasSuffix(strings.ToLower(fname), ".pdf") {
@@ -234,9 +136,13 @@ func buildMultimodalUserParts(
 		}
 	}
 
-	parts := make([]map[string]any, 0, 1+len(attachments))
-	parts = append(parts, map[string]any{"type": "text", "text": transcriptLines.String()})
-	parts = append(parts, attachments...)
-	return parts
+	textPart := map[string]any{"type": "text", "text": transcriptLines.String()}
+	parts := append([]map[string]any{textPart}, attachments...)
+	noPDFParts := append([]map[string]any{textPart}, noPDFAttachments...)
+	return multimodalBuild{
+		Parts:          parts,
+		NoPDFParts:     noPDFParts,
+		HasPDF:         pdfCount > 0,
+		RetryCursorCap: retryCursorCap,
+	}
 }
-

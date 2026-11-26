@@ -19,17 +19,21 @@ type AILearnedRule struct {
 }
 
 type AccountAISettings struct {
-	AccountID        int64           `json:"account_id"`
-	Enabled          bool            `json:"enabled"`
-	HasOpenAIKey     bool            `json:"has_openai_key"`
-	Model            string          `json:"model"`
-	QualifiedStageID *int64          `json:"qualified_stage_id"`
-	SaleStageID      *int64          `json:"sale_stage_id"`
-	BasePrompt       string          `json:"base_prompt"`
-	DefaultPrompt    string          `json:"default_prompt,omitempty"`
-	LearnedRules     []AILearnedRule `json:"learned_rules"`
-	LastRunAt        *time.Time      `json:"last_run_at,omitempty"`
-	UpdatedAt        time.Time       `json:"updated_at"`
+	AccountID          int64           `json:"account_id"`
+	Enabled            bool            `json:"enabled"`
+	HasOpenAIKey       bool            `json:"has_openai_key"`
+	Model              string          `json:"model"`
+	QualifiedStageID   *int64          `json:"qualified_stage_id"`
+	SaleStageID        *int64          `json:"sale_stage_id"`
+	BasePrompt         string          `json:"base_prompt"`
+	DefaultPrompt      string          `json:"default_prompt,omitempty"`
+	LearnedRules       []AILearnedRule `json:"learned_rules"`
+	LastRunAt          *time.Time      `json:"last_run_at,omitempty"`
+	LastError          string          `json:"last_error,omitempty"`
+	LastAnalyzedCount  int             `json:"last_analyzed_count"`
+	LastQualifiedCount int             `json:"last_qualified_count"`
+	LastSalesCount     int             `json:"last_sales_count"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 type WhatsAppAIEvent struct {

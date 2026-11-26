@@ -66,3 +66,56 @@ func TestResponseJSONSchema_SerializesCleanly(t *testing.T) {
 	}
 }
 
+func TestResolveAIQualificationEvent(t *testing.T) {
+	if got := resolveAIQualificationEvent(nil, true); got != domain.EventQualifiedLead {
+		t.Fatalf("expected QualifiedLead for CTWA without stage trigger, got %q", got)
+	}
+	if got := resolveAIQualificationEvent(nil, false); got != domain.EventLead {
+		t.Fatalf("expected Lead for web without stage trigger, got %q", got)
+	}
+	schedStage := &domain.CRMStage{TriggerEvent: "Schedule", TriggerEventCTWA: "Schedule"}
+	if got := resolveAIQualificationEvent(schedStage, true); got != "Schedule" {
+		t.Fatalf("expected Schedule from stage trigger, got %q", got)
+	}
+	purchaseStage := &domain.CRMStage{TriggerEvent: "Purchase", TriggerEventCTWA: "Purchase"}
+	if got := resolveAIQualificationEvent(purchaseStage, true); got != domain.EventQualifiedLead {
+		t.Fatalf("expected Purchase stage trigger to fall back to QualifiedLead, got %q", got)
+	}
+}
+
+func TestOpenAIErrorClassificationAndModels(t *testing.T) {
+	if !(&openAIHTTPError{StatusCode: 401, Body: "invalid_api_key"}).isFatalAccountError() {
+		t.Fatal("expected 401 to be fatal")
+	}
+	if !(&openAIHTTPError{StatusCode: 429, Body: `{"error":{"code":"insufficient_quota"}}`}).isFatalAccountError() {
+		t.Fatal("expected 429 insufficient_quota to be fatal")
+	}
+	if (&openAIHTTPError{StatusCode: 429, Body: `{"error":{"code":"rate_limit_exceeded"}}`}).isFatalAccountError() {
+		t.Fatal("expected transient 429 rate limit not to be fatal")
+	}
+	if !(&openAIHTTPError{StatusCode: 400, Body: "invalid file"}).isBadRequest() {
+		t.Fatal("expected 400 to be bad request")
+	}
+	if got := normalizeModelName("gpt-4.1-mini"); got != "gpt-4.1-mini" {
+		t.Fatalf("expected gpt-4.1-mini, got %q", got)
+	}
+	if got := normalizeModelName("unknown-model"); got != "gpt-4o-mini" {
+		t.Fatalf("expected fallback gpt-4o-mini, got %q", got)
+	}
+}
+
+func TestShouldAttachMedia_DelayedReceiptRecovery(t *testing.T) {
+	recent := &domain.WhatsAppMessage{
+		MediaStatus:    domain.MediaStatusReady,
+		MediaObjectKey: "k/1.jpg",
+		CreatedAt:      time.Now().Add(-20 * time.Minute),
+	}
+	if !shouldAttachMedia(recent, false) {
+		t.Fatal("expected recent ready media without transcript to be reattached")
+	}
+	recent.AITranscript = "Comprovante PIX R$ 297,00"
+	if shouldAttachMedia(recent, false) {
+		t.Fatal("expected already-summarized old media not to be reattached")
+	}
+}
+

@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 )
@@ -77,7 +80,11 @@ func (s *Server) callAPI(origReq *http.Request, method, path string, query url.V
 		}
 		bodyReader = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(origReq.Context(), method, fullPath, bodyReader)
+	// Limpa o RouteContext do chi herdado da requisição externa (`POST /api/v1/mcp`).
+	// Sem isso, o chi reutiliza rctx.RoutePath ("/mcp") no sub-request em vez de
+	// rotear req.URL.Path ("/api/v1/admin/..."), devolvendo 404 em todas as tools.
+	subCtx := context.WithValue(origReq.Context(), chi.RouteCtxKey, nil)
+	req, err := http.NewRequestWithContext(subCtx, method, fullPath, bodyReader)
 	if err != nil {
 		return fmt.Sprintf(`{"error":"failed to create request: %v"}`, err), true
 	}

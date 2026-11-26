@@ -28,7 +28,7 @@
           variant="ghost"
           size="sm"
           :loading="savingCardsPrefs"
-          @click="onResetCardsDefault"
+          @click="resetCardsConfirmOpen = true"
         >
           Padrão executivo
         </BaseButton>
@@ -128,7 +128,7 @@
     <EventPickerModal
       v-model="cardsEditorOpen"
       title="Escolher cards da Dashboard"
-      description="Selecione, ordene (setas) e renomeie os cards de Eventos, Meta Ads, Google Ads e Auditoria."
+      description="Selecione, arraste para ordenar e renomeie os cards de Eventos, Meta Ads, Google Ads e Auditoria."
       :events="cardPickerOptions"
       :selected="enabledCardIds"
       :order="cardOrder"
@@ -141,12 +141,24 @@
     <EventPickerModal
       v-model="funnelEditorOpen"
       title="Escolher eventos do funil"
-      description="Selecione e ordene os eventos do funil deste pixel (independente dos cards)."
+      description="Selecione e arraste para ordenar os eventos do funil deste pixel (independente dos cards)."
       :events="funnelPickerOptions"
       :selected="enabledFunnelEvents"
       :order="funnelOrder"
       :saving="savingFunnelPrefs"
       @save="onSaveFunnelEvents"
+    />
+
+    <ConfirmModal
+      v-model="resetCardsConfirmOpen"
+      title="Restaurar Padrão Executivo"
+      description="Esta ação redefinirá a personalização dos cards deste pixel."
+      message="Tem certeza que deseja voltar para o padrão executivo? Todos os cards selecionados, a ordem personalizada e os nomes renomeados serão substituídos pelo padrão."
+      confirm-label="Restaurar padrão"
+      cancel-label="Cancelar"
+      variant="danger"
+      :loading="savingCardsPrefs"
+      @confirm="confirmResetCardsDefault"
     />
   </div>
 </template>
@@ -167,12 +179,10 @@ import SalesGoalProgressCard from '~/components/dashboard/SalesGoalProgressCard.
 import TrafficQualityCard from '~/components/dashboard/TrafficQualityCard.vue'
 import EventDetailsModal from '~/components/events/EventDetailsModal.vue'
 import EventPickerModal from '~/components/dashboard/EventPickerModal.vue'
+import ConfirmModal from '~/components/ConfirmModal.vue'
 import { useDashboardView } from '~/composables/useDashboardView'
 
-definePageMeta({
-  layout: 'app',
-  middleware: 'auth',
-})
+definePageMeta({ layout: 'app', middleware: 'auth' })
 
 const { formatTitle } = useBranding()
 useHead({ title: computed(() => formatTitle('Dashboard')) })
@@ -185,51 +195,20 @@ const {
   onSaveCards, onResetCardsDefault, funnelEditorOpen, savingFunnelPrefs, enabledFunnelEvents, funnelOrder,
   funnelPickerOptions, funnelSteps, onSaveFunnelEvents, eventLabelOverrides, refresh,
 } = useDashboardView()
+
+const resetCardsConfirmOpen = ref(false)
+const confirmResetCardsDefault = async () => {
+  await onResetCardsDefault()
+  resetCardsConfirmOpen.value = false
+}
 </script>
 
 <style scoped>
-.dashboard-page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: -0.75rem;
-}
-
-.section-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.section-title {
-  font-size: var(--fs-md);
-  font-weight: var(--fw-semibold);
-  color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0;
-}
-
-.section-hint {
-  font-size: var(--fs-sm);
-  color: var(--text-3);
-  margin: -0.75rem 0 0;
-}
-
-.funnel-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.funnel-wrapper > .section-header {
-  margin-bottom: -0.5rem;
-}
+.dashboard-page { display: flex; flex-direction: column; gap: 1.5rem; }
+.section-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: -0.75rem; }
+.section-actions { display: flex; align-items: center; gap: 0.35rem; }
+.section-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; margin: 0; }
+.section-hint { font-size: var(--fs-sm); color: var(--text-3); margin: -0.75rem 0 0; }
+.funnel-wrapper { display: flex; flex-direction: column; gap: 1rem; }
+.funnel-wrapper > .section-header { margin-bottom: -0.5rem; }
 </style>

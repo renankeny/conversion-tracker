@@ -69,12 +69,15 @@ func (s *Scheduler) runCycle(ctx context.Context) {
 			slog.Warn("whatsapp ai cycle error", "account_id", accID, "error", aerr)
 			continue
 		}
-		if sum.AnalyzedChats > 0 {
+		if sum.AnalyzedChats > 0 || sum.Errors > 0 {
 			slog.Info("whatsapp ai cycle completed",
 				"account_id", accID,
 				"analyzed_chats", sum.AnalyzedChats,
 				"qualifications", sum.Qualifications,
 				"sales", sum.Sales,
+				"errors", sum.Errors,
+				"skipped_media", sum.SkippedMedia,
+				"last_error", sum.LastError,
 			)
 		}
 	}

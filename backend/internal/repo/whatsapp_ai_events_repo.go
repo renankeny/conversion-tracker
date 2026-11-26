@@ -45,11 +45,11 @@ func (r *WhatsAppAIRepo) ListCandidateChats(ctx context.Context, accountID int64
 				  AND pm.id > c.ai_last_analyzed_msg_id
 				  AND pm.message_type IN ('audio', 'image', 'document')
 				  AND pm.media_status = 'pending'
-				  AND pm.created_at > NOW() - INTERVAL '5 minutes'
+				  AND pm.created_at > NOW() - INTERVAL '15 minutes'
 			) AS has_pending_media
 		FROM whatsapp_chats c
 		JOIN whatsapp_instances i ON c.instance_id = i.id
-		WHERE c.account_id = $1
+		WHERE COALESCE(c.account_id, i.account_id) = $1
 		  AND i.account_id = $1
 		  AND i.enabled = TRUE
 		  AND c.tracked_user_id IS NOT NULL
@@ -123,6 +123,18 @@ func (r *WhatsAppAIRepo) UpdateChatAICursor(ctx context.Context, chatID, lastMsg
 
 func (r *WhatsAppAIRepo) SetChatAIQualified(ctx context.Context, chatID int64, qualified bool) error {
 	_, err := r.pool.Exec(ctx, `UPDATE whatsapp_chats SET ai_qualified = $2 WHERE id = $1`, chatID, qualified)
+	return err
+}
+
+func (r *WhatsAppAIRepo) LinkChatToCRMLead(ctx context.Context, chatID, leadID int64) error {
+	if chatID <= 0 || leadID <= 0 {
+		return nil
+	}
+	_, err := r.pool.Exec(ctx, `
+		UPDATE whatsapp_chats
+		SET crm_lead_id = $2, updated_at = NOW()
+		WHERE id = $1 AND (crm_lead_id IS NULL OR crm_lead_id = 0)
+	`, chatID, leadID)
 	return err
 }
 

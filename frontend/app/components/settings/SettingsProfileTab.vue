@@ -44,10 +44,19 @@
           v-model="prefsForm.openai_api_key"
           type="password"
           label="OpenAI API Key (sk-...)"
-          :placeholder="hasOpenAiKey ? '•••••••••••••••• (chave configurada — digite para substituir)' : 'sk-proj-...'"
+          :placeholder="hasOpenAiKey ? 'Chave ativa — digite uma nova chave para substituir' : 'sk-proj-...'"
           hint="Uma única chave conectada aqui funciona automaticamente em todos os módulos de IA do sistema."
         />
         <div class="form-actions">
+          <BaseButton
+            v-if="hasOpenAiKey"
+            variant="outline"
+            type="button"
+            :loading="removingKey"
+            @click="onRemoveOpenAIKey"
+          >
+            Remover chave
+          </BaseButton>
           <BaseButton variant="primary" type="submit" :loading="savingPrefs">
             Salvar chave
           </BaseButton>
@@ -133,32 +142,52 @@ const onSaveProfile = async () => {
 }
 
 const prefsForm = reactive({
-  openai_api_key: String(user.value?.preferences?.openai_api_key || ''),
+  openai_api_key: '',
 })
 const savingPrefs = ref(false)
-
-watch(
-  () => user.value?.preferences,
-  (p) => {
-    if (p) prefsForm.openai_api_key = String(p.openai_api_key || '')
-  },
-  { immediate: true }
-)
+const removingKey = ref(false)
 
 const onSavePrefs = async () => {
+  const nextKey = prefsForm.openai_api_key.trim()
+  if (!nextKey) {
+    toast.info(
+      hasOpenAiKey.value ? 'Chave mantida' : 'Informe uma chave',
+      hasOpenAiKey.value
+        ? 'Sua chave OpenAI atual continua ativa. Digite uma nova chave para substituir ou clique em Remover chave.'
+        : 'Cole sua chave da OpenAI (sk-...) antes de salvar.',
+    )
+    return
+  }
   savingPrefs.value = true
   try {
-    const prefs = { ...(user.value?.preferences || {}), openai_api_key: prefsForm.openai_api_key.trim() }
+    const prefs = { ...(user.value?.preferences || {}), openai_api_key: nextKey }
     const res = await settings.updateMyPreferences(prefs)
     if (user.value) {
       setUser({ ...user.value, preferences: res.preferences })
     }
     prefsForm.openai_api_key = ''
-    toast.success('Sucesso', 'Preferências salvas')
+    toast.success('Sucesso', 'Chave da OpenAI salva com segurança')
   } catch (error: unknown) {
-    toast.error('Erro', errorMessage(error, 'Falha ao salvar preferências'))
+    toast.error('Erro', errorMessage(error, 'Falha ao salvar chave da OpenAI'))
   } finally {
     savingPrefs.value = false
+  }
+}
+
+const onRemoveOpenAIKey = async () => {
+  removingKey.value = true
+  try {
+    const prefs = { ...(user.value?.preferences || {}), openai_api_key: '' }
+    const res = await settings.updateMyPreferences(prefs)
+    if (user.value) {
+      setUser({ ...user.value, preferences: res.preferences })
+    }
+    prefsForm.openai_api_key = ''
+    toast.success('Chave removida', 'A chave da OpenAI foi removida do seu perfil.')
+  } catch (error: unknown) {
+    toast.error('Erro', errorMessage(error, 'Falha ao remover chave da OpenAI'))
+  } finally {
+    removingKey.value = false
   }
 }
 
@@ -198,25 +227,8 @@ const onChangePassword = async () => {
 .account-stack { display: flex; flex-direction: column; gap: 1rem; }
 .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-card); }
 .card-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin-bottom: 0.5rem; }
-
-.card-hint {
-  font-size: var(--fs-md);
-  color: var(--text-2);
-  margin-bottom: 1rem;
-  line-height: 1.5;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.875rem;
-  max-width: 420px;
-}
-
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 0.5rem;
-}
+.card-hint { font-size: var(--fs-md); color: var(--text-2); margin-bottom: 1rem; line-height: 1.5; }
+.form { display: flex; flex-direction: column; gap: 0.875rem; max-width: 420px; }
+.form-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
 </style>
 

@@ -32,12 +32,18 @@ func (r *WhatsAppAIRepo) GetSettings(ctx context.Context, accountID int64) (*dom
 	var rulesRaw []byte
 	err := r.pool.QueryRow(ctx, `
 		SELECT enabled, COALESCE(NULLIF(model, ''), 'gpt-4o-mini'),
-		       qualified_stage_id, sale_stage_id, base_prompt, learned_rules, last_run_at, updated_at
+		       qualified_stage_id, sale_stage_id, base_prompt, learned_rules,
+		       last_run_at, COALESCE(last_error, ''),
+		       COALESCE(last_analyzed_count, 0), COALESCE(last_qualified_count, 0), COALESCE(last_sales_count, 0),
+		       updated_at
 		FROM account_ai_settings
 		WHERE account_id = $1
 	`, accountID).Scan(
 		&s.Enabled, &s.Model,
-		&s.QualifiedStageID, &s.SaleStageID, &s.BasePrompt, &rulesRaw, &s.LastRunAt, &s.UpdatedAt,
+		&s.QualifiedStageID, &s.SaleStageID, &s.BasePrompt, &rulesRaw,
+		&s.LastRunAt, &s.LastError,
+		&s.LastAnalyzedCount, &s.LastQualifiedCount, &s.LastSalesCount,
+		&s.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return s, nil
@@ -158,6 +164,26 @@ func (r *WhatsAppAIRepo) ListEnabledAccounts(ctx context.Context) ([]int64, erro
 
 func (r *WhatsAppAIRepo) TouchLastRun(ctx context.Context, accountID int64) error {
 	_, err := r.pool.Exec(ctx, `UPDATE account_ai_settings SET last_run_at = NOW() WHERE account_id = $1`, accountID)
+	return err
+}
+
+func (r *WhatsAppAIRepo) RecordRunResult(ctx context.Context, accountID int64, analyzed, qualified, sales int, lastErr string) error {
+	msg := strings.TrimSpace(lastErr)
+	if len(msg) > 500 {
+		msg = msg[:500]
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO account_ai_settings (
+			account_id, last_run_at, last_error, last_analyzed_count, last_qualified_count, last_sales_count, updated_at
+		)
+		VALUES ($1, NOW(), $2, $3, $4, $5, NOW())
+		ON CONFLICT (account_id) DO UPDATE SET
+			last_run_at          = NOW(),
+			last_error           = EXCLUDED.last_error,
+			last_analyzed_count  = EXCLUDED.last_analyzed_count,
+			last_qualified_count = EXCLUDED.last_qualified_count,
+			last_sales_count     = EXCLUDED.last_sales_count
+	`, accountID, msg, analyzed, qualified, sales)
 	return err
 }
 

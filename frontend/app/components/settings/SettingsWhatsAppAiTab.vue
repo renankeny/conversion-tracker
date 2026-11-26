@@ -16,11 +16,24 @@
           </div>
 
           <div class="top-actions">
-            <span v-if="lastRunLabel" class="run-meta">Último ciclo: {{ lastRunLabel }}</span>
+            <div v-if="lastRunLabel" class="run-meta-col">
+              <span class="run-meta">Último ciclo: {{ lastRunLabel }}</span>
+              <span class="run-stats">
+                {{ lastStats.analyzed }} lidas · {{ lastStats.qualified }} qualif. · {{ lastStats.sales }} vendas
+              </span>
+            </div>
             <BaseButton variant="outline" size="sm" :loading="runningNow" @click="onRunNow">
               <Sparkles :size="14" />
               <span>Analisar agora</span>
             </BaseButton>
+          </div>
+        </div>
+
+        <div v-if="lastError" class="error-banner">
+          <AlertTriangle :size="15" class="error-icon" />
+          <div class="error-body">
+            <strong>Falha no último ciclo da IA:</strong>
+            <span>{{ lastError }}</span>
           </div>
         </div>
 
@@ -53,17 +66,24 @@
             />
           </div>
 
-          <div class="grid-2">
+          <div class="grid-3">
+            <BaseDropdown
+              :model-value="form.model"
+              label="Modelo OpenAI"
+              :options="modelOptions"
+              hint="Modelos maiores leem comprovantes complexos com maior precisão."
+              @update:model-value="form.model = String($event || 'gpt-4o-mini')"
+            />
             <BaseDropdown
               :model-value="form.qualified_stage_id"
-              label="Etapa de Lead Qualificado no Kanban"
+              label="Etapa de Lead Qualificado"
               :options="qualStageOptions"
               hint="Para onde o card vai quando a IA qualificar o atendimento."
               @update:model-value="form.qualified_stage_id = Number($event || 0)"
             />
             <BaseDropdown
               :model-value="form.sale_stage_id"
-              label="Etapa de Venda Realizada no Kanban"
+              label="Etapa de Venda Realizada"
               :options="saleStageOptions"
               hint="Para onde o card vai quando a IA confirmar pagamento/venda."
               @update:model-value="form.sale_stage_id = Number($event || 0)"
@@ -105,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { Sparkles, RotateCcw } from 'lucide-vue-next'
+import { AlertTriangle, Sparkles, RotateCcw } from 'lucide-vue-next'
 import SettingsWhatsAppAiRulesCard from '~/components/settings/SettingsWhatsAppAiRulesCard.vue'
 
 defineEmits<{
@@ -114,8 +134,8 @@ defineEmits<{
 
 const {
   loading, saving, runningNow, form,
-  keyReady, lastRunLabel,
-  qualStageOptions, saleStageOptions,
+  keyReady, lastRunLabel, lastError, lastStats,
+  modelOptions, qualStageOptions, saleStageOptions,
   restoreDefaultPrompt, removeRule, addRule, onSave, onRunNow,
 } = useWhatsAppAiSettingsForm()
 </script>
@@ -124,11 +144,16 @@ const {
 .ai-stack { display: flex; flex-direction: column; gap: 1rem; }
 .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-card); }
 .loading-box { display: flex; align-items: center; gap: 0.75rem; color: var(--text-2); font-size: var(--fs-md); }
-.card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
+.card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .card-title { font-family: var(--font-sans); font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0 0 0.35rem; }
 .card-hint { font-size: var(--fs-md); color: var(--text-2); margin: 0; line-height: 1.5; max-width: 680px; }
 .top-actions { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
-.run-meta { font-size: var(--fs-xs); color: var(--text-3); }
+.run-meta-col { display: flex; flex-direction: column; align-items: flex-end; gap: 0.1rem; }
+.run-meta { font-size: var(--fs-xs); color: var(--text-2); font-weight: var(--fw-medium); }
+.run-stats { font-size: var(--fs-2xs); color: var(--text-3); }
+.error-banner { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.75rem 0.95rem; border-radius: 10px; background: var(--danger-soft); border: 1px solid var(--danger-border); color: var(--danger); margin-bottom: 1rem; font-size: var(--fs-sm); line-height: 1.45; }
+.error-icon { flex-shrink: 0; margin-top: 0.1rem; }
+.error-body { display: flex; flex-direction: column; gap: 0.15rem; }
 .ai-form { display: flex; flex-direction: column; gap: 1rem; }
 .key-banner { padding: 0.75rem 1rem; border-radius: 10px; background: var(--surface-deep); border: 1px solid var(--border-soft); display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
 .key-banner-info { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
@@ -138,7 +163,7 @@ const {
 .key-pill { padding: 0.2rem 0.6rem; border-radius: 999px; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); }
 .key-pill.ok { background: var(--surface-soft); color: var(--success); border: 1px solid var(--border-soft); }
 .key-pill.warn { background: var(--surface-soft); color: var(--warning); border: 1px solid var(--border-soft); }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.875rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.875rem; }
 .prompt-block { display: flex; flex-direction: column; gap: 0.45rem; }
 .prompt-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .reset-link { display: inline-flex; align-items: center; gap: 0.35rem; background: transparent; border: none; color: var(--brand); font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer; padding: 0.2rem 0.4rem; border-radius: 6px; }
@@ -148,5 +173,5 @@ const {
 .form-actions { display: flex; justify-content: flex-end; }
 .spinner { width: 1.25rem; height: 1.25rem; border: 2px solid var(--border); border-top-color: var(--brand); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (max-width: 680px) { .grid-2 { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .grid-3 { grid-template-columns: 1fr; } }
 </style>
