@@ -14,6 +14,7 @@ func registerHumanFastAdminRoutes(r chi.Router, h routeHandlers) {
 	r.Put("/admin/branding", h.branding.UpdateAdmin)
 	r.Get("/admin/system/health-alerts", h.adminAlerts.GetHealthAlerts)
 	r.Get("/admin/system/easypanel", h.setup.GetEasyPanelStatus)
+	r.Get("/admin/system/update-status", h.setup.GetSystemUpdateStatus)
 
 	r.Delete("/admin/pixels/{id}", h.adminPixels.Delete)
 	r.Post("/admin/pixels/{id}/verify-dns", h.adminPixels.VerifyDNS)

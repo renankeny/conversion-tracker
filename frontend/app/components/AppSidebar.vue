@@ -54,6 +54,17 @@
     </nav>
 
     <div class="sidebar-footer">
+      <button
+        v-if="hasUpdate"
+        type="button"
+        class="update-available-btn"
+        @click="openUpdateModal"
+      >
+        <RefreshCw :size="15" :class="{ 'animate-spin': isUpdatingNow }" />
+        <span class="flex-1 truncate">{{ isUpdatingNow ? 'Atualizando...' : 'Atualização disponível' }}</span>
+        <span v-if="!isUpdatingNow" class="update-dot" aria-hidden="true" />
+      </button>
+
       <button class="theme-toggle" @click="toggleTheme" :title="isDark ? 'Tema claro' : 'Tema escuro'">
         <Sun v-if="isDark" :size="16" />
         <Moon v-else :size="16" />
@@ -79,9 +90,10 @@
 <script setup lang="ts">
 import {
   LayoutDashboard, Megaphone, Plug, Zap, Users, Settings,
-  Sun, Moon, LogOut, Kanban, Building2, Bell, MessageSquare,
+  Sun, Moon, LogOut, Kanban, Building2, Bell, MessageSquare, RefreshCw,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
+import { useSystemUpdate } from '~/composables/useSystemUpdate'
 import { useNotificationsStore } from '~/stores/useNotificationsStore'
 import { MetaAdsIcon, GoogleAdsIcon, WhatsAppIcon, PixelBrainIcon } from '~/utils/adIcons'
 
@@ -92,6 +104,7 @@ const {
 } = useAccountNavigation()
 
 const notifStore = useNotificationsStore()
+const { hasUpdate, isUpdatingNow, openModal: openUpdateModal } = useSystemUpdate()
 onMounted(() => loadAccounts())
 
 interface PrimaryNavLink {
@@ -169,5 +182,12 @@ const integrationLinks = [
 }
 .theme-toggle:hover { background: var(--surface-soft); color: var(--text-1); }
 .logout-btn:hover { background: var(--danger-soft); color: var(--danger); }
+.update-available-btn {
+  display: flex; align-items: center; gap: 0.625rem; width: 100%; padding: 0.5625rem 0.875rem; border-radius: 8px;
+  background: var(--brand-soft); border: 1px solid var(--brand-border); color: var(--brand);
+  font-size: var(--fs-md); font-weight: var(--fw-semibold); cursor: pointer; transition: all 0.15s ease; text-align: left;
+}
+.update-available-btn:hover { filter: brightness(1.08); }
+.update-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); flex-shrink: 0; }
 @media (max-width: 1023px) { .app-sidebar { transform: translateX(-100%); } }
 </style>

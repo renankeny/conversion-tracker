@@ -144,6 +144,7 @@ func registerAdminAndMCPRoutes(r chi.Router, deps Deps, h routeHandlers, mcpSrv 
 				r.Use(RequireHumanAuth)
 				r.Post("/admin/openai/webhook-mapping", h.adminOpenAI.GenerateMapping)
 				r.Post("/admin/system/easypanel", h.setup.ConnectEasyPanel)
+				r.Post("/admin/system/update-now", h.setup.TriggerSystemUpdate)
 				r.Post("/admin/geoip/refresh", h.adminGeoIP.Refresh)
 				r.With(RequireManager).Post("/admin/maintenance/prune", h.adminMaintenance.PruneNow)
 				r.With(RequireManager).Post("/admin/maintenance/reset", h.adminMaintenance.Reset)

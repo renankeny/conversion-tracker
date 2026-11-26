@@ -70,3 +70,46 @@ func (h *SetupHandler) ConnectEasyPanel(w http.ResponseWriter, r *http.Request) 
 		"project": project,
 	})
 }
+
+// GetSystemUpdateStatus GET /api/v1/admin/system/update-status
+// Exclusivo do superadmin/owner: informa se há uma nova build publicada para esta instalação.
+func (h *SetupHandler) GetSystemUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if c, ok := auth.ClaimsFrom(r.Context()); !ok || !c.IsOwner() {
+		writeJSON(w, http.StatusOK, util.SystemUpdateStatus{UpdateAvailable: false})
+		return
+	}
+	if h.calibrator == nil {
+		writeJSON(w, http.StatusOK, util.SystemUpdateStatus{
+			CurrentVersion:  util.AppBuildVersion,
+			UpdateAvailable: false,
+		})
+		return
+	}
+	force := r.URL.Query().Get("force") == "1" || strings.EqualFold(r.URL.Query().Get("force"), "true")
+	status := h.calibrator.CheckSystemUpdate(r.Context(), force)
+	writeJSON(w, http.StatusOK, status)
+}
+
+// TriggerSystemUpdate POST /api/v1/admin/system/update-now
+// Exclusivo do superadmin/owner: dispara a atualização automática da própria instância.
+func (h *SetupHandler) TriggerSystemUpdate(w http.ResponseWriter, r *http.Request) {
+	if c, ok := auth.ClaimsFrom(r.Context()); !ok || !c.IsOwner() {
+		writeError(w, http.StatusForbidden, "apenas o super administrador pode atualizar o sistema")
+		return
+	}
+	if h.calibrator == nil {
+		writeError(w, http.StatusServiceUnavailable, "serviço de atualização indisponível nesta instalação")
+		return
+	}
+	status, msg, err := h.calibrator.TriggerSelfUpdate(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"status":  status,
+		"message": msg,
+	})
+}

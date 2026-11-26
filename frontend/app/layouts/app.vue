@@ -11,11 +11,15 @@
 
     <!-- Mobile Bottom Navigation -->
     <MobileBottomNav />
+
+    <!-- Modal de atualização do sistema (somente superadmin) -->
+    <SystemUpdateModal />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { UserNotificationItem } from '#shared/types'
+import { useSystemUpdate } from '~/composables/useSystemUpdate'
 import { useAuthStore } from '~/stores/useAuthStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
 import { useNotificationsStore } from '~/stores/useNotificationsStore'
@@ -28,6 +32,7 @@ const authStore = useAuthStore()
 const tenantStore = useTenantStore()
 const liveStore = useLiveEventsStore()
 const notifStore = useNotificationsStore()
+const { checkForUpdates, resetUpdateState } = useSystemUpdate()
 let offRealtimeNotif: (() => void) | null = null
 
 onMounted(async () => {
@@ -42,6 +47,7 @@ onMounted(async () => {
   if (token.value) {
     void liveStore.connect(token.value)
     void notifStore.fetchOverview().catch(() => {})
+    void checkForUpdates()
   }
 })
 
@@ -53,11 +59,21 @@ watch(token, async (newToken) => {
     if (token.value === newToken) {
       void liveStore.connect(newToken)
       void notifStore.fetchOverview(true).catch(() => {})
+      void checkForUpdates(true)
     }
   } else {
     liveStore.disconnect()
+    resetUpdateState()
   }
 })
+
+watch(
+  () => authStore.isOwner,
+  (isOwner) => {
+    if (isOwner && token.value) void checkForUpdates()
+    else if (!isOwner) resetUpdateState()
+  },
+)
 
 onUnmounted(() => {
   offRealtimeNotif?.()

@@ -106,6 +106,14 @@
           </div>
         </nav>
 
+        <div v-if="hasUpdate" class="drawer-update-wrap">
+          <button type="button" class="drawer-update-btn" @click="onOpenUpdate">
+            <RefreshCw :size="15" :class="{ 'animate-spin': isUpdatingNow }" />
+            <span class="flex-1 text-left">{{ isUpdatingNow ? 'Atualizando...' : 'Atualização disponível' }}</span>
+            <span v-if="!isUpdatingNow" class="drawer-update-dot" aria-hidden="true" />
+          </button>
+        </div>
+
         <div class="drawer-footer">
           <button class="drawer-action" @click="toggleTheme">
             <Sun v-if="isDark" :size="16" />
@@ -126,9 +134,10 @@
 import {
   LayoutDashboard, Megaphone, Kanban, MessageSquare, Zap, Users,
   Plug, Settings, X, Sun, Moon, LogOut,
-  Building2, ChevronDown, Bell,
+  Building2, ChevronDown, Bell, RefreshCw,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
+import { useSystemUpdate } from '~/composables/useSystemUpdate'
 import { useNotificationsStore } from '~/stores/useNotificationsStore'
 import { MetaAdsIcon, GoogleAdsIcon, WhatsAppIcon, PixelBrainIcon } from '~/utils/adIcons'
 
@@ -154,6 +163,11 @@ const onLogout = async () => {
 }
 
 const notifStore = useNotificationsStore()
+const { hasUpdate, isUpdatingNow, openModal: openUpdateModal } = useSystemUpdate()
+const onOpenUpdate = () => {
+  close()
+  openUpdateModal()
+}
 
 const primaryLinks = computed<Array<{ to: string; label: string; icon: Component; badge?: number }>>(() => {
   const links: Array<{ to: string; label: string; icon: Component; badge?: number }> = [
@@ -215,6 +229,9 @@ const integrationLinks = [
 .drawer-sublink.active { background: var(--brand-soft); color: var(--brand); font-weight: var(--fw-semibold); }
 .sublink-icon { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: inherit; }
 .sublink-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.6; }
+.drawer-update-wrap { padding: 0.5rem 1rem 0; }
+.drawer-update-btn { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.625rem 0.875rem; border-radius: 10px; background: var(--brand-soft); border: 1px solid var(--brand-border); color: var(--brand); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer; }
+.drawer-update-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); flex-shrink: 0; }
 .drawer-footer { display: flex; gap: 0.5rem; padding: 0.75rem 1rem 0.25rem; border-top: 1px solid var(--border-soft); }
 .drawer-action { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.625rem; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer; }
 .drawer-action.danger { color: var(--danger); background: var(--danger-soft); }
