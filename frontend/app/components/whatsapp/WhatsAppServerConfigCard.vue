@@ -11,15 +11,18 @@
             <BaseBadge :variant="server?.has_api_key ? 'success' : 'warning'">
               {{ server?.has_api_key ? 'Configurado' : 'Pendente' }}
             </BaseBadge>
+            <BaseBadge v-if="server?.has_api_key" variant="info">
+              Global · Todas as empresas
+            </BaseBadge>
           </div>
           <p class="section-desc">
-            Informe a URL base e a Global API Key da sua instância Evolution Go para provisionar conexões e receber webhooks CTWA.
+            Configuração global compartilhada por todas as empresas deste painel. Configure uma única vez para conectar WhatsApp via QR Code em qualquer cliente.
           </p>
         </div>
       </div>
 
       <button
-        v-if="server && !expanded"
+        v-if="server && !expanded && canEditServer"
         type="button"
         class="toggle-edit-btn"
         @click="expanded = true"
@@ -28,7 +31,7 @@
       </button>
     </div>
 
-    <div v-if="!server || expanded" class="server-form">
+    <div v-if="(!server || expanded) && canEditServer" class="server-form">
       <div class="form-grid">
         <BaseInput
           v-model="form.url"
@@ -85,18 +88,23 @@
       </div>
     </div>
 
-    <div v-else class="server-summary-bar">
+    <div v-else-if="server" class="server-summary-bar">
       <span class="summary-url">{{ server?.url }}</span>
       <BaseButton type="button" variant="ghost" size="sm" :loading="testing" @click="onTest">
         Verificar saúde
       </BaseButton>
     </div>
+    <p v-else class="section-desc">
+      Aguardando um administrador configurar o servidor global Evolution Go.
+    </p>
   </section>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Server, CheckCircle2 } from 'lucide-vue-next'
 import type { WhatsAppServer, WhatsAppServerHealth } from '#shared/types'
+import { useAuthStore } from '~/stores/useAuthStore'
 import { errorMessage } from '~/utils/errorMessage'
 
 const props = defineProps<{
@@ -106,6 +114,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   saved: []
 }>()
+
+const authStore = useAuthStore()
+const canEditServer = computed(() => authStore.isAdmin)
 
 const wa = useWhatsApp()
 const toast = useToast()

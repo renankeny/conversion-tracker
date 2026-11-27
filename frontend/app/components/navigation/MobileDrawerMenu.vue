@@ -24,10 +24,7 @@
         </div>
 
         <div v-if="accounts.length > 1" class="drawer-account">
-          <div class="drawer-account-label">
-            <Building2 :size="14" />
-            <span>Empresa</span>
-          </div>
+          <div class="drawer-account-label"><Building2 :size="14" /><span>Empresa</span></div>
           <div class="flex flex-col gap-1">
             <button
               v-for="acc in accounts"
@@ -43,12 +40,38 @@
         </div>
 
         <nav class="drawer-nav">
+          <button v-if="canManageAccounts" type="button" class="drawer-new-client" @click="onOpenNewClient">
+            <UserPlus :size="16" /><span>Novo cliente</span>
+          </button>
+          <NuxtLink to="/" class="drawer-link" :class="{ active: route.path === '/' }" @click="close">
+            <LayoutDashboard :size="18" /><span class="flex-1">Dashboard</span>
+          </NuxtLink>
+
+          <div class="flex flex-col">
+            <button type="button" class="drawer-group-toggle" @click="campaignsOpen = !campaignsOpen">
+              <Megaphone :size="18" /><span class="flex-1">Campanhas</span>
+              <ChevronDown class="group-chevron" :class="{ rotated: campaignsOpen }" :size="16" />
+            </button>
+            <div v-show="campaignsOpen" class="drawer-group-children">
+              <NuxtLink
+                v-for="sub in campaignSubLinks"
+                :key="sub.to"
+                :to="sub.to"
+                class="drawer-sublink"
+                :class="{ active: sub.exact ? route.path === sub.to : isActive(sub.to) }"
+                @click="close"
+              >
+                <span class="sublink-dot" /><span>{{ sub.label }}</span>
+              </NuxtLink>
+            </div>
+          </div>
+
           <NuxtLink
-            v-for="link in primaryLinks"
+            v-for="link in secondaryLinks"
             :key="link.to"
             :to="link.to"
             class="drawer-link"
-            :class="{ active: link.to === '/' ? route.path === '/' : isActive(link.to) }"
+            :class="{ active: isActive(link.to) }"
             @click="close"
           >
             <component :is="link.icon" :size="18" />
@@ -57,13 +80,8 @@
           </NuxtLink>
 
           <div class="flex flex-col">
-            <button
-              type="button"
-              class="drawer-group-toggle"
-              @click="integrationsOpen = !integrationsOpen"
-            >
-              <Plug :size="18" />
-              <span class="flex-1">Integrações</span>
+            <button type="button" class="drawer-group-toggle" @click="integrationsOpen = !integrationsOpen">
+              <Plug :size="18" /><span class="flex-1">Integrações</span>
               <ChevronDown class="group-chevron" :class="{ rotated: integrationsOpen }" :size="16" />
             </button>
             <div v-show="integrationsOpen" class="drawer-group-children">
@@ -76,31 +94,26 @@
                 @click="close"
               >
                 <component :is="sub.icon" v-if="sub.icon" :size="15" class="sublink-icon" />
-                <span v-else class="sublink-dot" />
-                <span>{{ sub.label }}</span>
+                <span v-else class="sublink-dot" /><span>{{ sub.label }}</span>
               </NuxtLink>
             </div>
           </div>
 
           <div class="flex flex-col">
-            <button
-              type="button"
-              class="drawer-group-toggle"
-              @click="settingsOpen = !settingsOpen"
-            >
-              <Settings :size="18" />
-              <span class="flex-1">Configurações</span>
+            <button type="button" class="drawer-group-toggle" @click="settingsOpen = !settingsOpen">
+              <Settings :size="18" /><span class="flex-1">Configurações</span>
               <ChevronDown class="group-chevron" :class="{ rotated: settingsOpen }" :size="16" />
             </button>
             <div v-show="settingsOpen" class="drawer-group-children">
-              <NuxtLink to="/settings" class="drawer-sublink" :class="{ active: route.path === '/settings' }" @click="close">
-                <span class="sublink-dot" /><span>Geral</span>
-              </NuxtLink>
-              <NuxtLink to="/settings/webhooks" class="drawer-sublink" :class="{ active: isActive('/settings/webhooks') }" @click="close">
-                <span class="sublink-dot" /><span>Webhooks</span>
-              </NuxtLink>
-              <NuxtLink to="/settings/api" class="drawer-sublink" :class="{ active: isActive('/settings/api') }" @click="close">
-                <span class="sublink-dot" /><span>API</span>
+              <NuxtLink
+                v-for="sub in settingsSubLinks"
+                :key="sub.to"
+                :to="sub.to"
+                class="drawer-sublink"
+                :class="{ active: sub.exact ? route.path === sub.to : isActive(sub.to) }"
+                @click="close"
+              >
+                <span class="sublink-dot" /><span>{{ sub.label }}</span>
               </NuxtLink>
             </div>
           </div>
@@ -116,13 +129,11 @@
 
         <div class="drawer-footer">
           <button class="drawer-action" @click="toggleTheme">
-            <Sun v-if="isDark" :size="16" />
-            <Moon v-else :size="16" />
+            <Sun v-if="isDark" :size="16" /><Moon v-else :size="16" />
             <span>{{ isDark ? 'Tema claro' : 'Tema escuro' }}</span>
           </button>
           <button class="drawer-action danger" @click="onLogout">
-            <LogOut :size="16" />
-            <span>Sair</span>
+            <LogOut :size="16" /><span>Sair</span>
           </button>
         </div>
       </div>
@@ -133,13 +144,13 @@
 <script setup lang="ts">
 import {
   LayoutDashboard, Megaphone, Kanban, MessageSquare, Zap, Users,
-  Plug, Settings, X, Sun, Moon, LogOut,
-  Building2, ChevronDown, Bell, RefreshCw,
+  Plug, Settings, X, Sun, Moon, LogOut, Building2, ChevronDown, Bell, RefreshCw, UserPlus,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
+import { useClientOnboardingWizard } from '~/composables/useClientOnboardingWizard'
 import { useSystemUpdate } from '~/composables/useSystemUpdate'
 import { useNotificationsStore } from '~/stores/useNotificationsStore'
-import { MetaAdsIcon, GoogleAdsIcon, WhatsAppIcon, PixelBrainIcon } from '~/utils/adIcons'
+import { campaignSubLinks, integrationLinks, settingsSubLinks } from '~/utils/navigationLinks'
 
 defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void }>()
@@ -149,30 +160,22 @@ const {
   accounts, selectedAccountId, canManageAccounts, switchAccount, isActive, userInitials,
 } = useAccountNavigation()
 
+const campaignsOpen = ref(route.path.startsWith('/campanhas'))
 const integrationsOpen = ref(route.path.startsWith('/integracoes'))
 const settingsOpen = ref(route.path.startsWith('/settings'))
 
 const close = () => emit('update:modelValue', false)
-const onSelectAccount = (id: string) => {
-  close()
-  switchAccount(id)
-}
-const onLogout = async () => {
-  close()
-  await logout()
-}
+const onSelectAccount = (id: string) => { close(); switchAccount(id) }
+const onLogout = async () => { close(); await logout() }
 
 const notifStore = useNotificationsStore()
+const { openWizard: openOnboardingWizard } = useClientOnboardingWizard()
 const { hasUpdate, isUpdatingNow, openModal: openUpdateModal } = useSystemUpdate()
-const onOpenUpdate = () => {
-  close()
-  openUpdateModal()
-}
+const onOpenNewClient = () => { close(); openOnboardingWizard() }
+const onOpenUpdate = () => { close(); openUpdateModal() }
 
-const primaryLinks = computed<Array<{ to: string; label: string; icon: Component; badge?: number }>>(() => {
+const secondaryLinks = computed<Array<{ to: string; label: string; icon: Component; badge?: number }>>(() => {
   const links: Array<{ to: string; label: string; icon: Component; badge?: number }> = [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/campanhas', label: 'Campanhas', icon: Megaphone },
     { to: '/crm', label: 'CRM', icon: Kanban },
     { to: '/conversas', label: 'Conversas', icon: MessageSquare },
     { to: '/events', label: 'Eventos', icon: Zap },
@@ -184,16 +187,6 @@ const primaryLinks = computed<Array<{ to: string; label: string; icon: Component
   }
   return links
 })
-
-const integrationLinks = [
-  { to: '/integracoes/meta-ads', label: 'Meta Ads', icon: MetaAdsIcon },
-  { to: '/integracoes/google-ads', label: 'Google Ads', icon: GoogleAdsIcon },
-  { to: '/integracoes/pixels', label: 'Pixel', icon: PixelBrainIcon },
-  { to: '/integracoes/whatsapp', label: 'WhatsApp', icon: WhatsAppIcon },
-  { to: '/integracoes/plataformas', label: 'Checkouts (infoprodutos)' },
-  { to: '/integracoes/custom', label: 'Checkouts Personalizados' },
-  { to: '/integracoes/ecommerce/confirmacao-vendas', label: 'Confirmação de Vendas' },
-]
 </script>
 
 <style scoped>
@@ -219,6 +212,7 @@ const integrationLinks = [
 .acc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
 .acc-dot.active { background: var(--brand); }
 .drawer-nav { flex: 1; overflow-y: auto; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 3px; }
+.drawer-new-client { display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.4rem; padding: 0.6rem 0.875rem; border-radius: 10px; background: var(--brand-soft); border: 1px solid var(--brand-border); color: var(--brand); font-size: var(--fs-md); font-weight: var(--fw-semibold); cursor: pointer; }
 .drawer-link, .drawer-group-toggle { display: flex; align-items: center; gap: 0.75rem; padding: 0.6875rem 0.875rem; border-radius: 10px; color: var(--text-2); text-decoration: none; font-size: var(--fs-lg); font-weight: var(--fw-medium); background: transparent; border: none; width: 100%; text-align: left; cursor: pointer; }
 .drawer-link.active { background: var(--brand-soft); color: var(--brand); font-weight: var(--fw-semibold); }
 .drawer-unread { min-width: 20px; height: 20px; padding: 0 0.375rem; border-radius: 999px; background: var(--brand); color: var(--brand-text); font-size: var(--fs-xs); font-weight: var(--fw-bold); display: inline-flex; align-items: center; justify-content: center; }
@@ -236,4 +230,3 @@ const integrationLinks = [
 .drawer-action { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.625rem; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer; }
 .drawer-action.danger { color: var(--danger); background: var(--danger-soft); }
 </style>
-

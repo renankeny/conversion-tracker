@@ -12,15 +12,42 @@
           @update:modelValue="(val) => (typeof val === 'string' || typeof val === 'number') && switchAccount(val)"
         />
       </div>
+
+      <button
+        v-if="canManageAccounts"
+        type="button"
+        class="new-client-btn"
+        @click="openOnboardingWizard"
+      >
+        <UserPlus :size="15" />
+        <span>Novo cliente</span>
+      </button>
     </div>
 
     <nav class="sidebar-nav">
+      <NuxtLink to="/" class="sidebar-link" :class="{ active: route.path === '/' }">
+        <LayoutDashboard :size="18" class="link-icon" />
+        <span class="link-label flex-1">Dashboard</span>
+      </NuxtLink>
+
+      <SidebarGroup label="Campanhas" :icon="Megaphone" base-path="/campanhas">
+        <NuxtLink
+          v-for="sub in campaignSubLinks"
+          :key="sub.to"
+          :to="sub.to"
+          class="sidebar-link sidebar-sublink"
+          :class="{ active: sub.exact ? route.path === sub.to : isActive(sub.to) }"
+        >
+          <span class="link-label">{{ sub.label }}</span>
+        </NuxtLink>
+      </SidebarGroup>
+
       <NuxtLink
-        v-for="item in primaryLinks"
+        v-for="item in secondaryLinks"
         :key="item.to"
         :to="item.to"
         class="sidebar-link"
-        :class="{ active: item.to === '/' ? route.path === '/' : isActive(item.to) }"
+        :class="{ active: isActive(item.to) }"
       >
         <component :is="item.icon" :size="18" class="link-icon" />
         <span class="link-label flex-1">{{ item.label }}</span>
@@ -41,25 +68,20 @@
       </SidebarGroup>
 
       <SidebarGroup label="Configurações" :icon="Settings" base-path="/settings">
-        <NuxtLink to="/settings" class="sidebar-link sidebar-sublink" :class="{ active: route.path === '/settings' }">
-          <span class="link-label">Geral</span>
-        </NuxtLink>
-        <NuxtLink to="/settings/webhooks" class="sidebar-link sidebar-sublink" :class="{ active: isActive('/settings/webhooks') }">
-          <span class="link-label">Webhooks</span>
-        </NuxtLink>
-        <NuxtLink to="/settings/api" class="sidebar-link sidebar-sublink" :class="{ active: isActive('/settings/api') }">
-          <span class="link-label">API</span>
+        <NuxtLink
+          v-for="sub in settingsSubLinks"
+          :key="sub.to"
+          :to="sub.to"
+          class="sidebar-link sidebar-sublink"
+          :class="{ active: sub.exact ? route.path === sub.to : isActive(sub.to) }"
+        >
+          <span class="link-label">{{ sub.label }}</span>
         </NuxtLink>
       </SidebarGroup>
     </nav>
 
     <div class="sidebar-footer">
-      <button
-        v-if="hasUpdate"
-        type="button"
-        class="update-available-btn"
-        @click="openUpdateModal"
-      >
+      <button v-if="hasUpdate" type="button" class="update-available-btn" @click="openUpdateModal">
         <RefreshCw :size="15" :class="{ 'animate-spin': isUpdatingNow }" />
         <span class="flex-1 truncate">{{ isUpdatingNow ? 'Atualizando...' : 'Atualização disponível' }}</span>
         <span v-if="!isUpdatingNow" class="update-dot" aria-hidden="true" />
@@ -90,12 +112,13 @@
 <script setup lang="ts">
 import {
   LayoutDashboard, Megaphone, Plug, Zap, Users, Settings,
-  Sun, Moon, LogOut, Kanban, Building2, Bell, MessageSquare, RefreshCw,
+  Sun, Moon, LogOut, Kanban, Building2, Bell, MessageSquare, RefreshCw, UserPlus,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
+import { useClientOnboardingWizard } from '~/composables/useClientOnboardingWizard'
 import { useSystemUpdate } from '~/composables/useSystemUpdate'
 import { useNotificationsStore } from '~/stores/useNotificationsStore'
-import { MetaAdsIcon, GoogleAdsIcon, WhatsAppIcon, PixelBrainIcon } from '~/utils/adIcons'
+import { campaignSubLinks, integrationLinks, settingsSubLinks } from '~/utils/navigationLinks'
 
 const {
   route, user, logout, isDark, toggleTheme,
@@ -104,20 +127,19 @@ const {
 } = useAccountNavigation()
 
 const notifStore = useNotificationsStore()
+const { openWizard: openOnboardingWizard } = useClientOnboardingWizard()
 const { hasUpdate, isUpdatingNow, openModal: openUpdateModal } = useSystemUpdate()
 onMounted(() => loadAccounts())
 
-interface PrimaryNavLink {
+interface NavLinkItem {
   to: string
   label: string
   icon: Component
   badge?: number
 }
 
-const primaryLinks = computed<PrimaryNavLink[]>(() => {
-  const links: PrimaryNavLink[] = [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/campanhas', label: 'Campanhas', icon: Megaphone },
+const secondaryLinks = computed<NavLinkItem[]>(() => {
+  const links: NavLinkItem[] = [
     { to: '/crm', label: 'CRM', icon: Kanban },
     { to: '/conversas', label: 'Conversas', icon: MessageSquare },
     { to: '/events', label: 'Eventos', icon: Zap },
@@ -129,21 +151,17 @@ const primaryLinks = computed<PrimaryNavLink[]>(() => {
   }
   return links
 })
-
-const integrationLinks = [
-  { to: '/integracoes/meta-ads', label: 'Meta Ads', icon: MetaAdsIcon },
-  { to: '/integracoes/google-ads', label: 'Google Ads', icon: GoogleAdsIcon },
-  { to: '/integracoes/pixels', label: 'Pixel', icon: PixelBrainIcon },
-  { to: '/integracoes/whatsapp', label: 'WhatsApp', icon: WhatsAppIcon },
-  { to: '/integracoes/plataformas', label: 'Checkouts (infoprodutos)' },
-  { to: '/integracoes/custom', label: 'Checkouts Personalizados' },
-  { to: '/integracoes/ecommerce/confirmacao-vendas', label: 'Confirmação de Vendas' },
-]
 </script>
 
 <style scoped>
 .app-sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 260px; background: var(--surface-deep); display: flex; flex-direction: column; z-index: 50; }
 .sidebar-header { padding: 1.5rem 1.25rem; border-bottom: 1px solid var(--border-soft); }
+.new-client-btn {
+  margin-top: 0.625rem; width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  padding: 0.5rem 0.75rem; border-radius: 8px; background: var(--brand-soft); border: 1px solid var(--brand-border);
+  color: var(--brand); font-size: var(--fs-md); font-weight: var(--fw-semibold); cursor: pointer; transition: all 0.15s ease;
+}
+.new-client-btn:hover { background: var(--brand); color: var(--brand-text); }
 .sidebar-logo { display: flex; align-items: center; text-decoration: none; }
 .sidebar-nav { flex: 1; padding: 1rem 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; overflow-y: auto; }
 .sidebar-link {

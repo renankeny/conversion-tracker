@@ -17,6 +17,7 @@ const (
 	// Categorias fixas de auditoria/segurança (sempre ativas, ocultas dos checkboxes)
 	NotifCompanyLifecycle = "company_lifecycle"
 	NotifAPIKeyLifecycle  = "api_key_lifecycle"
+	NotifCampaignRule     = "campaign_rule"
 
 	AccountScopeAll    = "all"
 	AccountScopeCustom = "custom"
@@ -111,6 +112,8 @@ func (p NotificationPreferences) AllowsCategory(category string) bool {
 		return p.PixelLifecycle
 	case NotifEventDispatchError:
 		return p.EventDispatchError
+	case NotifCampaignRule:
+		return true
 	default:
 		return false
 	}

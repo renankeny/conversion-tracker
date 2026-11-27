@@ -14,11 +14,15 @@
 
     <!-- Modal de atualização do sistema (somente superadmin) -->
     <SystemUpdateModal />
+
+    <!-- Wizard guiado de cadastro de novo cliente -->
+    <OnboardingClientOnboardingWizard />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { UserNotificationItem } from '#shared/types'
+import { useClientOnboardingWizard } from '~/composables/useClientOnboardingWizard'
 import { useSystemUpdate } from '~/composables/useSystemUpdate'
 import { useAuthStore } from '~/stores/useAuthStore'
 import { useLiveEventsStore } from '~/stores/useLiveEventsStore'
@@ -33,6 +37,7 @@ const tenantStore = useTenantStore()
 const liveStore = useLiveEventsStore()
 const notifStore = useNotificationsStore()
 const { checkForUpdates, resetUpdateState } = useSystemUpdate()
+const { closeWizard, resetWizard } = useClientOnboardingWizard()
 let offRealtimeNotif: (() => void) | null = null
 
 onMounted(async () => {
@@ -64,6 +69,8 @@ watch(token, async (newToken) => {
   } else {
     liveStore.disconnect()
     resetUpdateState()
+    closeWizard()
+    resetWizard()
   }
 })
 

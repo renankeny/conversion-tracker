@@ -11,6 +11,8 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/renankeny/conversion-tracker/backend/internal/cache"
+	"github.com/renankeny/conversion-tracker/backend/internal/campaignrules"
+	"github.com/renankeny/conversion-tracker/backend/internal/campaigns"
 	"github.com/renankeny/conversion-tracker/backend/internal/config"
 	"github.com/renankeny/conversion-tracker/backend/internal/db"
 	"github.com/renankeny/conversion-tracker/backend/internal/googleads"
@@ -176,6 +178,28 @@ func main() {
 		Interval: 15 * time.Minute,
 	}
 	go aiScheduler.Run(ctx)
+
+	campSvc := campaigns.NewService(
+		pixelRepo,
+		repo.NewMetaAccountRepo(pool),
+		repo.NewGoogleAdsAccountRepo(pool),
+		metaoauth.NewClient(metaoauth.Config{Pool: pool, AppURL: cfg.AppURL, PublicAPIURL: cfg.PublicAPIURL}),
+		googleAdsClient,
+		repo.NewCampaignsAttributionRepo(pool),
+		rdb,
+	)
+	rulesScheduler := &campaignrules.Scheduler{
+		Runner: campaignrules.NewRunner(
+			campSvc,
+			repo.NewCampaignRulesRepo(pool),
+			repo.NewCampaignRuleLogsRepo(pool),
+			notifySvc,
+			repo.NewWhatsAppRepo(pool),
+		),
+		Redis:    rdb,
+		Interval: 5 * time.Minute,
+	}
+	go rulesScheduler.Run(ctx)
 
 	slog.Info("worker starting", "redis", cfg.RedisAddr)
 	if err := srv.Run(); err != nil {

@@ -219,7 +219,7 @@ func New(deps Deps) (*Server, error) {
 	}
 	notifySvc := attachNotificationHandlers(&rh, deps, rdb)
 	attachWhatsAppHandlers(&rh, deps, rdb, queryCache, whatsappRepo, pixels, users, crmRepo, metaAccountRepo, notifySvc)
-	attachCampaignsHandlers(&rh, deps, rdb, pixels, metaAccountRepo, googleAdsAccountRepo, metaOAuthClient, googleAdsClient)
+	attachCampaignsHandlers(&rh, deps, rdb, pixels, metaAccountRepo, googleAdsAccountRepo, metaOAuthClient, googleAdsClient, notifySvc, whatsappRepo)
 	registerRoutes(r, deps, rh)
 	return &Server{
 		cfg: deps.Cfg, router: r, hub: hub, calibrator: cal,

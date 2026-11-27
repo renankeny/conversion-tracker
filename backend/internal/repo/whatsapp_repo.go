@@ -21,19 +21,19 @@ func NewWhatsAppRepo(db *pgxpool.Pool) *WhatsAppRepo {
 }
 
 // =====================================================================
-// Servers (Multi-Tenant por Conta)
+// Servers (Configuração Global única válida para todas as empresas)
 // =====================================================================
 
-// UpsertAccountServer cria ou atualiza o servidor Evolution Go ativo da conta.
-// Se s.APIKey vier vazio em uma atualização, preserva a api_key criptografada anterior.
-func (r *WhatsAppRepo) UpsertAccountServer(ctx context.Context, s *domain.WhatsAppServer) error {
+// UpsertGlobalServer cria ou atualiza o servidor Evolution Go global da instalação.
+// Mantém todos os registros ativos sincronizados para preservar instâncias legadas já vinculadas.
+func (r *WhatsAppRepo) UpsertGlobalServer(ctx context.Context, s *domain.WhatsAppServer) error {
 	cleanURL := strings.TrimRight(strings.TrimSpace(s.URL), "/")
 	name := strings.TrimSpace(s.Name)
 	if name == "" {
 		name = "Evolution Go"
 	}
 
-	existing, err := r.GetAccountServer(ctx, s.AccountID)
+	existing, err := r.GetGlobalServer(ctx)
 	if err != nil {
 		return err
 	}
@@ -47,12 +47,18 @@ func (r *WhatsAppRepo) UpsertAccountServer(ctx context.Context, s *domain.WhatsA
 		if err != nil {
 			return err
 		}
-		err = r.db.QueryRow(ctx, `
+		if _, err := r.db.Exec(ctx, `
 			UPDATE whatsapp_servers
-			SET name = $1, url = $2, api_key = $3, is_active = TRUE, updated_at = NOW()
-			WHERE id = $4 AND account_id = $5
-			RETURNING id, created_at, updated_at
-		`, name, cleanURL, encKey, existing.ID, s.AccountID).Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt)
+			SET name = $1, url = $2, api_key = $3, updated_at = NOW()
+			WHERE is_active = TRUE
+		`, name, cleanURL, encKey); err != nil {
+			return err
+		}
+		err = r.db.QueryRow(ctx, `
+			SELECT id, account_id, created_at, updated_at
+			FROM whatsapp_servers
+			WHERE id = $1
+		`, existing.ID).Scan(&s.ID, &s.AccountID, &s.CreatedAt, &s.UpdatedAt)
 		s.Name = name
 		s.URL = cleanURL
 		s.APIKey = plainKey
@@ -65,11 +71,18 @@ func (r *WhatsAppRepo) UpsertAccountServer(ctx context.Context, s *domain.WhatsA
 	if err != nil {
 		return err
 	}
+	accID := s.AccountID
+	if accID <= 0 {
+		_ = r.db.QueryRow(ctx, `SELECT id FROM accounts ORDER BY id ASC LIMIT 1`).Scan(&accID)
+		if accID <= 0 {
+			accID = 1
+		}
+	}
 	err = r.db.QueryRow(ctx, `
 		INSERT INTO whatsapp_servers (account_id, name, url, api_key, is_active)
 		VALUES ($1, $2, $3, $4, TRUE)
-		RETURNING id, created_at, updated_at
-	`, s.AccountID, name, cleanURL, encKey).Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt)
+		RETURNING id, account_id, created_at, updated_at
+	`, accID, name, cleanURL, encKey).Scan(&s.ID, &s.AccountID, &s.CreatedAt, &s.UpdatedAt)
 	s.Name = name
 	s.URL = cleanURL
 	s.APIKey = plainKey
@@ -78,16 +91,22 @@ func (r *WhatsAppRepo) UpsertAccountServer(ctx context.Context, s *domain.WhatsA
 	return err
 }
 
-func (r *WhatsAppRepo) GetAccountServer(ctx context.Context, accountID int64) (*domain.WhatsAppServer, error) {
+// UpsertAccountServer mantém compatibilidade redirecionando para a configuração global.
+func (r *WhatsAppRepo) UpsertAccountServer(ctx context.Context, s *domain.WhatsAppServer) error {
+	return r.UpsertGlobalServer(ctx, s)
+}
+
+// GetGlobalServer retorna o servidor Evolution Go global configurado na instalação.
+func (r *WhatsAppRepo) GetGlobalServer(ctx context.Context) (*domain.WhatsAppServer, error) {
 	var s domain.WhatsAppServer
 	var encKey string
 	err := r.db.QueryRow(ctx, `
 		SELECT id, account_id, name, url, api_key, is_active, created_at, updated_at
 		FROM whatsapp_servers
-		WHERE account_id = $1 AND is_active = TRUE
-		ORDER BY id DESC
+		WHERE is_active = TRUE
+		ORDER BY updated_at DESC, id DESC
 		LIMIT 1
-	`, accountID).Scan(&s.ID, &s.AccountID, &s.Name, &s.URL, &encKey, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
+	`).Scan(&s.ID, &s.AccountID, &s.Name, &s.URL, &encKey, &s.IsActive, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -99,9 +118,26 @@ func (r *WhatsAppRepo) GetAccountServer(ctx context.Context, accountID int64) (*
 	return &s, nil
 }
 
-func (r *WhatsAppRepo) DeleteAccountServer(ctx context.Context, accountID int64) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM whatsapp_servers WHERE account_id = $1`, accountID)
+// GetAccountServer mantém compatibilidade retornando o servidor global único da instalação.
+func (r *WhatsAppRepo) GetAccountServer(ctx context.Context, _ int64) (*domain.WhatsAppServer, error) {
+	return r.GetGlobalServer(ctx)
+}
+
+// CountEvolutionInstancesGlobal conta todas as instâncias Evolution Go vinculadas ao servidor global.
+func (r *WhatsAppRepo) CountEvolutionInstancesGlobal(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM whatsapp_instances WHERE server_id IS NOT NULL`).Scan(&count)
+	return count, err
+}
+
+// DeleteGlobalServer remove a configuração global da Evolution Go.
+func (r *WhatsAppRepo) DeleteGlobalServer(ctx context.Context) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM whatsapp_servers`)
 	return err
+}
+
+func (r *WhatsAppRepo) DeleteAccountServer(ctx context.Context, _ int64) error {
+	return r.DeleteGlobalServer(ctx)
 }
 
 // =====================================================================

@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/renankeny/conversion-tracker/backend/internal/auth"
 	"github.com/renankeny/conversion-tracker/backend/internal/domain"
 	"github.com/renankeny/conversion-tracker/backend/internal/evolution"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
@@ -24,10 +26,17 @@ func validateEvolutionURL(rawURL string) (string, bool) {
 	return clean, err == nil
 }
 
-// Get retorna a configuração do servidor Evolution Go da conta atual (sem expor a api_key).
+func canManageGlobalWhatsAppServer(ctx context.Context) bool {
+	c, ok := auth.ClaimsFrom(ctx)
+	if !ok || c == nil {
+		return false
+	}
+	return c.IsOwner() || c.Role == "admin"
+}
+
+// Get retorna a configuração global do servidor Evolution Go válida para todas as empresas (sem expor a api_key).
 func (h *AdminWhatsAppServers) Get(w http.ResponseWriter, r *http.Request) {
-	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
-	srv, err := h.repo.GetAccountServer(r.Context(), accID)
+	srv, err := h.repo.GetGlobalServer(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao carregar servidor WhatsApp")
 		return
@@ -35,10 +44,10 @@ func (h *AdminWhatsAppServers) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"server": srv})
 }
 
-// Upsert cria ou atualiza o servidor Evolution Go da conta atual.
+// Upsert cria ou atualiza o servidor Evolution Go global (configurado uma única vez para todas as empresas).
 func (h *AdminWhatsAppServers) Upsert(w http.ResponseWriter, r *http.Request) {
-	if isEmployeeRole(r.Context()) {
-		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem configurar servidores WhatsApp")
+	if !canManageGlobalWhatsAppServer(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores da plataforma podem configurar o servidor global Evolution Go")
 		return
 	}
 	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
@@ -57,7 +66,7 @@ func (h *AdminWhatsAppServers) Upsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, _ := h.repo.GetAccountServer(r.Context(), accID)
+	existing, _ := h.repo.GetGlobalServer(r.Context())
 	if strings.TrimSpace(in.APIKey) == "" {
 		if existing == nil || existing.URL != cleanURL {
 			writeError(w, http.StatusBadRequest, "informe a API Key da Evolution Go ao cadastrar ou alterar a URL do servidor")
@@ -72,7 +81,7 @@ func (h *AdminWhatsAppServers) Upsert(w http.ResponseWriter, r *http.Request) {
 		APIKey:    in.APIKey,
 		IsActive:  true,
 	}
-	if err := h.repo.UpsertAccountServer(r.Context(), srv); err != nil {
+	if err := h.repo.UpsertGlobalServer(r.Context(), srv); err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao salvar servidor: "+err.Error())
 		return
 	}
@@ -82,10 +91,9 @@ func (h *AdminWhatsAppServers) Upsert(w http.ResponseWriter, r *http.Request) {
 // Test testa a conexão e a API Key global com o servidor Evolution Go.
 func (h *AdminWhatsAppServers) Test(w http.ResponseWriter, r *http.Request) {
 	if isEmployeeRole(r.Context()) {
-		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem testar servidores WhatsApp")
+		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem testar o servidor WhatsApp")
 		return
 	}
-	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
 	var in struct {
 		URL    string `json:"url"`
 		APIKey string `json:"api_key"`
@@ -96,7 +104,7 @@ func (h *AdminWhatsAppServers) Test(w http.ResponseWriter, r *http.Request) {
 	targetKey := strings.TrimSpace(in.APIKey)
 
 	if targetURL == "" || targetKey == "" {
-		saved, err := h.repo.GetAccountServer(r.Context(), accID)
+		saved, err := h.repo.GetGlobalServer(r.Context())
 		if err != nil || saved == nil {
 			writeError(w, http.StatusBadRequest, "informe a URL e API Key ou salve o servidor primeiro")
 			return
@@ -133,21 +141,20 @@ func (h *AdminWhatsAppServers) Test(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminWhatsAppServers) Delete(w http.ResponseWriter, r *http.Request) {
-	if isEmployeeRole(r.Context()) {
-		writeError(w, http.StatusForbidden, "apenas administradores ou gerentes podem excluir servidores WhatsApp")
+	if !canManageGlobalWhatsAppServer(r.Context()) {
+		writeError(w, http.StatusForbidden, "apenas administradores da plataforma podem excluir o servidor global Evolution Go")
 		return
 	}
-	accID := TenantFromContext(r.Context()).EffectiveAccountID(0)
-	count, err := h.repo.CountInstances(r.Context(), accID)
+	count, err := h.repo.CountEvolutionInstancesGlobal(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao verificar instâncias")
 		return
 	}
 	if count > 0 {
-		writeError(w, http.StatusConflict, "remova as instâncias conectadas antes de excluir o servidor")
+		writeError(w, http.StatusConflict, "remova as instâncias Evolution Go conectadas nas empresas antes de excluir o servidor")
 		return
 	}
-	if err := h.repo.DeleteAccountServer(r.Context(), accID); err != nil {
+	if err := h.repo.DeleteGlobalServer(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao excluir servidor")
 		return
 	}
