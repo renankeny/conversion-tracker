@@ -11,6 +11,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/evolution"
 	"github.com/renankeny/conversion-tracker/backend/internal/notify"
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
+	"github.com/renankeny/conversion-tracker/backend/internal/waha"
 )
 
 func actionLabelPT(actionType string, prevBudget, newBudget float64, dryRun bool) string {
@@ -83,10 +84,6 @@ func sendRuleWhatsAppAlert(waRepo *repo.WhatsAppRepo, accountID int64, phone, ti
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 
-	srv, err := waRepo.GetGlobalServer(ctx)
-	if err != nil || srv == nil || strings.TrimSpace(srv.URL) == "" {
-		return
-	}
 	instances, err := waRepo.ListInstances(ctx, accountID)
 	if err != nil || len(instances) == 0 {
 		return
@@ -94,7 +91,7 @@ func sendRuleWhatsAppAlert(waRepo *repo.WhatsAppRepo, accountID int64, phone, ti
 	var chosen *domain.WhatsAppInstance
 	for i := range instances {
 		inst := &instances[i]
-		if !inst.Enabled || inst.IsExternalUazapi() {
+		if !inst.Enabled || !inst.IsDirectManaged() {
 			continue
 		}
 		if strings.EqualFold(inst.ConnectionStatus, "open") || strings.EqualFold(inst.ConnectionStatus, "connected") {
@@ -102,12 +99,31 @@ func sendRuleWhatsAppAlert(waRepo *repo.WhatsAppRepo, accountID int64, phone, ti
 			break
 		}
 	}
-	if chosen == nil || strings.TrimSpace(chosen.InstanceToken) == "" {
+	if chosen == nil {
 		return
 	}
-	client := evolution.NewClient(srv.URL, srv.APIKey)
+	srvURL := strings.TrimSpace(chosen.ServerURL)
+	srvKey := strings.TrimSpace(chosen.ServerAPIKey)
+	if srvURL == "" {
+		if srv, serr := waRepo.GetGlobalServerByProvider(ctx, chosen.Provider); serr == nil && srv != nil {
+			srvURL = strings.TrimSpace(srv.URL)
+			srvKey = strings.TrimSpace(srv.APIKey)
+		}
+	}
+	if srvURL == "" {
+		return
+	}
 	msg := fmt.Sprintf("*%s*\n%s", title, body)
-	if err := client.SendText(ctx, chosen.InstanceToken, phone, msg); err != nil {
+	if chosen.IsWAHA() {
+		if err := waha.NewClient(srvURL, srvKey).SendText(ctx, chosen.InstanceName, phone, msg); err != nil {
+			slog.Warn("campaign_rules: waha whatsapp alert failed", "account_id", accountID, "error", err)
+		}
+		return
+	}
+	if strings.TrimSpace(chosen.InstanceToken) == "" {
+		return
+	}
+	if err := evolution.NewClient(srvURL, srvKey).SendText(ctx, chosen.InstanceToken, phone, msg); err != nil {
 		slog.Warn("campaign_rules: whatsapp alert failed", "account_id", accountID, "error", err)
 	}
 }

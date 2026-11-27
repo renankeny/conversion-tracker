@@ -15,6 +15,9 @@ import (
 var evolutionReconnectRetryWait = 2500 * time.Millisecond
 
 func syncInstanceLiveStatus(ctx context.Context, r *repo.WhatsAppRepo, inst *domain.WhatsAppInstance, publicAPIURL string) error {
+	if inst.IsWAHA() {
+		return syncWAHALiveStatus(ctx, r, inst)
+	}
 	if inst.IsExternalUazapi() {
 		return syncUazapiLiveStatus(ctx, r, inst, publicAPIURL)
 	}

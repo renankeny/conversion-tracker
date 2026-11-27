@@ -57,6 +57,15 @@ func makeWhatsAppEventHandler(deps Deps) func(context.Context, *asynq.Task) erro
 				return nil
 			}
 			return processParsedWhatsAppMessage(ctx, deps, inst, parsed)
+		case "WAHASessionStatus":
+			handleWAHASessionStatus(ctx, deps, inst, payload.Data)
+		case "WAHAMessage":
+			clearPendingWhatsAppDisconnect(ctx, deps.Redis, inst.ID)
+			parsed, err := ParseWAHAMessageEvent(payload.Data)
+			if err != nil || parsed == nil {
+				return nil
+			}
+			return processParsedWhatsAppMessage(ctx, deps, inst, parsed)
 		}
 		return nil
 	}
@@ -66,7 +75,7 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	remoteJID, phone, lidDigits, skip := ResolveContactJID(
 		parsed,
 		inst.OwnerJID,
-		func(lidJID string) string { return deps.WhatsApp.ResolvePhoneByLID(ctx, inst.AccountID, lidJID) },
+		func(lidJID string) string { return lookupPhoneByLIDWithWAHAFallback(ctx, deps, inst, lidJID) },
 		func(lidJID, phoneJID string) { _ = deps.WhatsApp.UpsertLIDMapping(ctx, inst.AccountID, lidJID, phoneJID) },
 	)
 	if skip {
@@ -148,10 +157,14 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 	effCtwaClid = util.FirstNonEmpty(effCtwaClid, trackedUser.CtwaClid)
 	effSourceID = util.FirstNonEmpty(effSourceID, trackedUser.WaAdID)
 
+	var profilePicPtr *string
+	if !parsed.IsFromMe && inst.IsWAHA() {
+		profilePicPtr = fetchWAHALeadProfilePic(ctx, inst, existingChat, util.FirstNonEmpty(parsed.RawChatID, remoteJID))
+	}
 	chatRow := &domain.WhatsAppChat{
 		AccountID: inst.AccountID, InstanceID: inst.ID, RemoteJid: remoteJID,
 		TrackedUserID: &trackedUser.ID, CRMLeadID: crmLeadID, TrackableLinkID: effLinkID, Phone: phone, LidJid: lidJID,
-		PushName: contactName, ContactName: contactPtr, OriginType: originType,
+		PushName: contactName, ContactName: contactPtr, ProfilePic: profilePicPtr, OriginType: originType,
 		CtwaClid: effCtwaClid, SourceID: effSourceID, SourceApp: parsed.SourceApp,
 		AdThumbnailURL: parsed.AdThumbnailURL, LastMessageTime: parsed.Timestamp,
 	}
@@ -221,6 +234,7 @@ func processParsedWhatsAppMessage(ctx context.Context, deps Deps, inst *domain.W
 		_ = deps.Enqueuer.EnqueueWhatsAppMedia(ctx, WhatsAppMediaPayload{
 			AccountID: inst.AccountID, InstanceID: inst.ID, ChatID: chatID, MessageDBID: dbMsg.ID,
 			WhatsAppMessageID: parsed.MessageID, RawWhatsAppMessageID: parsed.RawMessageID,
+			ChatJID: util.FirstNonEmpty(parsed.RawChatID, remoteJID),
 			MessageType: parsed.MessageType, MimeType: parsed.MimeType, ExternalMediaURL: parsed.ExternalMediaURL,
 			ExpectedBytes: parsed.FileLength, RawMessageJSON: parsed.MediaProtoJSON,
 		})

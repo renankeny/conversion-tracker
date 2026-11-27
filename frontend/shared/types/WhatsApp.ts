@@ -15,9 +15,12 @@ export type WhatsAppMediaStatus =
   | 'failed'
   | 'skipped_size'
 
+export type WhatsAppServerProvider = 'evolution_go' | 'waha'
+
 export interface WhatsAppServer {
   id: number
   account_id: number
+  provider?: WhatsAppServerProvider
   name: string
   url: string
   has_api_key: boolean
@@ -29,11 +32,12 @@ export interface WhatsAppServer {
 export interface WhatsAppServerHealth {
   healthy: boolean
   version: string
+  engine?: string
   database: string
   instance_count: number
 }
 
-export type WhatsAppProvider = 'evolution_go' | 'api_premium' | 'uazapi'
+export type WhatsAppProvider = 'evolution_go' | 'waha' | 'api_premium' | 'uazapi'
 
 export interface WhatsAppEventTrigger {
   event_name: string

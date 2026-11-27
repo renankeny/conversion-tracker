@@ -61,6 +61,8 @@ func buildProviderWebhookURL(publicAPIURL, provider, secret string) string {
 		return ""
 	}
 	switch domain.NormalizeWhatsAppProvider(provider) {
+	case domain.WhatsAppProviderWAHA:
+		return publicAPIURL + "/webhooks/waha/" + secret
 	case domain.WhatsAppProviderAPIPremium:
 		return publicAPIURL + "/webhooks/api-premium/" + secret
 	case domain.WhatsAppProviderUazapi:
@@ -160,10 +162,11 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 	var srvID int64
 	var evoName, evoUUID, instToken string
 
-	if provider == domain.WhatsAppProviderEvolutionGo {
-		server, serr := h.repo.GetAccountServer(ctx, accID)
+	switch provider {
+	case domain.WhatsAppProviderEvolutionGo:
+		server, serr := h.repo.GetGlobalServerByProvider(ctx, domain.WhatsAppProviderEvolutionGo)
 		if serr != nil || server == nil {
-			writeError(w, http.StatusBadRequest, "configure a URL e API Key da Evolution Go antes de criar uma conexão via QR Code")
+			writeError(w, http.StatusBadRequest, "configure a URL e API Key da Evolution Go antes de criar uma conexão Evolution Go")
 			return
 		}
 		srvID = server.ID
@@ -174,15 +177,20 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadGateway, "erro ao criar instância na Evolution Go: "+cerr.Error())
 			return
 		}
-		evoName = createdResp.Data.Name
-		if evoName == "" {
-			evoName = slug
-		}
+		evoName = util.FirstNonEmpty(createdResp.Data.Name, slug)
 		evoUUID = createdResp.Data.ID
 		if _, connErr := cli.ConnectInstance(ctx, instToken, webhookURL); connErr != nil {
 			slog.Warn("initial evolution connect warning", "instance", evoName, "err", connErr)
 		}
-	} else {
+	case domain.WhatsAppProviderWAHA:
+		var code int
+		var errMsg string
+		if srvID, code, errMsg = provisionWAHAInstance(ctx, h.repo, slug, webhookURL); errMsg != "" {
+			writeError(w, code, errMsg)
+			return
+		}
+		evoName = slug
+	default:
 		if strings.TrimSpace(in.ExternalAPIURL) != "" {
 			cleanExt, uerr := util.ValidateServiceEndpointURL(in.ExternalAPIURL)
 			if uerr != nil {
@@ -219,9 +227,11 @@ func (h *AdminWhatsAppInstances) Create(w http.ResponseWriter, r *http.Request) 
 
 	if err := h.repo.CreateInstance(ctx, inst); err != nil {
 		if provider == domain.WhatsAppProviderEvolutionGo && srvID > 0 {
-			if srv, _ := h.repo.GetAccountServer(ctx, accID); srv != nil {
+			if srv, _ := h.repo.GetGlobalServerByProvider(ctx, domain.WhatsAppProviderEvolutionGo); srv != nil {
 				_ = evolution.NewClient(srv.URL, srv.APIKey).DeleteInstance(ctx, evoUUID, evoName)
 			}
+		} else if provider == domain.WhatsAppProviderWAHA && srvID > 0 {
+			rollbackWAHAInstance(ctx, h.repo, evoName)
 		}
 		writeError(w, http.StatusInternalServerError, "erro ao salvar instância: "+err.Error())
 		return

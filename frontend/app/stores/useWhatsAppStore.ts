@@ -1,10 +1,19 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { WhatsAppInstance, WhatsAppServer } from '#shared/types'
+import type { WhatsAppInstance, WhatsAppServer, WhatsAppServerProvider } from '#shared/types'
 import { useTenantStore } from '~/stores/useTenantStore'
+
+interface ServersResponse {
+  server: WhatsAppServer | null
+  servers?: {
+    evolution_go?: WhatsAppServer | null
+    waha?: WhatsAppServer | null
+  }
+}
 
 export const useWhatsAppStore = defineStore('whatsapp', () => {
   const server = ref<WhatsAppServer | null>(null)
+  const wahaServer = ref<WhatsAppServer | null>(null)
   const instances = ref<WhatsAppInstance[]>([])
   const loading = ref(false)
   const loaded = ref(false)
@@ -30,10 +39,11 @@ export const useWhatsAppStore = defineStore('whatsapp', () => {
     inFlight = (async () => {
       try {
         const [srvRes, instRes] = await Promise.all([
-          api.get<{ server: WhatsAppServer | null }>('/admin/whatsapp/server'),
+          api.get<ServersResponse>('/admin/whatsapp/server'),
           api.get<{ data: WhatsAppInstance[] }>('/admin/whatsapp/instances'),
         ])
-        server.value = srvRes.server || null
+        server.value = srvRes.servers?.evolution_go ?? srvRes.server ?? null
+        wahaServer.value = srvRes.servers?.waha ?? null
         instances.value = instRes.data || []
         loaded.value = true
       } finally {
@@ -45,10 +55,19 @@ export const useWhatsAppStore = defineStore('whatsapp', () => {
     return inFlight
   }
 
+  function setServer(provider: WhatsAppServerProvider, srv: WhatsAppServer | null): void {
+    if (provider === 'waha') {
+      wahaServer.value = srv
+    } else {
+      server.value = srv
+    }
+  }
+
   function invalidate(): void {
     loaded.value = false
     loadedAccountId.value = null
     server.value = null
+    wahaServer.value = null
     instances.value = []
     inFlight = null
   }
@@ -89,14 +108,15 @@ export const useWhatsAppStore = defineStore('whatsapp', () => {
 
   return {
     server,
+    wahaServer,
     instances,
     loading,
     loaded,
     fetchAll,
+    setServer,
     invalidate,
     upsertInstance,
     updateInstanceStatus,
     removeInstance,
   }
 })
-

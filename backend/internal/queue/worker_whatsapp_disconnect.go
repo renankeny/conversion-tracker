@@ -185,6 +185,9 @@ func makeWhatsAppVerifyDisconnectHandler(deps Deps) func(context.Context, *asynq
 		retryCount, _ := asynq.GetRetryCount(ctx)
 		maxRetry, hasMax := asynq.GetMaxRetry(ctx)
 		allowRetryOnNetErr := !hasMax || retryCount < maxRetry
+		if inst.IsWAHA() {
+			return verifyAndConfirmWAHADisconnect(ctx, deps, inst, payload.Event, !allowRetryOnNetErr)
+		}
 		return verifyAndConfirmEvolutionDisconnect(ctx, deps, inst, payload.Event, !allowRetryOnNetErr)
 	}
 }

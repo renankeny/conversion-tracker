@@ -46,6 +46,8 @@ func registerWebhookRoutes(r chi.Router, h routeHandlers) {
 		r.Use(rlWebhooks)
 		r.Post("/webhooks/evolution/{secret}", h.webhookEvolution.HandleBySecret)
 		r.Post("/webhooks/evolution-go/{instanceName}", h.webhookEvolution.HandleLegacyByName)
+		r.Post("/webhooks/waha/{secret}", h.webhookEvolution.HandleWAHABySecret)
+		r.Post("/webhooks/waha/{secret}/*", h.webhookEvolution.HandleWAHABySecret)
 		r.Post("/webhooks/whatsapp/{provider}/{secret}", h.webhookEvolution.HandleUazapiBySecret)
 		r.Post("/webhooks/whatsapp/{provider}/{secret}/*", h.webhookEvolution.HandleUazapiBySecret)
 		r.Post("/webhooks/api-premium/{secret}", h.webhookEvolution.HandleUazapiBySecret)

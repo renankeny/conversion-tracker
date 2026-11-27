@@ -4,7 +4,7 @@
       <div>
         <h1 class="page-title">WhatsApp & Campanhas CTWA</h1>
         <p class="page-subtitle">
-          Conecte seu WhatsApp via QR Code (Evolution Go), API Premium ou Uazapi para rastrear anúncios Click-to-WhatsApp, protocolos de site/bio e gatilhos automáticos de venda.
+          Conecte seu WhatsApp via QR Code (Evolution Go ou WAHA API), API Premium ou Uazapi para rastrear anúncios Click-to-WhatsApp, protocolos de site/bio e gatilhos automáticos de venda.
         </p>
       </div>
       <BaseButton
@@ -16,7 +16,8 @@
     </div>
 
     <WhatsAppServerConfigCard
-      :server="server"
+      :evolution-server="server"
+      :waha-server="wahaServer"
       @saved="loadData(true)"
     />
 
@@ -57,6 +58,7 @@
       :stages="crmStages"
       :saving="savingInstance"
       :has-evolution-server="Boolean(server?.has_api_key)"
+      :has-waha-server="Boolean(wahaServer?.has_api_key)"
       @submit="onSaveInstance"
     />
 
@@ -69,7 +71,7 @@
     <ConfirmModal
       v-model="showDeleteModal"
       title="Excluir conexão WhatsApp?"
-      description="A instância será removida da Evolution Go e do painel."
+      description="A sessão será removida do servidor WhatsApp e do painel."
       :message="deletingInstance ? `Tem certeza que deseja remover &quot;${deletingInstance.name}&quot;?` : ''"
       confirm-label="Excluir conexão"
       variant="danger"
@@ -104,7 +106,7 @@ const tenantStore = useTenantStore()
 const liveStore = useLiveEventsStore()
 const toast = useToast()
 
-const { server, instances, loading } = storeToRefs(waStore)
+const { server, wahaServer, instances, loading } = storeToRefs(waStore)
 const { pixels } = storeToRefs(pixelsStore)
 
 const crmStages = ref<Array<{ id: number; name: string }>>([])
@@ -163,7 +165,7 @@ const onRefreshInstance = async (inst: WhatsAppInstance) => {
   try {
     await wa.refreshStatus(inst.id)
   } catch (e: unknown) {
-    toast.error('Erro ao sincronizar', errorMessage(e, 'Verifique o servidor Evolution Go.'))
+    toast.error('Erro ao sincronizar', errorMessage(e, 'Verifique o servidor WhatsApp.'))
   } finally {
     refreshingId.value = null
   }

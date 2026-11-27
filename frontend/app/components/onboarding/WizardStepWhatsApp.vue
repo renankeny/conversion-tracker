@@ -22,7 +22,7 @@
           v-model="form.provider"
           label="Provedor da Conexão"
           :options="providerOptions"
-          :disabled="Boolean(createdInstance && createdInstance.provider === 'evolution_go')"
+          :disabled="Boolean(createdInstance && (createdInstance.provider === 'evolution_go' || createdInstance.provider === 'waha'))"
         />
       </div>
 
@@ -119,7 +119,8 @@ const form = reactive({
 })
 
 const providerOptions = [
-  { value: 'evolution_go', label: 'Conexão Direta — QR Code' },
+  { value: 'evolution_go', label: 'Evolution Go — QR Code' },
+  { value: 'waha', label: 'WAHA API — QR Code' },
   { value: 'api_premium', label: 'API Premium (Webhook)' },
   { value: 'uazapi', label: 'Uazapi (Webhook)' },
 ]
@@ -134,8 +135,10 @@ const stageOptions = computed(() => [
 
 onMounted(async () => {
   await waStore.fetchAll(true).catch(() => {})
-  if (!createdInstance.value && waStore.server && !waStore.server.has_api_key) {
-    form.provider = 'api_premium'
+  if (!createdInstance.value) {
+    if (waStore.server?.has_api_key) form.provider = 'evolution_go'
+    else if (waStore.wahaServer?.has_api_key) form.provider = 'waha'
+    else form.provider = 'api_premium'
   }
   try {
     const board = await api.get<{ stages?: Array<{ id: number; name: string }> }>('/admin/crm/board')
@@ -218,7 +221,7 @@ const primaryLabel = computed(() => {
       ? 'Finalizar configuração'
       : 'Concluir (conectar depois)'
   }
-  return form.provider === 'evolution_go' ? 'Salvar e gerar QR Code' : 'Salvar e gerar Webhook'
+  return form.provider === 'evolution_go' || form.provider === 'waha' ? 'Salvar e gerar QR Code' : 'Salvar e gerar Webhook'
 })
 
 defineExpose({ submit, saving, primaryLabel })

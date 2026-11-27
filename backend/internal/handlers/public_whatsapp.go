@@ -41,7 +41,11 @@ func (h *PublicWhatsApp) ConnectStatus(w http.ResponseWriter, r *http.Request) {
 
 	qrBase64 := ""
 	if inst.ConnectionStatus != "OPEN" {
-		if inst.IsExternalUazapi() {
+		if inst.IsWAHA() {
+			if qr, connected, qerr := fetchWAHAQRCode(ctx, h.repo, inst, h.publicAPIURL); qerr == nil && !connected {
+				qrBase64 = qr
+			}
+		} else if inst.IsExternalUazapi() {
 			if inst.ExternalAPIURL != "" && inst.InstanceToken != "" {
 				uazCli := uazapi.New(inst.ExternalAPIURL, inst.InstanceToken)
 				if st, serr := uazCli.GetStatus(ctx); serr == nil && st != nil && st.Qrcode != "" {
@@ -76,14 +80,26 @@ func (h *PublicWhatsApp) ConnectStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PublicWhatsApp) InitConnect(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	token := strings.TrimSpace(chi.URLParam(r, "token"))
 	if token == "" {
 		writeError(w, http.StatusBadRequest, "token inválido")
 		return
 	}
-	inst, err := h.repo.GetInstanceByShareToken(r.Context(), token)
+	inst, err := h.repo.GetInstanceByShareToken(ctx, token)
 	if err != nil || inst == nil {
 		writeError(w, http.StatusNotFound, "instância não encontrada")
+		return
+	}
+
+	if inst.IsWAHA() {
+		whURL := buildProviderWebhookURL(h.publicAPIURL, inst.Provider, inst.WebhookSecret)
+		if _, err := wahaClientForInstance(inst).EnsureSessionRunning(ctx, inst.InstanceName, whURL); err != nil {
+			writeError(w, http.StatusBadGateway, "erro ao iniciar conexão WAHA: "+err.Error())
+			return
+		}
+		_ = h.repo.UpdateInstanceStatus(ctx, inst.ID, "CONNECTING")
+		writeJSON(w, http.StatusOK, map[string]any{"success": true})
 		return
 	}
 
@@ -91,21 +107,21 @@ func (h *PublicWhatsApp) InitConnect(w http.ResponseWriter, r *http.Request) {
 		if inst.ExternalAPIURL != "" && inst.InstanceToken != "" {
 			uazCli := uazapi.New(inst.ExternalAPIURL, inst.InstanceToken)
 			whURL := buildProviderWebhookURL(h.publicAPIURL, inst.Provider, inst.WebhookSecret)
-			_ = uazCli.ConfigureWebhook(r.Context(), whURL, inst.WebhookSecret)
-			_, _ = uazCli.Connect(r.Context())
+			_ = uazCli.ConfigureWebhook(ctx, whURL, inst.WebhookSecret)
+			_, _ = uazCli.Connect(ctx)
 		}
-		_ = h.repo.UpdateInstanceStatus(r.Context(), inst.ID, "CONNECTING")
+		_ = h.repo.UpdateInstanceStatus(ctx, inst.ID, "CONNECTING")
 		writeJSON(w, http.StatusOK, map[string]any{"success": true})
 		return
 	}
 
 	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
 	webhookURL := h.publicAPIURL + "/webhooks/evolution/" + inst.WebhookSecret
-	if _, err := cli.ConnectInstance(r.Context(), inst.InstanceToken, webhookURL); err != nil {
+	if _, err := cli.ConnectInstance(ctx, inst.InstanceToken, webhookURL); err != nil {
 		writeError(w, http.StatusBadGateway, "erro ao iniciar conexão: "+err.Error())
 		return
 	}
-	_ = h.repo.UpdateInstanceStatus(r.Context(), inst.ID, "CONNECTING")
+	_ = h.repo.UpdateInstanceStatus(ctx, inst.ID, "CONNECTING")
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
@@ -130,11 +146,15 @@ func (h *PublicWhatsApp) PairPhone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	webhookURL := h.publicAPIURL + "/webhooks/evolution/" + inst.WebhookSecret
-	_, _ = cli.ConnectInstance(ctx, inst.InstanceToken, webhookURL)
-
-	code, err := cli.PairPhone(ctx, inst.InstanceToken, in.Phone)
+	var code string
+	if inst.IsWAHA() {
+		code, err = pairWAHAPhone(ctx, inst, h.publicAPIURL, in.Phone)
+	} else {
+		cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
+		webhookURL := h.publicAPIURL + "/webhooks/evolution/" + inst.WebhookSecret
+		_, _ = cli.ConnectInstance(ctx, inst.InstanceToken, webhookURL)
+		code, err = cli.PairPhone(ctx, inst.InstanceToken, in.Phone)
+	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "erro ao gerar código de pareamento: "+err.Error())
 		return

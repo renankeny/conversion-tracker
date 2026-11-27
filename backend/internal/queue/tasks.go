@@ -49,6 +49,7 @@ type WhatsAppMediaPayload struct {
 	MessageDBID          int64           `json:"message_db_id"`
 	WhatsAppMessageID    string          `json:"whatsapp_message_id,omitempty"`
 	RawWhatsAppMessageID string          `json:"raw_whatsapp_message_id,omitempty"`
+	ChatJID              string          `json:"chat_jid,omitempty"`
 	MessageType          string          `json:"message_type"`
 	MimeType             string          `json:"mime_type"`
 	ExternalMediaURL     string          `json:"external_media_url,omitempty"`

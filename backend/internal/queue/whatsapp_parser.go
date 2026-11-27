@@ -11,6 +11,7 @@ import (
 type ParsedWhatsAppMessage struct {
 	MessageID        string
 	RawMessageID     string
+	RawChatID        string
 	ChatJID          string
 	SenderJID        string
 	SenderAltJID     string

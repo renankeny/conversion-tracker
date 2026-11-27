@@ -10,6 +10,7 @@ import type {
   WhatsAppInstanceInput,
   WhatsAppServer,
   WhatsAppServerHealth,
+  WhatsAppServerProvider,
 } from '#shared/types'
 import { useWhatsAppStore } from '~/stores/useWhatsAppStore'
 
@@ -17,19 +18,20 @@ export const useWhatsApp = () => {
   const api = useAPI()
   const store = useWhatsAppStore()
 
-  const saveServer = async (body: { name: string; url: string; api_key: string }): Promise<WhatsAppServer> => {
-    const res = await api.put<{ server: WhatsAppServer }>('/admin/whatsapp/server', body)
-    store.server = res.server
+  const saveServer = async (body: { provider?: WhatsAppServerProvider; name: string; url: string; api_key: string }): Promise<WhatsAppServer> => {
+    const provider: WhatsAppServerProvider = body.provider || 'evolution_go'
+    const res = await api.put<{ server: WhatsAppServer }>('/admin/whatsapp/server', { ...body, provider })
+    store.setServer(provider, res.server)
     return res.server
   }
 
-  const testServer = (body?: { url?: string; api_key?: string }): Promise<WhatsAppServerHealth> => {
+  const testServer = (body?: { provider?: WhatsAppServerProvider; url?: string; api_key?: string }): Promise<WhatsAppServerHealth> => {
     return api.post<WhatsAppServerHealth>('/admin/whatsapp/server/test', body || {})
   }
 
-  const removeServer = async (): Promise<void> => {
-    await api.delete('/admin/whatsapp/server')
-    store.server = null
+  const removeServer = async (provider: WhatsAppServerProvider = 'evolution_go'): Promise<void> => {
+    await api.delete(`/admin/whatsapp/server?provider=${encodeURIComponent(provider)}`)
+    store.setServer(provider, null)
   }
 
   const createInstance = async (input: WhatsAppInstanceInput): Promise<WhatsAppInstance> => {

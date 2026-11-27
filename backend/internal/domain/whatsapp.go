@@ -21,12 +21,15 @@ const (
 	MediaStatusSkippedSize = "skipped_size"
 
 	WhatsAppProviderEvolutionGo = "evolution_go"
+	WhatsAppProviderWAHA        = "waha"
 	WhatsAppProviderAPIPremium  = "api_premium"
 	WhatsAppProviderUazapi      = "uazapi"
 )
 
 func NormalizeWhatsAppProvider(p string) string {
-	switch p {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case WhatsAppProviderWAHA:
+		return WhatsAppProviderWAHA
 	case WhatsAppProviderAPIPremium:
 		return WhatsAppProviderAPIPremium
 	case WhatsAppProviderUazapi:
@@ -34,6 +37,13 @@ func NormalizeWhatsAppProvider(p string) string {
 	default:
 		return WhatsAppProviderEvolutionGo
 	}
+}
+
+func NormalizeWhatsAppServerProvider(p string) string {
+	if strings.EqualFold(strings.TrimSpace(p), WhatsAppProviderWAHA) {
+		return WhatsAppProviderWAHA
+	}
+	return WhatsAppProviderEvolutionGo
 }
 
 var validMetaCurrencies = map[string]bool{
@@ -64,10 +74,11 @@ func NormalizeCtwaMinMessages(n int) int {
 	return 1
 }
 
-// WhatsAppServer representa o servidor Evolution Go configurado por uma conta/cliente.
+// WhatsAppServer representa um servidor global de Conexão Direta (Evolution Go ou WAHA API).
 type WhatsAppServer struct {
 	ID        int64     `json:"id"`
 	AccountID int64     `json:"account_id"`
+	Provider  string    `json:"provider"`
 	Name      string    `json:"name"`
 	URL       string    `json:"url"`
 	APIKey    string    `json:"-"`
@@ -77,7 +88,7 @@ type WhatsAppServer struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// WhatsAppInstance representa uma instância/número conectado (Evolution Go, API Premium ou Uazapi).
+// WhatsAppInstance representa uma instância/número conectado (Evolution Go, WAHA, API Premium ou Uazapi).
 type WhatsAppInstance struct {
 	ID                 int64     `json:"id"`
 	AccountID          int64     `json:"account_id"`
@@ -118,6 +129,18 @@ type WhatsAppInstance struct {
 
 func (i *WhatsAppInstance) IsExternalUazapi() bool {
 	return i != nil && (i.Provider == WhatsAppProviderAPIPremium || i.Provider == WhatsAppProviderUazapi)
+}
+
+func (i *WhatsAppInstance) IsWAHA() bool {
+	return i != nil && i.Provider == WhatsAppProviderWAHA
+}
+
+func (i *WhatsAppInstance) IsEvolutionGo() bool {
+	return i != nil && NormalizeWhatsAppProvider(i.Provider) == WhatsAppProviderEvolutionGo
+}
+
+func (i *WhatsAppInstance) IsDirectManaged() bool {
+	return i.IsEvolutionGo() || i.IsWAHA()
 }
 
 func (i *WhatsAppInstance) EffectiveCtwaMinMessages() int {

@@ -19,7 +19,7 @@
           v-model="form.provider"
           label="Provedor da Conexão"
           :options="providerOptions"
-          :disabled="Boolean(editing && editing.provider === 'evolution_go')"
+          :disabled="Boolean(editing && (editing.provider === 'evolution_go' || editing.provider === 'waha'))"
         />
       </div>
 
@@ -105,10 +105,8 @@
 import type { Pixel, WhatsAppInstance, WhatsAppInstanceInput, WhatsAppProvider } from '#shared/types'
 import { META_CURRENCY_OPTIONS } from '~/utils/metaCurrencies'
 import {
-  formatAverageTicketInput,
-  parseAverageTicketInput,
-  serializeEditableTriggerRows,
-  toEditableTriggerRows,
+  formatAverageTicketInput, parseAverageTicketInput,
+  serializeEditableTriggerRows, toEditableTriggerRows,
   type EditableWhatsAppTriggerRow,
 } from '~/utils/whatsappEventOptions'
 import WhatsAppInstanceTriggersBox from '~/components/whatsapp/WhatsAppInstanceTriggersBox.vue'
@@ -120,6 +118,7 @@ const props = defineProps<{
   stages: Array<{ id: number; name: string }>
   saving: boolean
   hasEvolutionServer?: boolean
+  hasWahaServer?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -145,7 +144,8 @@ const form = reactive({
 })
 
 const providerOptions = [
-  { value: 'evolution_go', label: 'Conexão Direta — QR Code' },
+  { value: 'evolution_go', label: 'Evolution Go — QR Code' },
+  { value: 'waha', label: 'WAHA API — QR Code' },
   { value: 'api_premium', label: 'API Premium (Webhook)' },
   { value: 'uazapi', label: 'Uazapi (Webhook)' },
 ]
@@ -194,7 +194,7 @@ watch(
       form.enabled = inst.enabled
     } else {
       form.name = ''
-      form.provider = props.hasEvolutionServer === false ? 'api_premium' : 'evolution_go'
+      form.provider = props.hasEvolutionServer ? 'evolution_go' : (props.hasWahaServer ? 'waha' : 'api_premium')
       form.pixel_id = props.pixels[0]?.id || 0
       form.currency = 'BRL'
       form.ctwa_min_inbound_messages = 1

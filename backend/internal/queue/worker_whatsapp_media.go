@@ -18,6 +18,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/storage"
 	"github.com/renankeny/conversion-tracker/backend/internal/uazapi"
 	"github.com/renankeny/conversion-tracker/backend/internal/util"
+	"github.com/renankeny/conversion-tracker/backend/internal/waha"
 	"github.com/renankeny/conversion-tracker/backend/internal/wshub"
 )
 
@@ -74,7 +75,7 @@ func makeWhatsAppMediaHandler(deps Deps) func(context.Context, *asynq.Task) erro
 			_ = deps.WhatsApp.UpdateMessageMediaStatus(ctx, payload.MessageDBID, domain.MediaStatusFailed)
 			return nil
 		}
-		if errors.Is(err, evolution.ErrMediaTooLarge) || errors.Is(err, uazapi.ErrMediaTooLarge) {
+		if errors.Is(err, evolution.ErrMediaTooLarge) || errors.Is(err, uazapi.ErrMediaTooLarge) || errors.Is(err, waha.ErrMediaTooLarge) {
 			_ = deps.WhatsApp.UpdateMessageMediaStatus(ctx, payload.MessageDBID, domain.MediaStatusSkippedSize)
 			return nil
 		}
@@ -119,6 +120,16 @@ func fetchInstanceMediaBytes(
 	payload WhatsAppMediaPayload,
 	maxBytes int64,
 ) ([]byte, string, bool, error) {
+	if inst.IsWAHA() {
+		wcli := waha.NewClient(inst.ServerURL, inst.ServerAPIKey)
+		msgID := util.FirstNonEmpty(payload.RawWhatsAppMessageID, payload.WhatsAppMessageID)
+		if payload.ExternalMediaURL == "" && (!wcli.Configured() || payload.ChatJID == "" || msgID == "") {
+			return nil, "", false, nil
+		}
+		data, mime, err := wcli.DownloadMedia(ctx, inst.InstanceName, payload.ExternalMediaURL, payload.ChatJID, msgID, maxBytes)
+		return data, mime, true, err
+	}
+
 	if inst.IsExternalUazapi() {
 		ucli := uazapi.New(inst.ExternalAPIURL, inst.InstanceToken)
 		if payload.ExternalMediaURL != "" {

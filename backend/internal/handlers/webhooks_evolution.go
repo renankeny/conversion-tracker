@@ -59,6 +59,10 @@ func (h *WebhookEvolution) HandleBySecret(w http.ResponseWriter, r *http.Request
 		http.Error(w, "read error", http.StatusBadRequest)
 		return
 	}
+	if inst.IsWAHA() {
+		h.processWAHAPayload(w, r, inst, rawBody)
+		return
+	}
 	if inst.IsExternalUazapi() || looksLikeUazapiPayload(rawBody) {
 		h.processUazapiPayload(w, r, inst, rawBody)
 		return

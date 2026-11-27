@@ -33,25 +33,35 @@ func (h *AdminWhatsAppInstances) Connect(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	ctx := r.Context()
+	if inst.IsWAHA() {
+		whURL := buildProviderWebhookURL(h.publicAPIURL, domain.WhatsAppProviderWAHA, inst.WebhookSecret)
+		if _, err := wahaClientForInstance(inst).EnsureSessionRunning(ctx, inst.InstanceName, whURL); err != nil {
+			writeError(w, http.StatusBadGateway, "erro ao iniciar sessão na WAHA API: "+err.Error())
+			return
+		}
+		_ = h.repo.UpdateInstanceStatus(ctx, inst.ID, "CONNECTING")
+		writeJSON(w, http.StatusOK, map[string]any{"success": true, "status": "CONNECTING"})
+		return
+	}
 	if inst.IsExternalUazapi() {
 		if inst.ExternalAPIURL != "" && inst.InstanceToken != "" {
 			uazCli := uazapi.New(inst.ExternalAPIURL, inst.InstanceToken)
 			whURL := buildProviderWebhookURL(h.publicAPIURL, inst.Provider, inst.WebhookSecret)
-			_ = uazCli.ConfigureWebhook(r.Context(), whURL, inst.WebhookSecret)
-			_, _ = uazCli.Connect(r.Context())
+			_ = uazCli.ConfigureWebhook(ctx, whURL, inst.WebhookSecret)
+			_, _ = uazCli.Connect(ctx)
 		}
-		_ = h.repo.UpdateInstanceStatus(r.Context(), inst.ID, "CONNECTING")
+		_ = h.repo.UpdateInstanceStatus(ctx, inst.ID, "CONNECTING")
 		writeJSON(w, http.StatusOK, map[string]any{"success": true, "status": "CONNECTING"})
 		return
 	}
 
 	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	webhookURL := h.buildWebhookURL(inst.WebhookSecret)
-	if _, err := cli.ConnectInstance(r.Context(), inst.InstanceToken, webhookURL); err != nil {
+	if _, err := cli.ConnectInstance(ctx, inst.InstanceToken, h.buildWebhookURL(inst.WebhookSecret)); err != nil {
 		writeError(w, http.StatusBadGateway, "erro ao iniciar conexão na Evolution Go: "+err.Error())
 		return
 	}
-	_ = h.repo.UpdateInstanceStatus(r.Context(), inst.ID, "CONNECTING")
+	_ = h.repo.UpdateInstanceStatus(ctx, inst.ID, "CONNECTING")
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "status": "CONNECTING"})
 }
 
@@ -59,6 +69,23 @@ func (h *AdminWhatsAppInstances) QrCode(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 	inst, ok := h.loadOwnedInstance(w, r)
 	if !ok {
+		return
+	}
+
+	if inst.IsWAHA() {
+		qr, connected, err := fetchWAHAQRCode(ctx, h.repo, inst, h.publicAPIURL)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "erro ao gerar QR Code WAHA: "+err.Error())
+			return
+		}
+		if connected {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"connected": true, "status": "OPEN",
+				"owner_jid": inst.OwnerJID, "profile_name": inst.ProfileName, "profile_pic_url": inst.ProfilePicURL,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"connected": false, "qrcode": qr})
 		return
 	}
 
@@ -74,11 +101,8 @@ func (h *AdminWhatsAppInstances) QrCode(w http.ResponseWriter, r *http.Request) 
 			if st.Connected {
 				_ = syncInstanceLiveStatus(ctx, h.repo, inst, h.publicAPIURL)
 				writeJSON(w, http.StatusOK, map[string]any{
-					"connected":       true,
-					"status":          "OPEN",
-					"owner_jid":       inst.OwnerJID,
-					"profile_name":    inst.ProfileName,
-					"profile_pic_url": inst.ProfilePicURL,
+					"connected": true, "status": "OPEN",
+					"owner_jid": inst.OwnerJID, "profile_name": inst.ProfileName, "profile_pic_url": inst.ProfilePicURL,
 				})
 				return
 			}
@@ -97,18 +121,13 @@ func (h *AdminWhatsAppInstances) QrCode(w http.ResponseWriter, r *http.Request) 
 	}
 
 	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	webhookURL := h.buildWebhookURL(inst.WebhookSecret)
-	_, _ = cli.ConnectInstance(ctx, inst.InstanceToken, webhookURL)
-
+	_, _ = cli.ConnectInstance(ctx, inst.InstanceToken, h.buildWebhookURL(inst.WebhookSecret))
 	qrData, err := cli.GetQrCode(ctx, inst.InstanceToken)
 	if err != nil {
 		if syncErr := syncInstanceLiveStatus(ctx, h.repo, inst, h.publicAPIURL); syncErr == nil && inst.ConnectionStatus == "OPEN" {
 			writeJSON(w, http.StatusOK, map[string]any{
-				"connected":       true,
-				"status":          "OPEN",
-				"owner_jid":       inst.OwnerJID,
-				"profile_name":    inst.ProfileName,
-				"profile_pic_url": inst.ProfilePicURL,
+				"connected": true, "status": "OPEN",
+				"owner_jid": inst.OwnerJID, "profile_name": inst.ProfileName, "profile_pic_url": inst.ProfilePicURL,
 			})
 			return
 		}
@@ -120,12 +139,7 @@ func (h *AdminWhatsAppInstances) QrCode(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadGateway, "erro ao gerar QR Code: "+err.Error())
 		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"connected": false,
-		"qrcode":    qrData.Qrcode,
-		"code":      qrData.Code,
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"connected": false, "qrcode": qrData.Qrcode, "code": qrData.Code})
 }
 
 func (h *AdminWhatsAppInstances) Pair(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +149,7 @@ func (h *AdminWhatsAppInstances) Pair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if inst.IsExternalUazapi() {
-		writeError(w, http.StatusBadRequest, "pareamento por código telefônico é suportado apenas na Evolution Go; utilize o QR Code")
+		writeError(w, http.StatusBadRequest, "pareamento por código telefônico é suportado apenas em conexões diretas (Evolution Go ou WAHA)")
 		return
 	}
 	var in struct {
@@ -146,11 +160,15 @@ func (h *AdminWhatsAppInstances) Pair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	webhookURL := h.buildWebhookURL(inst.WebhookSecret)
-	_, _ = cli.ConnectInstance(ctx, inst.InstanceToken, webhookURL)
-
-	code, err := cli.PairPhone(ctx, inst.InstanceToken, in.Phone)
+	var code string
+	var err error
+	if inst.IsWAHA() {
+		code, err = pairWAHAPhone(ctx, inst, h.publicAPIURL, in.Phone)
+	} else {
+		cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
+		_, _ = cli.ConnectInstance(ctx, inst.InstanceToken, h.buildWebhookURL(inst.WebhookSecret))
+		code, err = cli.PairPhone(ctx, inst.InstanceToken, in.Phone)
+	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "erro ao gerar código de pareamento: "+err.Error())
 		return
@@ -192,19 +210,17 @@ func (h *AdminWhatsAppInstances) Disconnect(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	wasOpen := isWhatsAppInstanceConnected(inst.ConnectionStatus)
-	if inst.IsExternalUazapi() {
+	if inst.IsWAHA() {
+		if inst.ServerURL != "" {
+			_ = wahaClientForInstance(inst).LogoutSession(r.Context(), inst.InstanceName)
+		}
+	} else if inst.IsExternalUazapi() {
 		if inst.ExternalAPIURL != "" && inst.InstanceToken != "" {
 			_ = uazapi.New(inst.ExternalAPIURL, inst.InstanceToken).Disconnect(r.Context())
 		}
-		_ = h.repo.ResetInstanceSession(r.Context(), inst.ID, "CLOSED")
-		if wasOpen {
-			emitWhatsAppStatusNotification(h.notify, inst, false)
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"disconnected": true})
-		return
+	} else {
+		_ = evolution.NewClient(inst.ServerURL, inst.ServerAPIKey).LogoutInstance(r.Context(), inst.InstanceToken)
 	}
-	cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-	_ = cli.LogoutInstance(r.Context(), inst.InstanceToken)
 	_ = h.repo.ResetInstanceSession(r.Context(), inst.ID, "CLOSED")
 	if wasOpen {
 		emitWhatsAppStatusNotification(h.notify, inst, false)
@@ -221,15 +237,14 @@ func (h *AdminWhatsAppInstances) Delete(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if !inst.IsExternalUazapi() && inst.ServerURL != "" {
-		cli := evolution.NewClient(inst.ServerURL, inst.ServerAPIKey)
-		_ = cli.DeleteInstance(r.Context(), inst.EvolutionUUID, inst.InstanceName)
+	if inst.IsWAHA() && inst.ServerURL != "" {
+		_ = wahaClientForInstance(inst).DeleteSession(r.Context(), inst.InstanceName)
+	} else if inst.IsEvolutionGo() && inst.ServerURL != "" {
+		_ = evolution.NewClient(inst.ServerURL, inst.ServerAPIKey).DeleteInstance(r.Context(), inst.EvolutionUUID, inst.InstanceName)
 	}
-
 	if err := h.repo.DeleteInstance(r.Context(), inst.AccountID, inst.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "erro ao excluir instância: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
 }
-

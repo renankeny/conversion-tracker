@@ -124,9 +124,10 @@ watch(() => props.instance.profile_pic_url, () => { imgError.value = false })
 
 const isExternalProvider = computed(() => props.instance.provider === 'api_premium' || props.instance.provider === 'uazapi')
 const providerLabel = computed(() => {
+  if (props.instance.provider === 'waha') return 'WAHA API (QR Code)'
   if (props.instance.provider === 'api_premium') return 'API Premium'
   if (props.instance.provider === 'uazapi') return 'Uazapi'
-  return 'Conexão Direta (QR Code)'
+  return 'Evolution Go (QR Code)'
 })
 
 const isConnected = computed(() => props.instance.connection_status === 'OPEN')

@@ -147,7 +147,7 @@ func extractMediaSubMessage(msgMap map[string]json.RawMessage, out *ParsedWhatsA
 			Title       string          `json:"title"`
 			ContextInfo *evoContextInfo `json:"contextInfo"`
 		}
-		if json.Unmarshal(rawSub, &sub) == nil && (sub.URL != "" || sub.UrlLower != "" || out.ExternalMediaURL != "") {
+		if json.Unmarshal(rawSub, &sub) == nil && (sub.URL != "" || sub.UrlLower != "" || out.ExternalMediaURL != "" || out.HasMedia) {
 			out.MessageType = mk[1]
 			out.HasMedia = true
 			out.MimeType = sub.Mimetype
