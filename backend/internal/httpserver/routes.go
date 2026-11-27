@@ -29,9 +29,9 @@ func registerRoutes(root *chi.Mux, deps Deps, h routeHandlers) {
 	})
 
 	root.Route("/api/v1", func(r chi.Router) {
-		r.Get("/ws/events", h.wsEvents.Handle)
 		r.Group(func(r chi.Router) {
 			r.Use(ShardSyncMiddleware(h.calibrator))
+			r.Get("/ws/events", h.wsEvents.Handle)
 			r.Get("/media/whatsapp/{messageID}", h.whatsappMedia.ServeHTTP)
 			registerWhatsAppPublicRoutes(r, h)
 			registerPublicDashboardRoutes(r, h, rlPublicDash)
@@ -82,7 +82,10 @@ func registerRoutes(root *chi.Mux, deps Deps, h routeHandlers) {
 				r.Post("/admin/login", h.adminAuth.Login)
 			})
 
-			registerOAuthPublicRoutes(r, h)
+			r.Group(func(r chi.Router) {
+				r.Use(ShardSyncMiddleware(h.calibrator))
+				registerOAuthPublicRoutes(r, h)
+			})
 
 			r.Group(func(r chi.Router) {
 				r.Use(ShardSyncMiddleware(h.calibrator))

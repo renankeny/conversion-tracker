@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"time"
+
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 const cycleLockKey = "lock:whatsapp_ai_15m_cycle"
@@ -47,6 +49,9 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) runCycle(ctx context.Context) {
+	if util.IsShardHalted() {
+		return
+	}
 	if s.Analyzer.Redis != nil {
 		ok, err := s.Analyzer.Redis.SetNX(ctx, cycleLockKey, "1", 12*time.Minute).Result()
 		if err == nil && !ok {
@@ -61,7 +66,7 @@ func (s *Scheduler) runCycle(ctx context.Context) {
 		return
 	}
 	for _, accID := range accountIDs {
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || util.IsShardHalted() {
 			return
 		}
 		sum, aerr := s.Analyzer.AnalyzeAccount(ctx, accID, 0, false)

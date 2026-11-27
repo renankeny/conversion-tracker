@@ -73,6 +73,14 @@ func main() {
 	defer rdb.Close()
 
 	util.InitWorkerShardState(os.Getenv("PGX_SHARD_CACHE_FILE"))
+	applyWorkerShard := func(halted bool, mask byte) {
+		if halted {
+			metaoauth.InvalidateAllLeases()
+			googleads.InvalidateAllLeases()
+		}
+		util.ApplyRemoteShardState(halted, mask)
+	}
+	cache.StartWorkerShardStateSync(ctx, rdb, applyWorkerShard)
 
 	pixelRepo := repo.NewPixelRepo(pool)
 	pixelRepo.SetRedis(rdb)
@@ -84,13 +92,8 @@ func main() {
 			}
 		case "shard_state":
 			if len(ev.Keys) >= 2 {
-				halted := ev.Keys[0] == "1"
 				maskInt, _ := strconv.Atoi(ev.Keys[1])
-				if halted {
-					metaoauth.InvalidateAllLeases()
-					googleads.InvalidateAllLeases()
-				}
-				util.ApplyRemoteShardState(halted, byte(maskInt))
+				applyWorkerShard(ev.Keys[0] == "1", byte(maskInt))
 			}
 		}
 	})

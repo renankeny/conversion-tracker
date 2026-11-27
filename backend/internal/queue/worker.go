@@ -18,6 +18,7 @@ import (
 	"github.com/renankeny/conversion-tracker/backend/internal/repo"
 	"github.com/renankeny/conversion-tracker/backend/internal/storage"
 	"github.com/renankeny/conversion-tracker/backend/internal/tiktok"
+	"github.com/renankeny/conversion-tracker/backend/internal/util"
 )
 
 type Server struct {
@@ -69,6 +70,7 @@ func NewServer(opt asynq.RedisClientOpt, deps Deps, concurrency int) *Server {
 		},
 	)
 	mux := asynq.NewServeMux()
+	mux.Use(shardHaltMiddleware)
 	mux.HandleFunc(TypeSendEvent, makeSendEventHandler(deps))
 	mux.HandleFunc(TypeProcessAggregatedPurchase, makeProcessAggregatedPurchaseHandler(deps))
 	mux.HandleFunc(TypeWhatsAppEvent, makeWhatsAppEventHandler(deps))
@@ -76,6 +78,15 @@ func NewServer(opt asynq.RedisClientOpt, deps Deps, concurrency int) *Server {
 	mux.HandleFunc(TypeWhatsAppVerifyDisconnect, makeWhatsAppVerifyDisconnectHandler(deps))
 	mux.HandleFunc(TypeProcessRefund, makeProcessRefundHandler(deps))
 	return &Server{srv: srv, mux: mux}
+}
+
+func shardHaltMiddleware(next asynq.Handler) asynq.Handler {
+	return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+		if util.IsShardHalted() {
+			return fmt.Errorf("instance halted: %w", asynq.SkipRetry)
+		}
+		return next.ProcessTask(ctx, t)
+	})
 }
 
 func (s *Server) Run() error { return s.srv.Run(s.mux) }
